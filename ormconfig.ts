@@ -2,7 +2,7 @@ import { DataSource } from 'typeorm';
 import { config } from './src/config';
 
 export default new DataSource({
-  type: 'mysql',
+  type: 'postgres',
   host: config.database.host,
   port: config.database.port,
   username: config.database.username,
@@ -10,6 +10,7 @@ export default new DataSource({
   database: config.database.database,
   synchronize: config.database.synchronize,
   logging: config.database.logging,
+  ssl: config.database.ssl,
   entities: [__dirname + '/src/models/*.ts'],
   migrations: [__dirname + '/src/migrations/*.ts'],
   subscribers: [__dirname + '/src/subscribers/*.ts'],
