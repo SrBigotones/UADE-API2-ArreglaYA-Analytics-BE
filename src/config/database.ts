@@ -19,10 +19,23 @@ export const AppDataSource = new DataSource({
 
 export const connectDatabase = async (): Promise<void> => {
   try {
+    // Log database configuration details
+    logger.info('Attempting to connect to PostgreSQL with configuration:');
+    logger.info(`Host: ${config.database.host}`);
+    logger.info(`Port: ${config.database.port}`);
+    logger.info(`Username: ${config.database.username}`);
+    logger.info(`Database: ${config.database.database}`);
+    logger.info(`SSL: ${JSON.stringify(config.database.ssl)}`);
+    logger.info(`Synchronize: ${config.database.synchronize}`);
+    
     await AppDataSource.initialize();
-    logger.info('Connected to PostgreSQL database');
+    logger.info('✅ Successfully connected to PostgreSQL database');
   } catch (error) {
-    logger.error('PostgreSQL connection error:', error);
+    logger.error('❌ PostgreSQL connection error:', error);
+    logger.error('Connection failed with the following configuration:');
+    logger.error(`Host: ${config.database.host}:${config.database.port}`);
+    logger.error(`Database: ${config.database.database}`);
+    logger.error(`Username: ${config.database.username}`);
     throw error;
   }
 };

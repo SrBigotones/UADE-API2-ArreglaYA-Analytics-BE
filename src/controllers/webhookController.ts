@@ -16,7 +16,7 @@ export class WebhookController {
     try {
       const { queue, event }: { queue: string; event: EventMessage } = req.body;
 
-      logger.info(Received webhook for queue: , { event });
+      logger.info(`Received webhook for queue: ${queue}`, { event });
 
       // Save event to database
       const eventRepository = AppDataSource.getRepository(Event);
