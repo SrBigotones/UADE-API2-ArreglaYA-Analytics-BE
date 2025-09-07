@@ -10,27 +10,27 @@ export class MetricsService {
 
   public async processEvent(event: Event): Promise<void> {
     try {
-      logger.info(Processing event:  -  - );
+      logger.info(`Processing event: ${event.squad} - ${event.topico} - ${event.evento}`);
 
       // Process different types of events
       switch (event.squad) {
         case 'Usuarios y Roles':
           await this.processUserEvent(event);
           break;
-        case 'Catálogo de servicios y Prestadores':
+        case 'Catï¿½logo de servicios y Prestadores':
           await this.processServiceEvent(event);
           break;
-        case 'App de búsqueda y solicitudes':
+        case 'App de bï¿½squeda y solicitudes':
           await this.processRequestEvent(event);
           break;
-        case 'Pagos y Facturación':
+        case 'Pagos y Facturaciï¿½n':
           await this.processPaymentEvent(event);
           break;
         case 'Matching y Agenda':
           await this.processMatchingEvent(event);
           break;
         default:
-          logger.warn(Unknown squad: );
+          logger.warn(`Unknown squad: ${event.squad}`);
       }
 
       // Calculate general KPIs
@@ -108,13 +108,13 @@ export class MetricsService {
     const { evento, cuerpo } = event;
 
     switch (evento) {
-      case 'Cotización Emitida':
+      case 'Cotizaciï¿½n Emitida':
         await this.saveMetric('total_quotations', 1, 'count', 'incremental');
         break;
-      case 'Cotización Aceptada':
+      case 'Cotizaciï¿½n Aceptada':
         await this.saveMetric('accepted_quotations', 1, 'count', 'incremental');
         break;
-      case 'Cotización Rechazada':
+      case 'Cotizaciï¿½n Rechazada':
         await this.saveMetric('rejected_quotations', 1, 'count', 'incremental');
         break;
     }
@@ -216,6 +216,16 @@ export class MetricsService {
       failedPayments: 0, // This would need more complex logic
       totalRevenue: Number(totalRevenue?.total) || 0,
       averagePaymentAmount: 0 // This would need more complex logic
+    };
+  }
+
+  public async getProviderMetrics(): Promise<ProviderMetrics> {
+    // This would need more complex logic to calculate provider metrics
+    return {
+      totalProviders: 0,
+      activeProviders: 0,
+      averageProviderRating: 0,
+      topRatedProviders: []
     };
   }
 }
