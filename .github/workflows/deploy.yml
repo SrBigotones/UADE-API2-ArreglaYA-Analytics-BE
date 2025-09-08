@@ -13,13 +13,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Si tu backend es Node/TS (borra esto si es Java)
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-      - run: |
-          if [ -f backend/package.json ]; then cd backend && npm ci && npm run build --if-present && cd ..; fi
+      
+      # Install dependencies and build TypeScript
+      - run: npm ci
+      - run: npm run build
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -28,4 +29,4 @@ jobs:
 
       - uses: aws-actions/setup-sam@v2
       - run: sam build --use-container
-      - run: sam deploy --stack-name arreglaya-be --no-confirm-changeset --capabilities CAPABILITY_IAM
+      - run: sam deploy --stack-name arreglaya-analytics-be --no-confirm-changeset --capabilities CAPABILITY_IAM
