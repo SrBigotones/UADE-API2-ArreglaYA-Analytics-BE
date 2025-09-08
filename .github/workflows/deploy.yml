@@ -1,0 +1,31 @@
+name: deploy
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Si tu backend es Node/TS (borra esto si es Java)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: |
+          if [ -f backend/package.json ]; then cd backend && npm ci && npm run build --if-present && cd ..; fi
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: aws-actions/setup-sam@v2
+      - run: sam build --use-container
+      - run: sam deploy --stack-name arreglaya-be --no-confirm-changeset --capabilities CAPABILITY_IAM
