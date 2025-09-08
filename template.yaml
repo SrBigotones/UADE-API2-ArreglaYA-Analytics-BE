@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: ArreglaYA Metrics BE - Express on Lambda + HTTP API
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        NODE_OPTIONS: "--enable-source-maps"
+        STAGE: "local"
+        NODE_ENV: "development"
+        DB_HOST: "host.docker.internal"
+        DB_PORT: "5432"
+        DB_USERNAME: "postgres"
+        DB_PASSWORD: "postgres"
+        DB_DATABASE: "arregla_ya_analytics"
+
+Resources:
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: ['*']
+        AllowMethods: ['GET','POST','PUT','DELETE','OPTIONS']
+
+  ExpressFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .                 # <--- raíz (donde está package.json)
+      Handler: dist/lambda.handler  # <--- apunta al build generado
+      Runtime: nodejs20.x
+      Events:
+        Any:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /{proxy+}
+            Method: ANY
+
+Outputs:
+  ApiUrl:
+    Value: !Sub "https://${Api}.execute-api.${AWS::Region}.amazonaws.com"
