@@ -29,4 +29,4 @@ jobs:
 
       - uses: aws-actions/setup-sam@v2
       - run: sam build --use-container
-      - run: sam deploy --stack-name arreglaya-analytics-be --no-confirm-changeset --capabilities CAPABILITY_IAM
+      - run: sam deploy --stack-name arreglaya-analytics-be --no-confirm-changeset --capabilities CAPABILITY_IAM --resolve-s3
