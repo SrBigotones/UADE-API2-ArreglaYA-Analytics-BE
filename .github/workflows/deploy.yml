@@ -28,5 +28,15 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
 
       - uses: aws-actions/setup-sam@v2
+      
+      # Delete the stack if it exists in ROLLBACK_COMPLETE state
+      - name: Delete failed stack
+        run: |
+          if aws cloudformation describe-stacks --stack-name arreglaya-analytics-be 2>&1 | grep -q 'ROLLBACK_COMPLETE'; then
+            aws cloudformation delete-stack --stack-name arreglaya-analytics-be
+            aws cloudformation wait stack-delete-complete --stack-name arreglaya-analytics-be
+          fi
+        continue-on-error: true
+      
       - run: sam build --use-container
       - run: sam deploy --stack-name arreglaya-analytics-be --no-confirm-changeset --capabilities CAPABILITY_IAM --resolve-s3
