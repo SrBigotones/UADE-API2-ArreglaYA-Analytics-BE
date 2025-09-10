@@ -18,12 +18,15 @@ export const createDataSource = async () => {
     dbConfig = config.database as DBConfig;
   }
 
-  return new DataSource({
+  // Crear una nueva instancia de DataSource
+  AppDataSource = new DataSource({
     ...dbConfig,
-    entities: [__dirname + '/../models/*.ts'],
-    migrations: [__dirname + '/../migrations/*.ts'],
-    subscribers: [__dirname + '/../subscribers/*.ts'],
+    entities: [__dirname + '/../models/*.{ts,js}'],
+    migrations: [__dirname + '/../migrations/*.{ts,js}'],
+    subscribers: [__dirname + '/../subscribers/*.{ts,js}'],
   });
+
+  return AppDataSource;
 };
 
 export let AppDataSource: DataSource;

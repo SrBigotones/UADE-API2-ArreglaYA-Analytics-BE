@@ -1,15 +1,18 @@
 import 'reflect-metadata';
 import serverless from '@vendia/serverless-express';
 import express from 'express';
-import { connectDatabase, AppDataSource } from './config/database';
+import { connectDatabase, createDataSource, AppDataSource } from './config/database';
 
 // Variable global para el estado de la DB
 let dbInitialized = false;
 
 // Función para inicializar la DB de forma segura
 async function initDB() {
-  if (!dbInitialized && !AppDataSource.isInitialized) {
+  if (!dbInitialized) {
     try {
+      console.log('Creating DataSource...');
+      await createDataSource();
+      
       console.log('Attempting DB connection...');
       await Promise.race([
         connectDatabase(),
@@ -20,11 +23,12 @@ async function initDB() {
     } catch (error: any) {
       console.error('DB connection failed:', error);
       // Marcamos el error pero permitimos que la app siga funcionando
-      if (error?.message === 'DB connection timeout after 10s') {
+      if (error?.message === 'DB connection timeout after 20s') {
         console.warn('DB connection timed out - app will continue without DB access');
       }
+      throw error; // Propagar el error para mejor manejo
     }
-  } else if (dbInitialized) {
+  } else {
     console.log('DB already initialized');
   }
 }
@@ -52,18 +56,27 @@ app.get('/health', (_req, res) => {
 // Handler con inicialización segura de DB
 export const handler = async (event: any, context: any) => {
   console.log('Lambda handler started');
+  
+  // Configurar el contexto de Lambda para esperar por la conexión
+  context.callbackWaitsForEmptyEventLoop = false;
+  
   try {
-    // Intentar inicializar DB pero no bloquear si falla
-    await initDB();
+    if (!dbInitialized || (AppDataSource && !AppDataSource.isInitialized)) {
+      console.log('DB not initialized, attempting initialization...');
+      await initDB();
+    }
     
     const serverlessHandler = serverless({ app });
     console.log('Serverless handler created');
     return serverlessHandler(event, context);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in handler:', error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Internal Server Error' })
+      body: JSON.stringify({ 
+        error: 'Internal Server Error',
+        message: process.env.NODE_ENV === 'development' ? error.message : undefined
+      })
     };
   }
 };
