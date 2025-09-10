@@ -25,6 +25,7 @@ Resources:
                 - ssm:GetParameters
               Resource:
                 - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/arreglaya/analytics/*'
+        - AWSLambdaVPCAccessExecutionRole
       CodeUri: .
       Handler: dist/lambda.handler
       Runtime: nodejs20.x
@@ -33,6 +34,12 @@ Resources:
           STAGE: 'prod'
           NODE_ENV: 'production'
           SSM_PATH_PREFIX: '/arreglaya/analytics/prod/db'
+      VpcConfig:
+        SecurityGroupIds:
+          - sg-06cb3c7cc1c6a444b
+        SubnetIds:
+          - subnet-0375b830ae4709b21
+          - subnet-0a261e8ee3a674914
       Events:
         ApiEvent:
           Type: HttpApi
