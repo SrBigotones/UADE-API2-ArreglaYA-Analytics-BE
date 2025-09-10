@@ -48,10 +48,11 @@ Resources:
 Outputs:
   ApiUrl:
     Description: "API Gateway endpoint URL"
-    Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com'
-  FunctionName:
-    Description: "Lambda Function Name"
-    Value: !Ref ExpressFunction
+    Value: 
+      Fn::Sub: https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com
+  FunctionArn:
+    Description: "Lambda Function ARN"
+    Value: !GetAtt ExpressFunction.Arn
   Region:
     Description: "Region"
     Value: !Ref AWS::Region
