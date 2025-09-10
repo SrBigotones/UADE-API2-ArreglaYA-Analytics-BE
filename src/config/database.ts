@@ -1,21 +1,32 @@
 import { DataSource } from 'typeorm';
 import { config } from './index';
 import { logger } from './logger';
+import { getDBConfig, DBConfig } from '../utils/ssm-params';
 
-export const AppDataSource = new DataSource({
-  type: 'postgres',
-  host: config.database.host,
-  port: config.database.port,
-  username: config.database.username,
-  password: config.database.password,
-  database: config.database.database,
-  synchronize: config.database.synchronize,
-  logging: config.database.logging,
-  ssl: config.database.ssl,
-  entities: [__dirname + '/../models/*.ts'],
-  migrations: [__dirname + '/../migrations/*.ts'],
-  subscribers: [__dirname + '/../subscribers/*.ts'],
-});
+export const createDataSource = async () => {
+  let dbConfig: DBConfig;
+
+  // Si estamos en producción, obtener los parámetros de SSM
+  if (process.env.NODE_ENV === 'production') {
+    try {
+      dbConfig = await getDBConfig();
+    } catch (error) {
+      logger.error('Error getting database config from SSM:', error);
+      throw error;
+    }
+  } else {
+    dbConfig = config.database as DBConfig;
+  }
+
+  return new DataSource({
+    ...dbConfig,
+    entities: [__dirname + '/../models/*.ts'],
+    migrations: [__dirname + '/../migrations/*.ts'],
+    subscribers: [__dirname + '/../subscribers/*.ts'],
+  });
+};
+
+export let AppDataSource: DataSource;
 
 export const connectDatabase = async (): Promise<void> => {
   try {

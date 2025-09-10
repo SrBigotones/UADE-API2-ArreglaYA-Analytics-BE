@@ -32,11 +32,7 @@ Resources:
         Variables:
           STAGE: 'prod'
           NODE_ENV: 'production'
-          DB_HOST: !Sub '{{resolve:ssm-secure:/arreglaya/analytics/prod/db/host:1}}'
-          DB_PORT: !Sub '{{resolve:ssm-secure:/arreglaya/analytics/prod/db/port:1}}'
-          DB_USERNAME: !Sub '{{resolve:ssm-secure:/arreglaya/analytics/prod/db/username:1}}'
-          DB_PASSWORD: !Sub '{{resolve:ssm-secure:/arreglaya/analytics/prod/db/password:1}}'
-          DB_DATABASE: !Sub '{{resolve:ssm-secure:/arreglaya/analytics/prod/db/name:1}}'
+          SSM_PATH_PREFIX: '/arreglaya/analytics/prod/db'
       Events:
         ApiEvent:
           Type: HttpApi
