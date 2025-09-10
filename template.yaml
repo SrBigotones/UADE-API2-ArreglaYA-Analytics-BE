@@ -10,13 +10,8 @@ Globals:
     Environment:
       Variables:
         NODE_OPTIONS: "--enable-source-maps"
-        STAGE: "local"
-        NODE_ENV: "development"
-        DB_HOST: "host.docker.internal"
-        DB_PORT: "5432"
-        DB_USERNAME: "postgres"
-        DB_PASSWORD: "postgres"
-        DB_DATABASE: "arregla_ya_analytics"
+        STAGE: "prod"
+        NODE_ENV: "production"
 
 Resources:
   Api:
@@ -31,53 +26,32 @@ Resources:
     Properties:
       Policies:
         - Statement:
-          - Effect: Allow
-            Action:
-              - ssm:GetParameter
-              - ssm:GetParameters
-            Resource:
-              - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/arreglaya/analytics/*'
-      CodeUri: .                 # <--- raíz (donde está package.json)
-      Handler: dist/lambda.handler  # <--- apunta al build generado
+            - Effect: Allow
+              Action:
+                - ssm:GetParameter
+                - ssm:GetParameters
+              Resource:
+                - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/arreglaya/analytics/*'
+      CodeUri: .
+      Handler: dist/lambda.handler
       Runtime: nodejs20.x
       Environment:
         Variables:
           API_URL: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com'
           STAGE: 'prod'
           NODE_ENV: 'production'
-          DB_HOST: !Sub '{{resolve:ssm:/arreglaya/analytics/${STAGE}/db/host:1}}'
-          DB_PORT: !Sub '{{resolve:ssm:/arreglaya/analytics/${STAGE}/db/port:1}}'
-          DB_USERNAME: !Sub '{{resolve:ssm:/arreglaya/analytics/${STAGE}/db/username:1}}'
-          DB_PASSWORD: !Sub '{{resolve:ssm:/arreglaya/analytics/${STAGE}/db/password:1}}'
-          DB_DATABASE: !Sub '{{resolve:ssm:/arreglaya/analytics/${STAGE}/db/name:1}}'
+          DB_HOST: !Sub '{{resolve:ssm:/arreglaya/analytics/prod/db/host:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/arreglaya/analytics/prod/db/port:1}}'
+          DB_USERNAME: !Sub '{{resolve:ssm:/arreglaya/analytics/prod/db/username:1}}'
+          DB_PASSWORD: !Sub '{{resolve:ssm:/arreglaya/analytics/prod/db/password:1}}'
+          DB_DATABASE: !Sub '{{resolve:ssm:/arreglaya/analytics/prod/db/name:1}}'
       Events:
-        Any:
+        ApiEvent:
           Type: HttpApi
           Properties:
             ApiId: !Ref Api
             Path: /{proxy+}
-
-Parameters:
-  DBHost:
-    Type: String
-    Default: ''
-    Description: Database host
-  DBPort:
-    Type: String
-    Default: '5432'
-    Description: Database port
-  DBUsername:
-    Type: String
-    Default: ''
-    Description: Database username
-  DBPassword:
-    Type: String
-    Default: ''
-    Description: Database password
-  DBName:
-    Type: String
-    Default: 'arregla_ya_analytics'
-    Description: Database name
+            Method: ANY
 
 Outputs:
   ApiUrl:
@@ -89,8 +63,3 @@ Outputs:
   Region:
     Description: "Region"
     Value: !Ref AWS::Region
-            Method: ANY
-
-Outputs:
-  ApiUrl:
-    Value: !Sub "https://${Api}.execute-api.${AWS::Region}.amazonaws.com"
