@@ -14,13 +14,6 @@ Globals:
         NODE_ENV: "production"
 
 Resources:
-  Api:
-    Type: AWS::Serverless::HttpApi
-    Properties:
-      CorsConfiguration:
-        AllowOrigins: ['*']
-        AllowMethods: ['GET','POST','PUT','DELETE','OPTIONS']
-
   ExpressFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -37,7 +30,6 @@ Resources:
       Runtime: nodejs20.x
       Environment:
         Variables:
-          API_URL: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com'
           STAGE: 'prod'
           NODE_ENV: 'production'
           DB_HOST: !Sub '{{resolve:ssm:/arreglaya/analytics/prod/db/host:1}}'
@@ -49,9 +41,9 @@ Resources:
         ApiEvent:
           Type: HttpApi
           Properties:
-            ApiId: !Ref Api
             Path: /{proxy+}
             Method: ANY
+            PayloadFormatVersion: "2.0"
 
 Outputs:
   ApiUrl:
