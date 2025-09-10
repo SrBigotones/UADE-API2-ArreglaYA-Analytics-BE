@@ -29,6 +29,16 @@ export const createDataSource = async () => {
     subscribers: [__dirname + '/../subscribers/*.{ts,js}'],
   });
 
+  // Verificar la configuración final
+  const finalConfig = AppDataSource.options as DBConfig;
+  logger.info('DataSource configuration:', {
+    host: finalConfig.host,
+    port: finalConfig.port,
+    database: finalConfig.database,
+    username: finalConfig.username,
+    ssl: finalConfig.ssl
+  });
+
   return AppDataSource;
 };
 
@@ -36,14 +46,20 @@ export let AppDataSource: DataSource;
 
 export const connectDatabase = async (): Promise<void> => {
   try {
+    if (!AppDataSource) {
+      throw new Error('DataSource not created. Call createDataSource() first.');
+    }
+
+    const options = AppDataSource.options as DBConfig;
+    
     // Log database configuration details
     logger.info('Attempting to connect to PostgreSQL with configuration:');
-    logger.info(`Host: ${config.database.host}`);
-    logger.info(`Port: ${config.database.port}`);
-    logger.info(`Username: ${config.database.username}`);
-    logger.info(`Database: ${config.database.database}`);
-    logger.info(`SSL: ${JSON.stringify(config.database.ssl)}`);
-    logger.info(`Synchronize: ${config.database.synchronize}`);
+    logger.info(`Host: ${options.host}`);
+    logger.info(`Port: ${options.port}`);
+    logger.info(`Username: ${options.username}`);
+    logger.info(`Database: ${options.database}`);
+    logger.info(`SSL: ${JSON.stringify(options.ssl)}`);
+    logger.info(`Synchronize: ${options.synchronize}`);
     
     await AppDataSource.initialize();
     logger.info('✅ Successfully connected to PostgreSQL database');
