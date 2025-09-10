@@ -39,4 +39,16 @@ jobs:
         continue-on-error: true
       
       - run: sam build --use-container
-      - run: sam deploy --stack-name arreglaya-analytics-be --no-confirm-changeset --capabilities CAPABILITY_IAM --resolve-s3
+      
+      # Deploy with secure parameters
+      - run: >
+          sam deploy 
+          --stack-name arreglaya-analytics-be 
+          --no-confirm-changeset 
+          --capabilities CAPABILITY_IAM 
+          --resolve-s3 
+          --parameter-overrides 
+          DBHost='${{ secrets.DB_HOST }}'
+          DBUsername='${{ secrets.DB_USERNAME }}'
+          DBPassword='${{ secrets.DB_PASSWORD }}'
+          DBName='${{ secrets.DB_NAME }}'

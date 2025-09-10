@@ -29,15 +29,66 @@ Resources:
   ExpressFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+              - ssm:GetParameter
+              - ssm:GetParameters
+            Resource:
+              - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/arreglaya/analytics/*'
       CodeUri: .                 # <--- raíz (donde está package.json)
       Handler: dist/lambda.handler  # <--- apunta al build generado
       Runtime: nodejs20.x
+      Environment:
+        Variables:
+          API_URL: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com'
+          STAGE: 'prod'
+          NODE_ENV: 'production'
+          DB_HOST: !Sub '{{resolve:ssm:/arreglaya/analytics/${STAGE}/db/host:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/arreglaya/analytics/${STAGE}/db/port:1}}'
+          DB_USERNAME: !Sub '{{resolve:ssm:/arreglaya/analytics/${STAGE}/db/username:1}}'
+          DB_PASSWORD: !Sub '{{resolve:ssm:/arreglaya/analytics/${STAGE}/db/password:1}}'
+          DB_DATABASE: !Sub '{{resolve:ssm:/arreglaya/analytics/${STAGE}/db/name:1}}'
       Events:
         Any:
           Type: HttpApi
           Properties:
             ApiId: !Ref Api
             Path: /{proxy+}
+
+Parameters:
+  DBHost:
+    Type: String
+    Default: ''
+    Description: Database host
+  DBPort:
+    Type: String
+    Default: '5432'
+    Description: Database port
+  DBUsername:
+    Type: String
+    Default: ''
+    Description: Database username
+  DBPassword:
+    Type: String
+    Default: ''
+    Description: Database password
+  DBName:
+    Type: String
+    Default: 'arregla_ya_analytics'
+    Description: Database name
+
+Outputs:
+  ApiUrl:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com'
+  FunctionName:
+    Description: "Lambda Function Name"
+    Value: !Ref ExpressFunction
+  Region:
+    Description: "Region"
+    Value: !Ref AWS::Region
             Method: ANY
 
 Outputs:
