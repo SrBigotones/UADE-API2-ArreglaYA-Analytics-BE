@@ -6,15 +6,18 @@ import { getDBConfig, DBConfig } from '../utils/ssm-params';
 export const createDataSource = async () => {
   let dbConfig: DBConfig;
 
-  // Si estamos en producción, obtener los parámetros de SSM
-  if (process.env.NODE_ENV === 'production') {
+  // En AWS Lambda siempre usar SSM
+  if (process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === 'production') {
     try {
+      logger.info('Running in AWS Lambda or production, getting config from SSM...');
       dbConfig = await getDBConfig();
+      logger.info(`Database host from SSM: ${dbConfig.host}`);
     } catch (error) {
       logger.error('Error getting database config from SSM:', error);
       throw error;
     }
   } else {
+    logger.info('Running in development mode, using local config');
     dbConfig = config.database as DBConfig;
   }
 
