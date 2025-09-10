@@ -23,6 +23,7 @@ export interface DBConfig {
     synchronize: boolean;
     logging: boolean;
     ssl: boolean | { rejectUnauthorized: boolean; };
+    migrationsRun?: boolean;
 }
 
 export async function getDBConfig(): Promise<DBConfig> {
@@ -98,9 +99,10 @@ export async function getDBConfig(): Promise<DBConfig> {
             username,
             password,
             database,
-            synchronize: false,  // Por seguridad en producción
+            synchronize: true, // Habilitado para permitir la creación inicial de tablas
             logging: true,
-            ssl: { rejectUnauthorized: false }
+            ssl: { rejectUnauthorized: false },
+            migrationsRun: true // Habilitado para ejecutar migraciones pendientes
         };
     } catch (error: any) {
         logger.error('Failed to retrieve database configuration from SSM:', error);
