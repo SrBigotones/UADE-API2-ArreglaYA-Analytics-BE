@@ -18,11 +18,7 @@ Resources:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: $default
-      Domain:
-        DomainName: arreglaya-metrics-api.execute-api.us-east-1.amazonaws.com
-        CertificateArn: arn:aws:acm:us-east-1:478217620370:certificate/e0e6eaa0-0141-43bc-bd5e-f3f4ab2f9324
-        EndpointConfiguration: REGIONAL
-        SecurityPolicy: TLS_1_2
+      DisableExecuteApiEndpoint: false
 
   ExpressFunction:
     Type: AWS::Serverless::Function
@@ -62,7 +58,7 @@ Resources:
 Outputs:
   ApiUrl:
     Description: "API Gateway endpoint URL"
-    Value: !Sub https://arreglaya-metrics-api.execute-api.${AWS::Region}.amazonaws.com
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
   FunctionArn:
     Description: "Lambda Function ARN"
     Value: !GetAtt ExpressFunction.Arn
