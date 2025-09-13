@@ -19,3 +19,10 @@ export const errorHandler = (
     error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
   });
 };
+
+/**
+ * Async handler wrapper to catch async errors in route handlers
+ */
+export const asyncHandler = (fn: Function) => (req: Request, res: Response, next: NextFunction) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
+};

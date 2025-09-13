@@ -5,8 +5,13 @@ import { logger } from '../config/logger';
 import { UserMetrics, ServiceMetrics, RequestMetrics, PaymentMetrics, ProviderMetrics } from '../types';
 
 export class MetricsService {
-  private eventRepository = AppDataSource.getRepository(Event);
-  private metricRepository = AppDataSource.getRepository(Metric);
+  private get eventRepository() {
+    return AppDataSource.getRepository(Event);
+  }
+  
+  private get metricRepository() {
+    return AppDataSource.getRepository(Metric);
+  }
 
   public async processEvent(event: Event): Promise<void> {
     try {

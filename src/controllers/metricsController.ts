@@ -6,7 +6,9 @@ import { MetricsService } from '../services/MetricsService';
 
 export class MetricsController {
   private metricsService: MetricsService;
-  private metricRepository = AppDataSource.getRepository(Metric);
+  private get metricRepository() {
+    return AppDataSource.getRepository(Metric);
+  }
 
   constructor() {
     this.metricsService = new MetricsService();

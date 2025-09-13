@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-export const config = {
+const config = {
   port: process.env.PORT || 3000,
   nodeEnv: process.env.NODE_ENV || 'development',
   database: {
@@ -20,7 +20,11 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || 'your-jwt-secret-key',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
   urlFront: process.env.URL_FRONT || 'http://localhost:3001',
-  coreHubUrl: process.env.CORE_HUB_URL || 'http://localhost:8080',
+  coreHub: {
+    url: process.env.CORE_HUB_URL || 'http://localhost:8080',
+    timeout: parseInt(process.env.CORE_HUB_TIMEOUT || '10000'),
+    retries: parseInt(process.env.CORE_HUB_RETRIES || '3'),
+  },
   webhookSecret: process.env.WEBHOOK_SECRET || 'your-webhook-secret',
   aws: {
     region: process.env.AWS_REGION || 'us-east-1',
@@ -31,3 +35,6 @@ export const config = {
     level: process.env.LOG_LEVEL || 'info',
   },
 };
+
+export default config;
+export { config };

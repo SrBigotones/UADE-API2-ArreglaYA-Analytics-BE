@@ -6,19 +6,27 @@ import { getDBConfig, DBConfig } from '../utils/ssm-params';
 export const createDataSource = async () => {
   let dbConfig: DBConfig;
 
+  // Debug environment variables
+  logger.info('Environment check:', {
+    AWS_LAMBDA_FUNCTION_NAME: process.env.AWS_LAMBDA_FUNCTION_NAME,
+    NODE_ENV: process.env.NODE_ENV
+  });
+
   // En AWS Lambda siempre usar SSM
   if (process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === 'production') {
     try {
       logger.info('Running in AWS Lambda or production, getting config from SSM...');
       dbConfig = await getDBConfig();
-      logger.info(`Database host from SSM: ${dbConfig.host}`);
+      logger.info(`Database host from SSM: ${dbConfig.host}:${dbConfig.port}`);
     } catch (error) {
       logger.error('Error getting database config from SSM:', error);
-      throw error;
+      logger.info('Falling back to local config due to SSM error...');
+      dbConfig = config.database as DBConfig;
     }
   } else {
     logger.info('Running in development mode, using local config');
     dbConfig = config.database as DBConfig;
+    logger.info(`Local database config: ${dbConfig.host}:${dbConfig.port}`);
   }
 
   // Crear una nueva instancia de DataSource
@@ -47,7 +55,8 @@ export let AppDataSource: DataSource;
 export const connectDatabase = async (): Promise<void> => {
   try {
     if (!AppDataSource) {
-      throw new Error('DataSource not created. Call createDataSource() first.');
+      logger.info('DataSource not created yet, creating it now...');
+      await createDataSource();
     }
 
     const options = AppDataSource.options as DBConfig;

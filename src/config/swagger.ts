@@ -20,7 +20,7 @@ const options = {
         description: 'Servidor de desarrollo'
       },
       {
-        url: config.coreHubUrl,
+        url: config.coreHub.url,
         description: 'Core Hub'
       }
     ],

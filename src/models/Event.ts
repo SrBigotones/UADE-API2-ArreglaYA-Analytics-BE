@@ -26,6 +26,19 @@ export class Event {
   @Column({ type: 'boolean', default: false })
   processed: boolean;
 
+  // Core Hub specific fields for message tracking and correlation
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  @Index()
+  messageId?: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  @Index()
+  correlationId?: string;
+
+  @Column({ type: 'varchar', length: 50, nullable: true, default: 'unknown' })
+  @Index()
+  source?: string; // 'core-hub', 'direct-webhook', etc.
+
   @CreateDateColumn()
   createdAt: Date;
 

@@ -63,6 +63,77 @@ router.post('/', webhookValidation, webhookController.handleWebhook.bind(webhook
 
 /**
  * @swagger
+ * /api/webhooks/core-hub:
+ *   post:
+ *     summary: Recibir eventos del Core Hub
+ *     description: Endpoint específico para recibir eventos del sistema Core Hub
+ *     tags: [Webhooks]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               messageId:
+ *                 type: string
+ *                 format: uuid
+ *               destination:
+ *                 type: object
+ *                 properties:
+ *                   channel:
+ *                     type: string
+ *                   routingKey:
+ *                     type: string
+ *               payload:
+ *                 type: object
+ *               timestamp:
+ *                 type: string
+ *                 format: date-time
+ *     responses:
+ *       200:
+ *         description: Evento del Core Hub procesado exitosamente
+ *       401:
+ *         description: Firma de webhook inválida
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.post('/core-hub', webhookController.handleCoreHubWebhook.bind(webhookController));
+
+/**
+ * @swagger
+ * /api/webhooks/subscription-status:
+ *   get:
+ *     summary: Estado de las suscripciones
+ *     description: Obtiene el estado actual de las suscripciones al Core Hub
+ *     tags: [Webhooks]
+ *     responses:
+ *       200:
+ *         description: Estado de las suscripciones
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     initialized:
+ *                       type: boolean
+ *                     subscriptionCount:
+ *                       type: integer
+ *                     activeSubscriptions:
+ *                       type: integer
+ *                     timestamp:
+ *                       type: string
+ *                       format: date-time
+ */
+router.get('/subscription-status', webhookController.getSubscriptionStatus.bind(webhookController));
+
+/**
+ * @swagger
  * /api/webhooks:
  *   get:
  *     summary: Obtener eventos
@@ -104,6 +175,22 @@ router.post('/', webhookValidation, webhookController.handleWebhook.bind(webhook
  *         schema:
  *           type: boolean
  *         description: Filtrar por estado de procesamiento
+ *       - in: query
+ *         name: source
+ *         schema:
+ *           type: string
+ *         description: Filtrar por fuente del evento
+ *         example: "core-hub"
+ *       - in: query
+ *         name: messageId
+ *         schema:
+ *           type: string
+ *         description: Filtrar por ID de mensaje del Core Hub
+ *       - in: query
+ *         name: correlationId
+ *         schema:
+ *           type: string
+ *         description: Filtrar por ID de correlación
  *     responses:
  *       200:
  *         description: Lista de eventos
