@@ -9,7 +9,7 @@ const logDir = process.env.AWS_LAMBDA_FUNCTION_NAME ? '/tmp/logs' : 'logs';
 try {
   fs.mkdirSync(logDir, { recursive: true });
 } catch (error) {
-  console.warn(`Failed to create log directory: ${error}`);
+  console.warn(`Failed to create log director: ${error}`);
 }
 
 const logger = winston.createLogger({
