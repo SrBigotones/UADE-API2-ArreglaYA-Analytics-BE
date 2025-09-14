@@ -74,3 +74,28 @@ export interface ProviderMetrics {
     totalReviews: number;
   }>;
 }
+
+// Nuevos tipos para los endpoints de métricas específicos
+export interface CardMetricResponse {
+  value: number;
+  change: number;
+  changeType: 'porcentaje' | 'absoluto';
+  changeStatus: 'positivo' | 'negativo';
+}
+
+export interface PieMetricResponse {
+  [key: string]: number;
+}
+
+export interface DateRangeFilter {
+  startDate: Date;
+  endDate: Date;
+  previousStartDate: Date;
+  previousEndDate: Date;
+}
+
+export interface PeriodType {
+  type: 'hoy' | 'ultimos_7_dias' | 'ultimos_30_dias' | 'ultimo_ano' | 'personalizado';
+  startDate?: string;
+  endDate?: string;
+}

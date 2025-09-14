@@ -8,6 +8,7 @@ import morgan from 'morgan';
 // importa tus rutas, middlewares, swagger, etc.
 import webhookRoutes from './routes/webhooks';
 import metricsRoutes from './routes/metrics';
+import newMetricsRoutes from './routes/newMetrics';
 import { errorHandler } from './middleware/errorHandler';
 import { swaggerUi, specs } from './config/swagger';
 
@@ -22,6 +23,7 @@ app.use(morgan('combined'));
 app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/metrics', metricsRoutes);
+app.use('/api/metrica', newMetricsRoutes);
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
