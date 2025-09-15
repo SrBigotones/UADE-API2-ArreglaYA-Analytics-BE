@@ -69,7 +69,7 @@ export const handler = async (event: any, context: any) => {
     
     const serverlessHandler = serverless({ app });
     console.log('Serverless handler created');
-    return serverlessHandler(event, context);
+    return serverlessHandler(event, context, () => {});
   } catch (error: any) {
     console.error('Error in handler:', error);
     return {

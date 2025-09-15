@@ -49,5 +49,5 @@ export const handler = async (event: any, context: any) => {
   const serverlessHandler = serverless({ app });
   
   console.log('Lambda: Processing request');
-  return serverlessHandler(event, context);
+  return serverlessHandler(event, context, () => {});
 };
