@@ -2,6 +2,7 @@ import { DataSource } from 'typeorm';
 import { config } from './index';
 import { logger } from './logger';
 import { getDBConfig, DBConfig } from '../utils/ssm-params';
+import { MigrationService } from '../services/MigrationService';
 
 export const createDataSource = async () => {
   let dbConfig: DBConfig;
@@ -72,6 +73,10 @@ export const connectDatabase = async (): Promise<void> => {
     
     await AppDataSource.initialize();
     logger.info('✅ Successfully connected to PostgreSQL database');
+
+    // Ejecutar migraciones automáticamente después de conectar
+    await runMigrationsOnConnect();
+    
   } catch (error) {
     logger.error('❌ PostgreSQL connection error:', error);
     logger.error('Connection failed with the following configuration:');
@@ -79,6 +84,35 @@ export const connectDatabase = async (): Promise<void> => {
     logger.error(`Database: ${config.database.database}`);
     logger.error(`Username: ${config.database.username}`);
     throw error;
+  }
+};
+
+const runMigrationsOnConnect = async (): Promise<void> => {
+  try {
+    const migrationService = new MigrationService();
+    
+    // Ejecutar migraciones de esquema
+    await migrationService.runMigrationsOnStartup();
+    
+    // Ejecutar seeds solo en desarrollo/testing
+    if (config.nodeEnv === 'development' || config.nodeEnv === 'test') {
+      await migrationService.runSeeds();
+    }
+    
+    // Mostrar información de estado
+    const info = await migrationService.getMigrationInfo();
+    if (info) {
+      logger.info(`📊 Estado de migraciones: ${info.migrations} migraciones, ${info.seeds} seeds aplicados`);
+    }
+    
+  } catch (error) {
+    logger.error('❌ Error en migraciones automáticas:', error);
+    // En desarrollo, continuar sin fallar
+    if (config.nodeEnv === 'development') {
+      logger.warn('⚠️  Continuando en modo desarrollo sin migraciones...');
+    } else {
+      throw error;
+    }
   }
 };
 
