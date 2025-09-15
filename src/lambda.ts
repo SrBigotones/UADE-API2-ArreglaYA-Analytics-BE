@@ -1,7 +1,8 @@
 import 'reflect-metadata';
-import serverless from '@vendia/serverless-express';
 import express from 'express';
+import serverless from '@vendia/serverless-express';
 import { connectDatabase, createDataSource, AppDataSource } from './config/database';
+import { Context, APIGatewayProxyEvent } from 'aws-lambda';
 
 // Variable global para el estado de la DB
 let dbInitialized = false;
