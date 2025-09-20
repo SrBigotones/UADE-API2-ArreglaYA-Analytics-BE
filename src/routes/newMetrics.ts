@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { NewMetricsController } from '../controllers/NewMetricsController';
+import { MetricsController } from '../controllers/metricsController';
 
 const router = Router();
-const newMetricsController = new NewMetricsController();
+const newMetricsController = new MetricsController();
 
 /**
  * @swagger
@@ -300,5 +300,173 @@ router.get('/pagos/distribucion', newMetricsController.getPagosDistribucion.bind
  *         description: Error en los parámetros de entrada
  */
 router.get('/pagos/tiempoProcesamiento', newMetricsController.getPagosTiempoProcesamiento.bind(newMetricsController));
+
+/**
+ * @swagger
+ * /api/metrica/pedidos/mapa-calor:
+ *   get:
+ *     summary: Mapa de calor de pedidos por ubicación
+ *     description: Obtiene datos de mapa de calor para visualizar la distribución geográfica de pedidos
+ *     tags: [Mapas de Calor]
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [hoy, ultimos_7_dias, ultimos_30_dias, ultimo_ano, personalizado]
+ *         description: Período de tiempo a analizar
+ *         example: "ultimos_7_dias"
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Fecha de inicio (solo para período personalizado)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Fecha de fin (solo para período personalizado)
+ *     responses:
+ *       200:
+ *         description: Datos del mapa de calor de pedidos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           lat:
+ *                             type: number
+ *                             description: Latitud
+ *                             example: -34.6037
+ *                           lon:
+ *                             type: number
+ *                             description: Longitud
+ *                             example: -58.3816
+ *                           intensity:
+ *                             type: number
+ *                             description: Intensidad del punto de calor
+ *                             example: 15
+ *                     totalPoints:
+ *                       type: number
+ *                       description: Total de puntos en el mapa
+ *                       example: 25
+ *                     period:
+ *                       type: object
+ *                       properties:
+ *                         startDate:
+ *                           type: string
+ *                           format: date-time
+ *                         endDate:
+ *                           type: string
+ *                           format: date-time
+ *       400:
+ *         description: Error en los parámetros de entrada
+ */
+router.get('/pedidos/mapa-calor', newMetricsController.getPedidosMapaCalor.bind(newMetricsController));
+
+/**
+ * @swagger
+ * /api/metrica/prestadores/zonas:
+ *   get:
+ *     summary: Tipos de prestadores por zonas geográficas
+ *     description: Obtiene la distribución de tipos de prestadores por ubicación geográfica
+ *     tags: [Mapas de Calor]
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [hoy, ultimos_7_dias, ultimos_30_dias, ultimo_ano, personalizado]
+ *         description: Período de tiempo a analizar
+ *         example: "ultimos_7_dias"
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Fecha de inicio (solo para período personalizado)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Fecha de fin (solo para período personalizado)
+ *     responses:
+ *       200:
+ *         description: Datos de tipos de prestadores por zonas
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           lat:
+ *                             type: number
+ *                             description: Latitud
+ *                             example: -34.6037
+ *                           lon:
+ *                             type: number
+ *                             description: Longitud
+ *                             example: -58.3816
+ *                           providerType:
+ *                             type: string
+ *                             description: Tipo de prestador
+ *                             example: "plomero"
+ *                           count:
+ *                             type: number
+ *                             description: Cantidad de prestadores de este tipo en la zona
+ *                             example: 5
+ *                           zoneName:
+ *                             type: string
+ *                             description: Nombre de la zona geográfica
+ *                             example: "Buenos Aires"
+ *                     totalProviders:
+ *                       type: number
+ *                       description: Total de prestadores
+ *                       example: 150
+ *                     providerTypes:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       description: Lista de tipos de prestadores únicos
+ *                       example: ["plomero", "electricista", "carpintero"]
+ *                     period:
+ *                       type: object
+ *                       properties:
+ *                         startDate:
+ *                           type: string
+ *                           format: date-time
+ *                         endDate:
+ *                           type: string
+ *                           format: date-time
+ *       400:
+ *         description: Error en los parámetros de entrada
+ */
+router.get('/prestadores/zonas', newMetricsController.getPrestadoresZonas.bind(newMetricsController));
 
 export default router;

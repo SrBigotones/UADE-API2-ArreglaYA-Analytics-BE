@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa de Calor - ArreglaYA Analytics</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Leaflet Heat CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.css" />
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 8px;
+        }
+        
+        .controls select, .controls button {
+            margin-right: 10px;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .controls button {
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .controls button:hover {
+            background: #0056b3;
+        }
+        
+        #map {
+            height: 600px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .info {
+            margin-top: 15px;
+            padding: 10px;
+            background: #e9ecef;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Mapa de Calor - ArreglaYA Analytics</h1>
+        
+        <div class="controls">
+            <label for="dataType">Tipo de datos:</label>
+            <select id="dataType">
+                <option value="pedidos">Pedidos</option>
+                <option value="prestadores">Prestadores por Zonas</option>
+            </select>
+            
+            <label for="period">Período:</label>
+            <select id="period">
+                <option value="hoy">Hoy</option>
+                <option value="ultimos_7_dias" selected>Últimos 7 días</option>
+                <option value="ultimos_30_dias">Últimos 30 días</option>
+                <option value="ultimo_ano">Último año</option>
+            </select>
+            
+            <button onclick="loadData()">Cargar Datos</button>
+            <button onclick="clearMap()">Limpiar Mapa</button>
+        </div>
+        
+        <div id="map"></div>
+        
+        <div class="info">
+            <h3>Información del Mapa</h3>
+            <p id="mapInfo">Selecciona un tipo de datos y haz clic en "Cargar Datos" para ver el mapa de calor.</p>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Leaflet Heat Plugin -->
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+
+    <script>
+        // Configuración del mapa
+        const map = L.map('map').setView([-34.6037, -58.3816], 10); // Buenos Aires por defecto
+        
+        // Agregar capa de tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        
+        let heatLayer = null;
+        let markersLayer = null;
+        
+        // Función para cargar datos desde la API
+        async function loadData() {
+            const dataType = document.getElementById('dataType').value;
+            const period = document.getElementById('period').value;
+            
+            try {
+                // Limpiar mapa anterior
+                clearMap();
+                
+                // Construir URL de la API
+                const apiUrl = `http://localhost:3000/api/metrica/${dataType === 'pedidos' ? 'pedidos/mapa-calor' : 'prestadores/zonas'}?period=${period}`;
+                
+                console.log('Cargando datos desde:', apiUrl);
+                
+                const response = await fetch(apiUrl);
+                const result = await response.json();
+                
+                if (result.success) {
+                    displayData(result.data, dataType);
+                } else {
+                    console.error('Error en la API:', result.message);
+                    document.getElementById('mapInfo').textContent = `Error: ${result.message}`;
+                }
+                
+            } catch (error) {
+                console.error('Error al cargar datos:', error);
+                document.getElementById('mapInfo').textContent = `Error al cargar datos: ${error.message}`;
+            }
+        }
+        
+        // Función para mostrar los datos en el mapa
+        function displayData(data, dataType) {
+            if (dataType === 'pedidos') {
+                displayHeatmap(data);
+            } else {
+                displayProviderZones(data);
+            }
+            
+            // Actualizar información
+            document.getElementById('mapInfo').innerHTML = `
+                <strong>Tipo:</strong> ${dataType === 'pedidos' ? 'Pedidos' : 'Prestadores por Zonas'}<br>
+                <strong>Período:</strong> ${data.period.startDate} - ${data.period.endDate}<br>
+                <strong>Total de puntos:</strong> ${data.totalPoints || data.data.length}<br>
+                ${dataType === 'prestadores' ? `<strong>Tipos de prestadores:</strong> ${data.providerTypes.join(', ')}` : ''}
+            `;
+        }
+        
+        // Función para mostrar mapa de calor de pedidos
+        function displayHeatmap(data) {
+            if (data.data.length === 0) {
+                document.getElementById('mapInfo').textContent = 'No hay datos de pedidos para el período seleccionado.';
+                return;
+            }
+            
+            // Convertir datos al formato requerido por Leaflet.heat
+            const heatData = data.data.map(point => [point.lat, point.lon, point.intensity]);
+            
+            // Crear capa de calor
+            heatLayer = L.heatLayer(heatData, {
+                radius: 25,
+                blur: 15,
+                maxZoom: 17,
+                max: 1.0,
+                gradient: {
+                    0.4: 'blue',
+                    0.6: 'cyan',
+                    0.7: 'lime',
+                    0.8: 'yellow',
+                    1.0: 'red'
+                }
+            }).addTo(map);
+            
+            // Ajustar vista del mapa para mostrar todos los puntos
+            if (heatData.length > 0) {
+                const group = new L.featureGroup();
+                heatData.forEach(([lat, lon]) => {
+                    group.addLayer(L.marker([lat, lon]));
+                });
+                map.fitBounds(group.getBounds().pad(0.1));
+            }
+        }
+        
+        // Función para mostrar prestadores por zonas
+        function displayProviderZones(data) {
+            if (data.data.length === 0) {
+                document.getElementById('mapInfo').textContent = 'No hay datos de prestadores para el período seleccionado.';
+                return;
+            }
+            
+            // Crear capa de marcadores
+            markersLayer = L.layerGroup().addTo(map);
+            
+            // Colores para diferentes tipos de prestadores
+            const colors = {
+                'plomero': 'blue',
+                'electricista': 'red',
+                'carpintero': 'green',
+                'pintor': 'orange',
+                'albañil': 'purple',
+                'unknown': 'gray'
+            };
+            
+            data.data.forEach(zone => {
+                const color = colors[zone.providerType] || 'gray';
+                
+                const marker = L.circleMarker([zone.lat, zone.lon], {
+                    radius: Math.max(5, Math.min(20, zone.count * 2)),
+                    fillColor: color,
+                    color: '#000',
+                    weight: 1,
+                    opacity: 1,
+                    fillOpacity: 0.7
+                });
+                
+                marker.bindPopup(`
+                    <strong>Zona:</strong> ${zone.zoneName || 'Sin nombre'}<br>
+                    <strong>Tipo:</strong> ${zone.providerType}<br>
+                    <strong>Cantidad:</strong> ${zone.count}
+                `);
+                
+                markersLayer.addLayer(marker);
+            });
+            
+            // Ajustar vista del mapa
+            if (data.data.length > 0) {
+                const group = new L.featureGroup();
+                data.data.forEach(zone => {
+                    group.addLayer(L.marker([zone.lat, zone.lon]));
+                });
+                map.fitBounds(group.getBounds().pad(0.1));
+            }
+        }
+        
+        // Función para limpiar el mapa
+        function clearMap() {
+            if (heatLayer) {
+                map.removeLayer(heatLayer);
+                heatLayer = null;
+            }
+            
+            if (markersLayer) {
+                map.removeLayer(markersLayer);
+                markersLayer = null;
+            }
+            
+            document.getElementById('mapInfo').textContent = 'Mapa limpiado.';
+        }
+        
+        // Cargar datos iniciales
+        loadData();
+    </script>
+</body>
+</html>
