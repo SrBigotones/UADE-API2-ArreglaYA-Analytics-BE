@@ -99,3 +99,37 @@ export interface PeriodType {
   startDate?: string;
   endDate?: string;
 }
+
+// Tipos para mapas de calor
+export interface HeatmapPoint {
+  lat: number;
+  lon: number;
+  intensity: number;
+}
+
+export interface HeatmapResponse {
+  data: HeatmapPoint[];
+  totalPoints: number;
+  period: {
+    startDate: string;
+    endDate: string;
+  };
+}
+
+export interface ProviderZoneData {
+  lat: number;
+  lon: number;
+  providerType: string;
+  count: number;
+  zoneName?: string;
+}
+
+export interface ProviderZonesResponse {
+  data: ProviderZoneData[];
+  totalProviders: number;
+  providerTypes: string[];
+  period: {
+    startDate: string;
+    endDate: string;
+  };
+}
