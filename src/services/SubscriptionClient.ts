@@ -10,19 +10,26 @@ import config from '../config';
 
 /**
  * HTTP Client for Core Hub Subscription API
- * Handles all communication with the uade-core-backend subscription endpoints
+ * Handles all communication with the core subscription endpoints
  */
 export class SubscriptionClient {
   private client: AxiosInstance;
 
   constructor() {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    };
+
+    // Add X-API-KEY header if configured
+    if (config.coreHub.apiKey) {
+      headers['X-API-KEY'] = config.coreHub.apiKey;
+    }
+
     this.client = axios.create({
       baseURL: config.coreHub.url,
       timeout: config.coreHub.timeout,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      }
+      headers
     });
 
     // Add request interceptor for logging
@@ -160,6 +167,24 @@ export class SubscriptionClient {
       
     } catch (error) {
       logger.error(`Failed to fetch stats for squad ${squadName}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Send ACK for a processed message
+   */
+  async acknowledgeMessage(messageId: string, subscriptionId?: string): Promise<void> {
+    try {
+      logger.debug(`Sending ACK for message: ${messageId}`, { subscriptionId });
+      
+      const params = subscriptionId ? { subscriptionId } : {};
+      await this.client.post(`/messages/${messageId}/ack`, null, { params });
+      
+      logger.debug(`ACK sent successfully for message: ${messageId}`);
+      
+    } catch (error) {
+      logger.error(`Failed to send ACK for message ${messageId}:`, error);
       throw error;
     }
   }
