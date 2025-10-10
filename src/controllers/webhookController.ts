@@ -16,7 +16,7 @@ export class WebhookController {
 
   public async handleWebhook(req: Request, res: Response): Promise<void> {
     try {
-      const { queue, event }: { queue: string; event: EventMessage } = req.body;
+      const { queue, event, correlationId }: { queue: string; event: EventMessage; correlationId?: string } = req.body;
 
       logger.info(`Received webhook for queue: ${queue}`, { event });
 
@@ -28,7 +28,9 @@ export class WebhookController {
         evento: event.evento,
         cuerpo: event.cuerpo,
         timestamp: event.timestamp || new Date(),
-        processed: false
+        processed: false,
+        correlationId: correlationId,
+        source: 'direct-webhook'
       });
 
       await eventRepository.save(newEvent);

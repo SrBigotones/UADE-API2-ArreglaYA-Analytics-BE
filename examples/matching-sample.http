@@ -1,0 +1,103 @@
+### Seed sample events (run each line in VSCode/Rest Client or Postman)
+POST http://localhost:3000/api/webhooks
+Content-Type: application/json
+
+{
+  "queue": "request-events",
+  "event": {
+    "squad": "App de búsqueda y solicitudes",
+    "topico": "Requests",
+    "evento": "Solicitud Creada",
+    "cuerpo": { "requestId": "R-1" },
+    "timestamp": "2025-10-01T10:00:00.000Z"
+  },
+  "correlationId": "R-1"
+}
+
+###
+POST http://localhost:3000/api/webhooks
+Content-Type: application/json
+
+{
+  "queue": "matching-events",
+  "event": {
+    "squad": "Matching y Agenda",
+    "topico": "Matching",
+    "evento": "Cotización Emitida",
+    "cuerpo": { "requestId": "R-1" },
+    "timestamp": "2025-10-01T10:05:00.000Z"
+  },
+  "correlationId": "R-1"
+}
+
+###
+POST http://localhost:3000/api/webhooks
+Content-Type: application/json
+
+{
+  "queue": "matching-events",
+  "event": {
+    "squad": "Matching y Agenda",
+    "topico": "Matching",
+    "evento": "Cotización Aceptada",
+    "cuerpo": { "requestId": "R-1" },
+    "timestamp": "2025-10-01T10:06:00.000Z"
+  },
+  "correlationId": "R-1"
+}
+
+### Second flow (rejected)
+POST http://localhost:3000/api/webhooks
+Content-Type: application/json
+
+{
+  "queue": "request-events",
+  "event": {
+    "squad": "App de búsqueda y solicitudes",
+    "topico": "Requests",
+    "evento": "Solicitud Creada",
+    "cuerpo": { "requestId": "R-2" },
+    "timestamp": "2025-10-02T12:00:00.000Z"
+  },
+  "correlationId": "R-2"
+}
+
+###
+POST http://localhost:3000/api/webhooks
+Content-Type: application/json
+
+{
+  "queue": "matching-events",
+  "event": {
+    "squad": "Matching y Agenda",
+    "topico": "Matching",
+    "evento": "Cotización Emitida",
+    "cuerpo": { "requestId": "R-2" },
+    "timestamp": "2025-10-02T13:00:00.000Z"
+  },
+  "correlationId": "R-2"
+}
+
+###
+POST http://localhost:3000/api/webhooks
+Content-Type: application/json
+
+{
+  "queue": "matching-events",
+  "event": {
+    "squad": "Matching y Agenda",
+    "topico": "Matching",
+    "evento": "Cotización Rechazada",
+    "cuerpo": { "requestId": "R-2" },
+    "timestamp": "2025-10-02T13:10:00.000Z"
+  },
+  "correlationId": "R-2"
+}
+
+### Query new endpoints (example using últimos 30 días)
+GET http://localhost:3000/api/metrica/matching/conversion?period=ultimos_30_dias
+
+###
+GET http://localhost:3000/api/metrica/matching/lead-time?period=ultimos_30_dias
+
+

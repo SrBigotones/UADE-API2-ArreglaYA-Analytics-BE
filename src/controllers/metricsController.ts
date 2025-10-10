@@ -113,6 +113,104 @@ export class MetricsController extends BaseMetricsCalculator {
   }
 
   /**
+   * Calcula la tasa de conversión de Matching a Cotización Aceptada
+   * (cotizaciones aceptadas / cotizaciones completadas [aceptadas o rechazadas]) * 100
+   */
+  private async calculateMatchingConversionRate(startDate: Date, endDate: Date): Promise<number> {
+    const emitted = await this.getEventsByType('Cotización Emitida', startDate, endDate);
+    if (emitted.length === 0) return 0;
+
+    const [accepted, rejected] = await Promise.all([
+      this.getEventsByType('Cotización Aceptada', startDate, endDate),
+      this.getEventsByType('Cotización Rechazada', startDate, endDate)
+    ]);
+
+    const acceptedIds = new Set(accepted.filter(e => e.correlationId).map(e => e.correlationId!));
+    const rejectedIds = new Set(rejected.filter(e => e.correlationId).map(e => e.correlationId!));
+
+    let successfulCount = 0;
+    let completedCount = 0;
+    for (const em of emitted) {
+      if (!em.correlationId) continue;
+      const cid = em.correlationId;
+      if (acceptedIds.has(cid)) {
+        successfulCount++; completedCount++;
+      } else if (rejectedIds.has(cid)) {
+        completedCount++;
+      }
+    }
+
+    if (completedCount === 0) return 0;
+    const rate = (successfulCount / completedCount) * 100;
+    return Math.round(rate * 100) / 100;
+  }
+
+  /**
+   * GET /api/metrica/matching/conversion
+   * Tasa de conversión de Matching a Cotización Aceptada (tipo card)
+   */
+  public async getMatchingConversion(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const currentRate = await this.calculateMatchingConversionRate(
+        dateRanges.startDate,
+        dateRanges.endDate
+      );
+      const previousRate = await this.calculateMatchingConversionRate(
+        dateRanges.previousStartDate,
+        dateRanges.previousEndDate
+      );
+
+      const metric = this.calculateCardMetric(currentRate, previousRate, 'absoluto');
+
+      res.status(200).json({ success: true, data: metric });
+    } catch (error) {
+      logger.error('Error getting matching conversion metrics:', error);
+      res.status(400).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Error desconocido',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
+  /**
+   * GET /api/metrica/matching/lead-time
+   * Tiempo promedio desde "Solicitud Creada" a "Cotización Emitida" (minutos)
+   */
+  public async getMatchingLeadTime(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      // Período actual
+      const currentCreatedReq = await this.getEventsByType('Solicitud Creada', dateRanges.startDate, dateRanges.endDate);
+      const currentQuoted = await this.getEventsByType('Cotización Emitida', dateRanges.startDate, dateRanges.endDate);
+      const currentLifecycle = this.getCompleteLifecycleEvents(currentCreatedReq, currentQuoted, dateRanges.startDate, dateRanges.endDate);
+      const currentAvg = this.calculateAverageProcessingTime(currentLifecycle.created, currentLifecycle.completed);
+
+      // Período anterior
+      const prevCreatedReq = await this.getEventsByType('Solicitud Creada', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevQuoted = await this.getEventsByType('Cotización Emitida', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevLifecycle = this.getCompleteLifecycleEvents(prevCreatedReq, prevQuoted, dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevAvg = this.calculateAverageProcessingTime(prevLifecycle.created, prevLifecycle.completed);
+
+      const metric = this.calculateCardMetric(currentAvg, prevAvg, 'absoluto');
+
+      res.status(200).json({ success: true, data: metric });
+    } catch (error) {
+      logger.error('Error getting matching lead time:', error);
+      res.status(400).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Error desconocido',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
+  /**
    * GET /api/metrica/usuarios/creados
    * Métricas de usuarios creados (tipo card)
    */
