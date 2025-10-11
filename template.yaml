@@ -2,6 +2,17 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: ArreglaYA Metrics BE - Express on Lambda + HTTP API
 
+Parameters:
+  Stage:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - prod
+      - stage
+
+Conditions:
+  IsProduction: !Equals [!Ref Stage, 'prod']
+
 Globals:
   Function:
     Runtime: nodejs20.x
@@ -37,9 +48,9 @@ Resources:
       Runtime: nodejs20.x
       Environment:
         Variables:
-          STAGE: 'prod'
-          NODE_ENV: 'production'
-          SSM_PATH_PREFIX: '/arreglaya/analytics/prod/db'
+          STAGE: !Ref Stage
+          NODE_ENV: !If [IsProduction, 'production', 'development']
+          SSM_PATH_PREFIX: !Sub '/arreglaya/analytics/${Stage}/db'
       VpcConfig:
         SecurityGroupIds:
           - sg-06cb3c7cc1c6a444b

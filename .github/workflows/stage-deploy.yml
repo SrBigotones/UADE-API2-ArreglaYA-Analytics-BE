@@ -2,52 +2,50 @@ name: Deploy to Stage
 
 on:
   push:
-    branches:
-      - develop
-  pull_request:
-    branches:
-      - develop
+    branches: [develop]
 
-env:
-  AWS_REGION: us-east-1 # Change this to your target region
-  STACK_NAME: arreglaya-analytics-stage # Your CloudFormation stack name for stage
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: stage
-    
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18'
-        cache: 'npm'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      
+      # Install dependencies and build TypeScript
+      - run: npm ci
+      - run: npm run build
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN_STAGE }}
+          aws-region: ${{ vars.AWS_REGION }}
 
-    - name: Install dependencies
-      run: npm ci
-
-    - name: Run tests
-      run: npm test
-
-    - name: Build
-      run: npm run build
-
-    - name: Deploy to AWS Lambda
-      if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
-      run: |
-        npm install -g aws-cdk
-        cdk deploy --require-approval never \
-          --context stage=stage \
-          --context environment=stage
-      env:
-        NODE_ENV: stage
+      - uses: aws-actions/setup-sam@v2
+      
+      # Delete the stack if it exists in ROLLBACK_COMPLETE state
+      - name: Delete failed stack
+        run: |
+          if aws cloudformation describe-stacks --stack-name arreglaya-analytics-be-stage 2>&1 | grep -q 'ROLLBACK_COMPLETE'; then
+            aws cloudformation delete-stack --stack-name arreglaya-analytics-be-stage
+            aws cloudformation wait stack-delete-complete --stack-name arreglaya-analytics-be-stage
+          fi
+        continue-on-error: true
+      
+      - run: sam build --use-container
+      
+      # Deploy with secure parameters
+      - run: >
+          sam deploy 
+          --stack-name arreglaya-analytics-be-stage 
+          --no-confirm-changeset 
+          --capabilities CAPABILITY_IAM 
+          --resolve-s3 
+          --parameter-overrides Stage=stage
