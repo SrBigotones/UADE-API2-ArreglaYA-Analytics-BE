@@ -9,6 +9,7 @@ import morgan from 'morgan';
 import webhookRoutes from './routes/webhooks';
 import newMetricsRoutes from './routes/newMetrics';
 import authRoutes from './routes/auth';
+import testDataRoutes from './routes/testData';
 import { errorHandler } from './middleware/errorHandler';
 import { swaggerUi, specs } from './config/swagger';
 import { HealthController } from './controllers/HealthController';
@@ -29,6 +30,7 @@ app.get('/health', healthController.healthCheck.bind(healthController));
 app.use('/api/auth', authRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/metrica', newMetricsRoutes);
+app.use('/api/test-data', testDataRoutes);
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
