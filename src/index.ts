@@ -15,7 +15,6 @@ const startServer = async () => {
     logger.info('📋 Environment Configuration:');
     logger.info(`NODE_ENV: ${config.nodeEnv}`);
     logger.info(`PORT: ${config.port}`);
-    logger.info(`URL_FRONT: ${config.urlFront}`);
     logger.info(`CORE_HUB_URL: ${config.coreHub.url}`);
 
     logger.info('🔧 Database Environment Variables:');

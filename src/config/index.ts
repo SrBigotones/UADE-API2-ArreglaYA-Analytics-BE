@@ -16,14 +16,10 @@ const config = {
     logging: process.env.NODE_ENV === 'development',
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   },
-  redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
-  jwtSecret: process.env.JWT_SECRET || 'your-jwt-secret-key',
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
-  urlFront: process.env.URL_FRONT || 'http://localhost:3001',
   coreHub: {
     url: process.env.CORE_HUB_URL || 'http://localhost:8080',
+    apiKey: process.env.CORE_HUB_API_KEY || '',
     timeout: parseInt(process.env.CORE_HUB_TIMEOUT || '10000'),
-    retries: parseInt(process.env.CORE_HUB_RETRIES || '3'),
   },
   webhookSecret: process.env.WEBHOOK_SECRET || 'your-webhook-secret',
   aws: {
