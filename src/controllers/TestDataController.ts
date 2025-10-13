@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { AppDataSource } from '../config/database';
 import { Event } from '../models/Event';
 import { logger } from '../config/logger';
-import { In } from 'typeorm';
+import { randomUUID } from 'crypto';
 
 /**
  * Controller for managing test data in non-production environments
@@ -58,7 +58,7 @@ export class TestDataController {
           cuerpo: event.cuerpo,
           timestamp: event.timestamp ? new Date(event.timestamp) : new Date(),
           processed: event.processed ?? false,
-          messageId: event.messageId || `test-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+          messageId: event.messageId || `test-${randomUUID()}`,
           correlationId: event.correlationId,
           source: this.TEST_DATA_SOURCE // Mark as test data
         })
@@ -114,12 +114,12 @@ export class TestDataController {
         return;
       }
 
-      // Optional: Only allow deletion of test data
+      // Only allow deletion of test data
       if (event.source !== this.TEST_DATA_SOURCE) {
         logger.warn(`Attempt to delete non-test event ${id} via test-data endpoint`);
         res.status(403).json({
           success: false,
-          message: 'This endpoint can only delete test data. Use force=true query parameter to override.'
+          message: 'This endpoint can only delete test data (source="test-data"). Cannot delete production events.'
         });
         return;
       }
