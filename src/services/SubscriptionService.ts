@@ -69,27 +69,33 @@ export class SubscriptionService {
     const eventSubscriptions = [
       {
         squadName: 'arreglaya-analytics',
-        topic: 'orders.*',
-        eventName: 'order*',
-        description: 'All order events'
+        topic: 'users.*.#',
+        eventName: '*',
+        description: 'All user events from Users squad'
       },
       {
         squadName: 'arreglaya-analytics',
-        topic: 'payments.*',
-        eventName: 'payment*',
-        description: 'All payment events'
+        topic: 'payments.*.#',
+        eventName: '*',
+        description: 'All payment events from Payments squad'
       },
       {
         squadName: 'arreglaya-analytics',
-        topic: 'users.*',
-        eventName: 'user*',
-        description: 'All user events'
+        topic: 'matching.*.#',
+        eventName: '*',
+        description: 'All matching events from Matching squad'
       },
       {
         squadName: 'arreglaya-analytics',
-        topic: 'services.*',
-        eventName: 'service*',
-        description: 'All service events'
+        topic: 'catalogue.*.#',
+        eventName: '*',
+        description: 'All catalogue events from Catalogue squad'
+      },
+      {
+        squadName: 'arreglaya-analytics',
+        topic: 'search.*.#',
+        eventName: '*',
+        description: 'All search events from Search squad'
       }
     ];
 
@@ -270,6 +276,22 @@ export class SubscriptionService {
       size: this.subscriptionCache.size,
       keys: Array.from(this.subscriptionCache.keys())
     };
+  }
+
+  /**
+   * Send ACK to Core Hub for a processed message
+   */
+  async acknowledgeMessage(messageId: string, subscriptionId?: string): Promise<void> {
+    try {
+      logger.info(`Sending ACK for message ${messageId}`, { subscriptionId });
+      
+      await this.client.acknowledgeMessage(messageId, subscriptionId);
+      
+      logger.info(`Successfully sent ACK for message ${messageId}`);
+    } catch (error) {
+      logger.error(`Failed to send ACK for message ${messageId}:`, error);
+      throw new Error(`Failed to acknowledge message: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   // Private helper methods

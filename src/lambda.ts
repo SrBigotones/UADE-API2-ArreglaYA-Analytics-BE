@@ -1,7 +1,8 @@
 import 'reflect-metadata';
-import serverless from '@vendia/serverless-express';
 import express from 'express';
+import serverless from '@vendia/serverless-express';
 import { connectDatabase, createDataSource, AppDataSource } from './config/database';
+import { Context, APIGatewayProxyEvent } from 'aws-lambda';
 
 // Variable global para el estado de la DB
 let dbInitialized = false;
@@ -68,7 +69,7 @@ export const handler = async (event: any, context: any) => {
     
     const serverlessHandler = serverless({ app });
     console.log('Serverless handler created');
-    return serverlessHandler(event, context);
+    return serverlessHandler(event, context, () => {});
   } catch (error: any) {
     console.error('Error in handler:', error);
     return {

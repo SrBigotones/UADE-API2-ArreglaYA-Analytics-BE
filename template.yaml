@@ -33,7 +33,7 @@ Resources:
                 - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/arreglaya/analytics/*'
         - AWSLambdaVPCAccessExecutionRole
       CodeUri: .
-      Handler: dist/lambda.handler
+      Handler: dist/lambda-handler.handler
       Runtime: nodejs20.x
       Environment:
         Variables:

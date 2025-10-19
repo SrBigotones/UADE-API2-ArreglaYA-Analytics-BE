@@ -65,11 +65,6 @@ export class SubscriptionManager {
       this.healthCheckInterval = null;
     }
 
-    // Optionally deactivate subscriptions on shutdown
-    if (config.nodeEnv === 'development') {
-      await this.deactivateAllSubscriptions();
-    }
-
     this.isInitialized = false;
     logger.info('✅ SubscriptionManager shutdown complete');
   }
@@ -159,12 +154,30 @@ export class SubscriptionManager {
       const existingSubscriptions = await this.subscriptionService.getAnalyticsSubscriptions();
       logger.info(`Found ${existingSubscriptions.length} existing subscriptions`);
 
+      // Define expected subscriptions
+      const expectedTopics = [
+        'users.*.#',
+        'payments.*.#',
+        'matching.*.#',
+        'catalogue.*.#',
+        'search.*.#'
+      ];
+
+      // Find which topics are already subscribed
+      const existingTopics = existingSubscriptions.map(sub => sub.topic);
+      const missingTopics = expectedTopics.filter(topic => !existingTopics.includes(topic));
+
+      // Verify existing subscriptions
       if (existingSubscriptions.length > 0) {
-        // Verify existing subscriptions are active and have correct webhook URL
         await this.verifyExistingSubscriptions(existingSubscriptions, webhookUrl);
+      }
+
+      // Create missing subscriptions
+      if (missingTopics.length > 0) {
+        logger.info(`📝 Creating ${missingTopics.length} missing subscriptions: ${missingTopics.join(', ')}`);
+        await this.createMissingSubscriptions(missingTopics, webhookUrl);
       } else {
-        // Create new subscriptions
-        await this.createInitialSubscriptions(webhookUrl);
+        logger.info('✅ All expected subscriptions already exist');
       }
 
       // Refresh our local cache
@@ -228,6 +241,34 @@ export class SubscriptionManager {
     }
   }
 
+  private async createMissingSubscriptions(missingTopics: string[], webhookUrl: string): Promise<void> {
+    logger.info(`🆕 Creating ${missingTopics.length} missing subscriptions...`);
+
+    const createdSubscriptions: SubscriptionResponse[] = [];
+
+    for (const topic of missingTopics) {
+      try {
+        logger.info(`Creating subscription for topic: ${topic}`);
+        
+        const subscription = await this.subscriptionService.createAnalyticsSubscription({
+          squadName: 'arreglaya-analytics',
+          topic: topic,
+          eventName: '#',
+          webhookUrl: webhookUrl
+        });
+
+        createdSubscriptions.push(subscription);
+        logger.info(`✅ Created subscription for ${topic}`);
+        
+      } catch (error) {
+        logger.error(`❌ Failed to create subscription for ${topic}:`, error);
+        // Continue with other subscriptions even if one fails
+      }
+    }
+
+    logger.info(`✅ Successfully created ${createdSubscriptions.length}/${missingTopics.length} missing subscriptions`);
+  }
+
   private startHealthMonitoring(): void {
     const healthCheckInterval = 5 * 60 * 1000; // 5 minutes
     
@@ -280,23 +321,6 @@ export class SubscriptionManager {
       logger.info('✅ Subscription recovery completed');
     } catch (error) {
       logger.error('❌ Subscription recovery failed:', error);
-    }
-  }
-
-  private async deactivateAllSubscriptions(): Promise<void> {
-    logger.info('🔄 Deactivating all subscriptions...');
-
-    try {
-      for (const subscription of this.subscriptions) {
-        if (subscription.status === SubscriptionStatus.ACTIVE && subscription.subscriptionId) {
-          await this.subscriptionService.deactivateSubscription(subscription.subscriptionId);
-          logger.debug(`   Deactivated: ${subscription.subscriptionId}`);
-        }
-      }
-      
-      logger.info('✅ All subscriptions deactivated');
-    } catch (error) {
-      logger.error('❌ Failed to deactivate subscriptions:', error);
     }
   }
 

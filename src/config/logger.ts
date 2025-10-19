@@ -15,7 +15,7 @@ try {
 const logger = winston.createLogger({
   level: config.logging.level,
   format: winston.format.combine(
-    winston.format.timestamp(),
+    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
     winston.format.errors({ stack: true }),
     winston.format.json()
   ),
@@ -23,19 +23,18 @@ const logger = winston.createLogger({
   transports: [],
 });
 
-// Always add console transport for Lambda environment
-logger.add(new winston.transports.Console({
-  format: winston.format.combine(
-    winston.format.colorize(),
-    winston.format.simple()
-  )
-}));
+// Custom format for console: only timestamp and message
+const consoleFormat = winston.format.printf(({ level, message, timestamp, stack }) => {
+  const msg = stack || message;
+  return `${timestamp} [${level}]: ${msg}`;
+});
 
-// Always add console transport
+// Add console transport (only once!)
 logger.add(new winston.transports.Console({
   format: winston.format.combine(
+    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
     winston.format.colorize(),
-    winston.format.simple()
+    consoleFormat
   )
 }));
 

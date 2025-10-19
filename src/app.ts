@@ -10,8 +10,10 @@ import webhookRoutes from './routes/webhooks';
 import newMetricsRoutes from './routes/newMetrics';
 import { errorHandler } from './middleware/errorHandler';
 import { swaggerUi, specs } from './config/swagger';
+import { HealthController } from './controllers/HealthController';
 
 const app = express();
+const healthController = new HealthController();
 
 app.use(helmet());
 app.use(cors());
@@ -19,7 +21,10 @@ app.use(compression());
 app.use(express.json());
 app.use(morgan('combined'));
 
-app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
+// Health endpoints
+app.get('/health', healthController.healthCheck.bind(healthController));
+
+// API routes
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/metrica', newMetricsRoutes);
 
