@@ -8,6 +8,7 @@ import morgan from 'morgan';
 // importa tus rutas, middlewares, swagger, etc.
 import webhookRoutes from './routes/webhooks';
 import newMetricsRoutes from './routes/newMetrics';
+import authRoutes from './routes/auth';
 import { errorHandler } from './middleware/errorHandler';
 import { swaggerUi, specs } from './config/swagger';
 import { HealthController } from './controllers/HealthController';
@@ -25,6 +26,7 @@ app.use(morgan('combined'));
 app.get('/health', healthController.healthCheck.bind(healthController));
 
 // API routes
+app.use('/api/auth', authRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/metrica', newMetricsRoutes);
 
