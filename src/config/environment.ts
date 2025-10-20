@@ -13,7 +13,7 @@ export const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
 
   // URL del módulo de usuarios
-  usersApiBaseUrl: process.env.USERS_API_BASE_URL || 'http://dev.desarrollo2-usuarios.shop:8081',
+  usersApiBaseUrl: process.env.USERS_API_BASE_URL || 'https://dev.desarrollo2-usuarios.shop:8081',
 
   // Configuración de logging
   logLevel: process.env.LOG_LEVEL || 'info',
