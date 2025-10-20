@@ -13,42 +13,38 @@ export class DateRangeService {
 
     switch (periodType.type) {
       case 'hoy':
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+        // Obtener fecha actual en UTC
+        const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        startDate = todayUTC;
+        endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
         break;
 
       case 'ultimos_7_dias':
-        endDate = new Date(now);
-        startDate = new Date(now);
-        startDate.setDate(now.getDate() - 6); // Los últimos 7 días incluyen hoy
-        startDate.setHours(0, 0, 0, 0);
-        endDate.setHours(23, 59, 59, 999);
+        // Calcular en UTC
+        endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+        startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 6, 0, 0, 0, 0));
         break;
 
       case 'ultimos_30_dias':
-        endDate = new Date(now);
-        startDate = new Date(now);
-        startDate.setDate(now.getDate() - 29); // Los últimos 30 días incluyen hoy
-        startDate.setHours(0, 0, 0, 0);
-        endDate.setHours(23, 59, 59, 999);
+        // Calcular en UTC
+        endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+        startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 29, 0, 0, 0, 0));
         break;
 
       case 'ultimo_ano':
-        endDate = new Date(now);
-        startDate = new Date(now);
-        startDate.setFullYear(now.getFullYear() - 1);
-        startDate.setHours(0, 0, 0, 0);
-        endDate.setHours(23, 59, 59, 999);
+        // Calcular en UTC
+        endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+        startDate = new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
         break;
 
       case 'personalizado':
         if (!periodType.startDate || !periodType.endDate) {
           throw new Error('Fechas de inicio y fin son requeridas para período personalizado');
         }
-        startDate = new Date(periodType.startDate);
-        endDate = new Date(periodType.endDate);
-        startDate.setHours(0, 0, 0, 0);
-        endDate.setHours(23, 59, 59, 999);
+        // Crear fechas en UTC: la fecha que viene es "YYYY-MM-DD"
+        // Queremos desde las 00:00:00.000 UTC hasta las 23:59:59.999 UTC de esas fechas
+        startDate = new Date(periodType.startDate + 'T00:00:00.000Z');
+        endDate = new Date(periodType.endDate + 'T23:59:59.999Z');
         break;
 
       default:
