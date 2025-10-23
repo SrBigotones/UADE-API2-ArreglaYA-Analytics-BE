@@ -27,7 +27,8 @@ const authController = new AuthController();
  *           type: string
  *         role:
  *           type: string
- *           enum: [PRESTADOR, CLIENTE, ADMIN]
+ *           enum: [ADMIN]
+ *           description: Solo usuarios con rol ADMIN pueden acceder al sistema
  *         active:
  *           type: boolean
  *     LoginRequest:

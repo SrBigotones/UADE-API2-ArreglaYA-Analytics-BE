@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import { TestDataController } from '../controllers/TestDataController';
 import { nonProductionOnly } from '../middleware/nonProduction';
+import { authenticateToken } from '../middleware/authMiddleware';
 
 const router = Router();
 const testDataController = new TestDataController();
 
 // Apply non-production middleware to all routes in this router
 router.use(nonProductionOnly);
+router.use(authenticateToken);
 
 /**
  * @swagger

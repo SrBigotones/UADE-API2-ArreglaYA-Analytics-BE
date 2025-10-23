@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { WebhookController } from '../controllers/webhookController';
 import { webhookValidation } from '../middleware/validation';
+import { authenticateToken } from '../middleware/authMiddleware';
 
 const router = Router();
 const webhookController = new WebhookController();
@@ -59,6 +60,7 @@ const webhookController = new WebhookController();
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
+// POST de webhooks debe ser PÚBLICO (para recibir eventos externos)
 router.post('/', webhookValidation, webhookController.handleWebhook.bind(webhookController));
 
 /**
@@ -98,6 +100,7 @@ router.post('/', webhookValidation, webhookController.handleWebhook.bind(webhook
  *       500:
  *         description: Error interno del servidor
  */
+// POST de Core Hub debe ser PÚBLICO (para recibir eventos externos)
 router.post('/core-hub', webhookController.handleCoreHubWebhook.bind(webhookController));
 
 /**
@@ -107,6 +110,8 @@ router.post('/core-hub', webhookController.handleCoreHubWebhook.bind(webhookCont
  *     summary: Estado de las suscripciones
  *     description: Obtiene el estado actual de las suscripciones al Core Hub
  *     tags: [Webhooks]
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Estado de las suscripciones
@@ -129,8 +134,10 @@ router.post('/core-hub', webhookController.handleCoreHubWebhook.bind(webhookCont
  *                     timestamp:
  *                       type: string
  *                       format: date-time
+ *       401:
+ *         description: No autenticado
  */
-router.get('/subscription-status', webhookController.getSubscriptionStatus.bind(webhookController));
+router.get('/subscription-status', authenticateToken, webhookController.getSubscriptionStatus.bind(webhookController));
 
 /**
  * @swagger
@@ -139,6 +146,8 @@ router.get('/subscription-status', webhookController.getSubscriptionStatus.bind(
  *     summary: Obtener eventos
  *     description: Obtiene una lista de eventos con filtros y paginación
  *     tags: [Webhooks]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: query
  *         name: page
@@ -221,6 +230,8 @@ router.get('/subscription-status', webhookController.getSubscriptionStatus.bind(
  *                     pages:
  *                       type: integer
  *                       example: 15
+ *       401:
+ *         description: No autenticado
  *       500:
  *         description: Error interno del servidor
  *         content:
@@ -228,6 +239,6 @@ router.get('/subscription-status', webhookController.getSubscriptionStatus.bind(
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get('/', webhookController.getEvents.bind(webhookController));
+router.get('/', authenticateToken, webhookController.getEvents.bind(webhookController));
 
 export default router;
