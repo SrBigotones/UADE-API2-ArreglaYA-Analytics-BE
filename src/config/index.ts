@@ -22,6 +22,7 @@ const config = {
     timeout: parseInt(process.env.CORE_HUB_TIMEOUT || '10000'),
   },
   webhookSecret: process.env.WEBHOOK_SECRET || 'your-webhook-secret',
+  enableWebhookSignatureValidation: process.env.ENABLE_WEBHOOK_SIGNATURE_VALIDATION === 'true',
   aws: {
     region: process.env.AWS_REGION || 'us-east-1',
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
