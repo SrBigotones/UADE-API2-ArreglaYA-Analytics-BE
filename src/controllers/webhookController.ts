@@ -3,53 +3,10 @@ import { AppDataSource } from '../config/database';
 import { Event } from '../models/Event';
 import { EventMessage } from '../types';
 import { logger } from '../config/logger';
-import crypto from 'crypto';
-import config from '../config';
 
 export class WebhookController {
   constructor() {
     // WebhookController initialization
-  }
-
-  public async handleWebhook(req: Request, res: Response): Promise<void> {
-    try {
-      const { queue, event, correlationId }: { queue: string; event: EventMessage; correlationId?: string } = req.body;
-
-      logger.info(`Received webhook for queue: ${queue}`, { event });
-
-      // Save event to database
-      const eventRepository = AppDataSource.getRepository(Event);
-      const newEvent = eventRepository.create({
-        squad: event.squad,
-        topico: event.topico,
-        evento: event.evento,
-        cuerpo: event.cuerpo,
-        timestamp: event.timestamp || new Date(),
-        processed: false,
-        correlationId: correlationId,
-        source: 'direct-webhook'
-      });
-
-      await eventRepository.save(newEvent);
-
-      // Mark event as processed
-      newEvent.processed = true;
-      await eventRepository.save(newEvent);
-
-      res.status(200).json({ 
-        success: true, 
-        message: 'Event processed successfully',
-        eventId: newEvent.id
-      });
-
-    } catch (error) {
-      logger.error('Error processing webhook:', error);
-      res.status(500).json({ 
-        success: false, 
-        message: 'Error processing event',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
   }
 
   /**
@@ -63,19 +20,6 @@ export class WebhookController {
    */
   public async handleCoreHubWebhook(req: Request, res: Response): Promise<void> {
     try {
-      // Verify webhook signature if configured (disabled for testing)
-      // if (config.webhookSecret && process.env.NODE_ENV === 'production') {
-      //   const isValid = this.verifyWebhookSignature(req);
-      //   if (!isValid) {
-      //     logger.warn('Invalid webhook signature from Core Hub');
-      //     res.status(401).json({ 
-      //       success: false, 
-      //       message: 'Invalid webhook signature' 
-      //     });
-      //     return;
-      //   }
-      // }
-
       // Extract Core Hub event data
       const coreHubEvent = req.body;
       logger.info('📨 Received Core Hub webhook event:', {
@@ -223,32 +167,6 @@ export class WebhookController {
         message: 'Error fetching events',
         error: error instanceof Error ? error.message : 'Unknown error'
       });
-    }
-  }
-
-  /**
-   * Verify webhook signature for security
-   */
-  private verifyWebhookSignature(req: Request): boolean {
-    try {
-      const signature = req.headers['x-hub-signature-256'] as string;
-      if (!signature) {
-        return false;
-      }
-
-      const payload = JSON.stringify(req.body);
-      const expectedSignature = 'sha256=' + crypto
-        .createHmac('sha256', config.webhookSecret)
-        .update(payload)
-        .digest('hex');
-
-      return crypto.timingSafeEqual(
-        Buffer.from(signature),
-        Buffer.from(expectedSignature)
-      );
-    } catch (error) {
-      logger.error('Error verifying webhook signature:', error);
-      return false;
     }
   }
 

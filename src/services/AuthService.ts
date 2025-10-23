@@ -234,40 +234,6 @@ export class AuthService {
   }
 
   /**
-   * Obtiene información de un usuario por ID
-   */
-  async getUserById(userId: string, token: string): Promise<UserInfo> {
-    try {
-      const response: AxiosResponse<UserInfo> = await axios.get(
-        `${this.usersApiBaseUrl}/api/users/${userId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 10000
-        }
-      );
-
-      return response.data;
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        if (error.response?.status === 404) {
-          throw new Error('Usuario no encontrado');
-        }
-        if (error.response?.status === 401) {
-          throw new Error('Token inválido o expirado');
-        }
-      }
-      logger.error('Error al obtener información del usuario', { 
-        userId,
-        error: error instanceof Error ? error.message : 'Error desconocido'
-      });
-      throw new Error('Error al obtener información del usuario');
-    }
-  }
-
-  /**
    * Verifica si un usuario tiene permisos de admin
    * Solo usuarios con rol ADMIN pueden acceder al sistema de analytics
    */

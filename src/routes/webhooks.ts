@@ -1,67 +1,10 @@
 import { Router } from 'express';
 import { WebhookController } from '../controllers/webhookController';
-import { webhookValidation } from '../middleware/validation';
 import { authenticateToken } from '../middleware/authMiddleware';
+import { verifyWebhookSignature } from '../middleware/webhookAuth';
 
 const router = Router();
 const webhookController = new WebhookController();
-
-/**
- * @swagger
- * /api/webhooks:
- *   post:
- *     summary: Recibir eventos del Core Hub
- *     description: Endpoint para recibir eventos webhooks del sistema principal de ArreglaYA
- *     tags: [Webhooks]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/WebhookPayload'
- *           example:
- *             queue: "user-events"
- *             event:
- *               squad: "Usuarios y Roles"
- *               topico: "User Management"
- *               evento: "Usuario Creado"
- *               cuerpo:
- *                 userId: "123"
- *                 email: "user@example.com"
- *                 name: "Juan Pérez"
- *     responses:
- *       200:
- *         description: Evento procesado exitosamente
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: "Event processed successfully"
- *                 eventId:
- *                   type: string
- *                   format: uuid
- *                   example: "123e4567-e89b-12d3-a456-426614174000"
- *       400:
- *         description: Error de validación
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       500:
- *         description: Error interno del servidor
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-// POST de webhooks debe ser PÚBLICO (para recibir eventos externos)
-router.post('/', webhookValidation, webhookController.handleWebhook.bind(webhookController));
 
 /**
  * @swagger
@@ -101,7 +44,8 @@ router.post('/', webhookValidation, webhookController.handleWebhook.bind(webhook
  *         description: Error interno del servidor
  */
 // POST de Core Hub debe ser PÚBLICO (para recibir eventos externos)
-router.post('/core-hub', webhookController.handleCoreHubWebhook.bind(webhookController));
+// La validación de firma está deshabilitada por defecto (ver webhookAuth middleware)
+router.post('/core-hub', verifyWebhookSignature, webhookController.handleCoreHubWebhook.bind(webhookController));
 
 /**
  * @swagger
