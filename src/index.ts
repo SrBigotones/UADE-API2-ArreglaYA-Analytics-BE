@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import './config/axios';
 import app from './app';
 import { config } from './config';
 import { logger } from './config/logger';

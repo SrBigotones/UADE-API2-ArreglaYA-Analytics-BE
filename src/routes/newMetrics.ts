@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import { MetricsController } from '../controllers/metricsController';
+import { authenticateToken } from '../middleware/authMiddleware';
 
 const router = Router();
 const newMetricsController = new MetricsController();
+
+// Proteger TODAS las rutas de métricas - solo usuarios ADMIN autenticados
+router.use(authenticateToken);
 
 /**
  * @swagger

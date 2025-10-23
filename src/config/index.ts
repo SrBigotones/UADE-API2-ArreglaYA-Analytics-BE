@@ -30,6 +30,9 @@ const config = {
   logging: {
     level: process.env.LOG_LEVEL || 'info',
   },
+  // Authentication is delegated to the Users service
+  // We don't verify JWTs locally - tokens are forwarded to Users service for verification
+  usersApiBaseUrl: process.env.USERS_API_BASE_URL || 'http://localhost:8080',
 };
 
 export default config;

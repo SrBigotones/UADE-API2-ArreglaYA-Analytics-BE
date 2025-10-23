@@ -250,8 +250,9 @@ export class SubscriptionManager {
       try {
         logger.info(`Creating subscription for topic: ${topic}`);
         
+        const squadName = this.subscriptionService.getSquadName();
         const subscription = await this.subscriptionService.createAnalyticsSubscription({
-          squadName: 'arreglaya-analytics',
+          squadName: squadName,
           topic: topic,
           eventName: '#',
           webhookUrl: webhookUrl
