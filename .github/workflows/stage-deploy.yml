@@ -73,35 +73,54 @@ jobs:
           } 2>/dev/null # Suprimir errores en la salida
 
       - name: Deploy SAM application
+        env:
+          # Configurar para ocultar secretos en logs
+          PARAMETERS: |
+            Stage=stage
+            DBHost=***
+            DBUsername=***
+            DBPassword=***
+            DBName=***
+            UsersApiBaseUrl=***
+            CoreHubApiKey=***
+            CoreHubUrl=***
+            WebhookSecret=***
+            WebhookBaseUrl=***
         run: |
-          set +x # Desactivar echo de comandos
-          
-          # Crear archivo temporal para los parámetros
-          PARAMS_FILE=$(mktemp)
-          
-          # Escribir parámetros al archivo de forma segura
-          cat << 'PARAMETERS' > "$PARAMS_FILE"
-          Stage=stage
-          DBHost=${{ env.DB_HOST }}
-          DBUsername=${{ env.DB_USERNAME }}
-          DBPassword=${{ env.DB_PASSWORD }}
-          DBName=${{ env.DB_NAME }}
-          UsersApiBaseUrl=${{ env.USERS_API_BASE_URL }}
-          CoreHubApiKey=${{ env.CORE_HUB_API_KEY }}
-          CoreHubUrl=${{ env.CORE_HUB_URL }}
-          WebhookSecret=${{ env.WEBHOOK_SECRET }}
-          WebhookBaseUrl=${{ env.WEBHOOK_BASE_URL }}
-          PARAMETERS
-          
-          # Ejecutar sam deploy sin mostrar los parámetros
-          echo "::debug::Starting SAM deployment..."
-          sam deploy \
-            --stack-name arreglaya-analytics-be-stage \
-            --no-confirm-changeset \
-            --capabilities CAPABILITY_IAM \
-            --resolve-s3 \
-            --parameter-overrides "$(cat $PARAMS_FILE)" > >(grep -v "parameter-overrides") 2>&1
-          
-          # Limpiar
-          rm -f "$PARAMS_FILE"
-          echo "::debug::SAM deployment completed"
+          {
+            set +x # Desactivar echo de comandos
+            
+            # Crear archivo temporal seguro
+            PARAMS_FILE=$(mktemp -t params.XXXXXX)
+            chmod 600 "$PARAMS_FILE"
+            
+            # Escribir parámetros de forma segura
+            echo "Stage=stage" > "$PARAMS_FILE"
+            echo "DBHost='$DB_HOST'" >> "$PARAMS_FILE"
+            echo "DBUsername='$DB_USERNAME'" >> "$PARAMS_FILE"
+            echo "DBPassword='$DB_PASSWORD'" >> "$PARAMS_FILE"
+            echo "DBName='$DB_NAME'" >> "$PARAMS_FILE"
+            echo "UsersApiBaseUrl='$USERS_API_BASE_URL'" >> "$PARAMS_FILE"
+            echo "CoreHubApiKey='$CORE_HUB_API_KEY'" >> "$PARAMS_FILE"
+            echo "CoreHubUrl='$CORE_HUB_URL'" >> "$PARAMS_FILE"
+            echo "WebhookSecret='$WEBHOOK_SECRET'" >> "$PARAMS_FILE"
+            echo "WebhookBaseUrl='$WEBHOOK_BASE_URL'" >> "$PARAMS_FILE"
+            
+            # Log seguro de inicio
+            echo "::debug::Starting SAM deployment with parameters:"
+            echo "$PARAMETERS"
+            
+            # Ejecutar sam deploy con salida filtrada
+            sam deploy \
+              --stack-name arreglaya-analytics-be-stage \
+              --no-confirm-changeset \
+              --capabilities CAPABILITY_IAM \
+              --resolve-s3 \
+              --parameter-overrides "$(cat $PARAMS_FILE)" 2>&1 | \
+              sed -E 's/(DBHost|DBUsername|DBPassword|DBName|UsersApiBaseUrl|CoreHubApiKey|CoreHubUrl|WebhookSecret|WebhookBaseUrl)=[^ ]*/***/g'
+            
+            # Limpiar de forma segura
+            shred -u "$PARAMS_FILE"
+            
+            echo "::debug::SAM deployment completed"
+          } 2> >(sed 's/[[:print:]]//g')
