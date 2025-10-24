@@ -1,7 +1,7 @@
 version: '3.8'
 services:
   postgres:
-    image: postgres:15
+    image: postgres:16
     container_name: arreglaya_postgres
     restart: unless-stopped
     environment:
@@ -14,7 +14,7 @@ services:
       DB_PASSWORD: postgres
       DB_NAME: arregla_ya_metrics
     ports:
-      - "5432:5432"
+      - "5440:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

@@ -4,7 +4,7 @@ dotenv.config();
 
 const config = {
   port: process.env.PORT || 3000,
-  nodeEnv: process.env.NODE_ENV || 'development',
+  nodeEnv: process.env.NODE_ENV || 'local',
   database: {
     type: 'postgres' as const,
     host: process.env.DB_HOST || 'localhost',
@@ -16,16 +16,13 @@ const config = {
     logging: process.env.NODE_ENV === 'development',
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   },
-  redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
-  jwtSecret: process.env.JWT_SECRET || 'your-jwt-secret-key',
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
-  urlFront: process.env.URL_FRONT || 'http://localhost:3001',
   coreHub: {
     url: process.env.CORE_HUB_URL || 'http://localhost:8080',
+    apiKey: process.env.CORE_HUB_API_KEY || '',
     timeout: parseInt(process.env.CORE_HUB_TIMEOUT || '10000'),
-    retries: parseInt(process.env.CORE_HUB_RETRIES || '3'),
   },
   webhookSecret: process.env.WEBHOOK_SECRET || 'your-webhook-secret',
+  enableWebhookSignatureValidation: process.env.ENABLE_WEBHOOK_SIGNATURE_VALIDATION === 'true',
   aws: {
     region: process.env.AWS_REGION || 'us-east-1',
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
@@ -34,6 +31,9 @@ const config = {
   logging: {
     level: process.env.LOG_LEVEL || 'info',
   },
+  // Authentication is delegated to the Users service
+  // We don't verify JWTs locally - tokens are forwarded to Users service for verification
+  usersApiBaseUrl: process.env.USERS_API_BASE_URL || 'http://localhost:8080',
 };
 
 export default config;

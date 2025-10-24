@@ -20,7 +20,7 @@ export class Event {
   @Column({ type: 'json' })
   cuerpo: Record<string, any>;
 
-  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  @Column({ type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   timestamp: Date;
 
   @Column({ type: 'boolean', default: false })

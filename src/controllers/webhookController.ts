@@ -3,85 +3,67 @@ import { AppDataSource } from '../config/database';
 import { Event } from '../models/Event';
 import { EventMessage } from '../types';
 import { logger } from '../config/logger';
-import { MetricsService } from '../services/MetricsService';
-import crypto from 'crypto';
-import config from '../config';
 
 export class WebhookController {
-  private metricsService: MetricsService;
-
   constructor() {
-    this.metricsService = new MetricsService();
-  }
-
-  public async handleWebhook(req: Request, res: Response): Promise<void> {
-    try {
-      const { queue, event }: { queue: string; event: EventMessage } = req.body;
-
-      logger.info(`Received webhook for queue: ${queue}`, { event });
-
-      // Save event to database
-      const eventRepository = AppDataSource.getRepository(Event);
-      const newEvent = eventRepository.create({
-        squad: event.squad,
-        topico: event.topico,
-        evento: event.evento,
-        cuerpo: event.cuerpo,
-        timestamp: event.timestamp || new Date(),
-        processed: false
-      });
-
-      await eventRepository.save(newEvent);
-
-      // Process event for metrics calculation
-      await this.metricsService.processEvent(newEvent);
-
-      // Mark event as processed
-      newEvent.processed = true;
-      await eventRepository.save(newEvent);
-
-      res.status(200).json({ 
-        success: true, 
-        message: 'Event processed successfully',
-        eventId: newEvent.id
-      });
-
-    } catch (error) {
-      logger.error('Error processing webhook:', error);
-      res.status(500).json({ 
-        success: false, 
-        message: 'Error processing event',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
+    // WebhookController initialization
   }
 
   /**
    * Handle Core Hub webhook events
    * This endpoint receives events from the Core Hub subscription system
+   * 
+   * Flow:
+   * 1. Immediately return 200 OK to Core Hub
+   * 2. Process event asynchronously (save to DB)
+   * 3. Send ACK to Core Hub after successful processing
    */
   public async handleCoreHubWebhook(req: Request, res: Response): Promise<void> {
     try {
-      // Verify webhook signature if configured (disabled for testing)
-      if (config.webhookSecret && process.env.NODE_ENV === 'production') {
-        const isValid = this.verifyWebhookSignature(req);
-        if (!isValid) {
-          logger.warn('Invalid webhook signature from Core Hub');
-          res.status(401).json({ 
-            success: false, 
-            message: 'Invalid webhook signature' 
-          });
-          return;
-        }
-      }
-
       // Extract Core Hub event data
       const coreHubEvent = req.body;
-      logger.info('Received Core Hub webhook event:', {
+      logger.info('📨 Received Core Hub webhook event:', {
         messageId: coreHubEvent.messageId,
         destination: coreHubEvent.destination,
         timestamp: coreHubEvent.timestamp
       });
+
+      // IMMEDIATELY return 200 OK to Core Hub
+      res.status(200).json({ 
+        success: true, 
+        message: 'Event received, processing asynchronously',
+        messageId: coreHubEvent.messageId
+      });
+
+      // Process event asynchronously (don't await - fire and forget)
+      this.processEventAsync(coreHubEvent).catch(error => {
+        logger.error(`❌ Async processing failed for message ${coreHubEvent.messageId}:`, error);
+      });
+
+    } catch (error) {
+      logger.error('Error handling Core Hub webhook:', error);
+      
+      // Only return error if we haven't sent response yet
+      if (!res.headersSent) {
+        res.status(500).json({ 
+          success: false, 
+          message: 'Error receiving Core Hub event',
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+  }
+
+  /**
+   * Process Core Hub event asynchronously
+   * This runs after the 200 OK has been returned to Core Hub
+   */
+  private async processEventAsync(coreHubEvent: any): Promise<void> {
+    const messageId = coreHubEvent.messageId;
+    const subscriptionId = coreHubEvent.subscriptionId;
+
+    try {
+      logger.info(`⚙️ Processing event ${messageId} asynchronously...`);
 
       // Transform Core Hub event to internal format
       const eventMessage: EventMessage = this.transformCoreHubEvent(coreHubEvent);
@@ -102,30 +84,37 @@ export class WebhookController {
       });
 
       await eventRepository.save(newEvent);
-
-      // Process event for metrics calculation
-      await this.metricsService.processEvent(newEvent);
+      logger.info(`💾 Event ${messageId} saved to database (id: ${newEvent.id})`);
 
       // Mark event as processed
       newEvent.processed = true;
       await eventRepository.save(newEvent);
 
-      logger.info(`Successfully processed Core Hub event ${coreHubEvent.messageId}`);
+      // Send ACK to Core Hub to confirm successful processing
+      await this.sendAckToCoreHub(messageId, subscriptionId);
 
-      res.status(200).json({ 
-        success: true, 
-        message: 'Core Hub event processed successfully',
-        eventId: newEvent.id,
-        messageId: coreHubEvent.messageId
-      });
+      logger.info(`✅ Successfully processed and ACKed Core Hub event ${messageId}`);
 
     } catch (error) {
-      logger.error('Error processing Core Hub webhook:', error);
-      res.status(500).json({ 
-        success: false, 
-        message: 'Error processing Core Hub event',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
+      logger.error(`❌ Failed to process Core Hub event ${messageId}:`, error);
+      // Don't throw - let the error be caught by the caller
+    }
+  }
+
+  /**
+   * Send ACK to Core Hub after successful event processing
+   */
+  private async sendAckToCoreHub(messageId: string, subscriptionId?: string): Promise<void> {
+    try {
+      const { getSubscriptionService } = await import('../services/SubscriptionService');
+      const subscriptionService = getSubscriptionService();
+      
+      await subscriptionService.acknowledgeMessage(messageId, subscriptionId);
+      
+      logger.info(`✓ ACK sent to Core Hub for message ${messageId}`);
+    } catch (error) {
+      logger.error(`Failed to send ACK for message ${messageId}:`, error);
+      // Log but don't throw - event is already processed successfully
     }
   }
 
@@ -178,32 +167,6 @@ export class WebhookController {
         message: 'Error fetching events',
         error: error instanceof Error ? error.message : 'Unknown error'
       });
-    }
-  }
-
-  /**
-   * Verify webhook signature for security
-   */
-  private verifyWebhookSignature(req: Request): boolean {
-    try {
-      const signature = req.headers['x-hub-signature-256'] as string;
-      if (!signature) {
-        return false;
-      }
-
-      const payload = JSON.stringify(req.body);
-      const expectedSignature = 'sha256=' + crypto
-        .createHmac('sha256', config.webhookSecret)
-        .update(payload)
-        .digest('hex');
-
-      return crypto.timingSafeEqual(
-        Buffer.from(signature),
-        Buffer.from(expectedSignature)
-      );
-    } catch (error) {
-      logger.error('Error verifying webhook signature:', error);
-      return false;
     }
   }
 

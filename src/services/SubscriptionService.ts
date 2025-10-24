@@ -28,6 +28,36 @@ export class SubscriptionService {
   }
 
   /**
+   * Get environment suffix for squad name to differentiate between environments
+   * - production: no suffix (arreglaya-analytics)
+   * - development/staging: -dev suffix  
+   * - local: -local-{hostname} suffix
+   */
+  private getEnvironmentSuffix(): string {
+    const env = config.nodeEnv;
+    
+    logger.info('Environment:', env);
+    if (env === 'production') {
+      return ''; // No suffix for production
+    }
+    
+    if (env === 'development' || env === 'staging') {
+      return '-dev';
+    }
+    
+    // For local development, add hostname to make it unique per developer
+    const hostname = require('os').hostname().split('.')[0].toLowerCase();
+    return `-local-${hostname}`;
+  }
+
+  /**
+   * Get the squad name for this environment
+   */
+  public getSquadName(): string {
+    return `arreglaya-analytics${this.getEnvironmentSuffix()}`;
+  }
+
+  /**
    * Create a subscription for ArreglaYA Analytics events
    */
   async createAnalyticsSubscription(options: CreateSubscriptionOptions): Promise<SubscriptionResponse> {
@@ -65,31 +95,40 @@ export class SubscriptionService {
    */
   async subscribeToAllArreglaYAEvents(webhookUrl: string): Promise<SubscriptionResponse[]> {
     const subscriptions: SubscriptionResponse[] = [];
+    logger.info('Subscribing to all ArreglaYA events');
+    
+    logger.info(`Using environment: ${config.nodeEnv}`);
     
     const eventSubscriptions = [
       {
-        squadName: 'arreglaya-analytics',
-        topic: 'orders.*',
-        eventName: 'order*',
-        description: 'All order events'
+        squadName: 'users',
+        topic: '*',
+        eventName: '*',
+        description: 'All user events from Users squad'
       },
       {
-        squadName: 'arreglaya-analytics',
-        topic: 'payments.*',
-        eventName: 'payment*',
-        description: 'All payment events'
+        squadName: 'payments',
+        topic: '*',
+        eventName: '*',
+        description: 'All payment events from Payments squad'
       },
       {
-        squadName: 'arreglaya-analytics',
-        topic: 'users.*',
-        eventName: 'user*',
-        description: 'All user events'
+        squadName: 'matching',
+        topic: '*',
+        eventName: '*',
+        description: 'All matching events from Matching squad'
       },
       {
-        squadName: 'arreglaya-analytics',
-        topic: 'services.*',
-        eventName: 'service*',
-        description: 'All service events'
+        squadName: 'catalogue',
+        topic: '*',
+        eventName: '*',
+        description: 'All catalogue events from Catalogue squad'
+      },
+      {
+        squadName: 'search',
+        topic: '*',
+        eventName: '*',
+        description: 'All search events from Search squad'
       }
     ];
 
@@ -157,7 +196,8 @@ export class SubscriptionService {
     try {
       logger.debug('Fetching analytics subscriptions');
       
-      const subscriptions = await this.client.getSubscriptionsBySquad('arreglaya-analytics');
+      const squadName = this.getSquadName();
+      const subscriptions = await this.client.getSubscriptionsBySquad(squadName);
       
       // Cache all subscriptions
       subscriptions.forEach(sub => this.cacheSubscription(sub));
@@ -232,7 +272,8 @@ export class SubscriptionService {
     try {
       logger.debug('Fetching analytics subscription stats');
       
-      const count = await this.client.getSubscriptionStats('arreglaya-analytics');
+      const squadName = this.getSquadName();
+      const count = await this.client.getSubscriptionStats(squadName);
       
       return { activeSubscriptions: count };
 
@@ -270,6 +311,22 @@ export class SubscriptionService {
       size: this.subscriptionCache.size,
       keys: Array.from(this.subscriptionCache.keys())
     };
+  }
+
+  /**
+   * Send ACK to Core Hub for a processed message
+   */
+  async acknowledgeMessage(messageId: string, subscriptionId?: string): Promise<void> {
+    try {
+      logger.info(`Sending ACK for message ${messageId}`, { subscriptionId });
+      
+      await this.client.acknowledgeMessage(messageId, subscriptionId);
+      
+      logger.info(`Successfully sent ACK for message ${messageId}`);
+    } catch (error) {
+      logger.error(`Failed to send ACK for message ${messageId}:`, error);
+      throw new Error(`Failed to acknowledge message: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   // Private helper methods

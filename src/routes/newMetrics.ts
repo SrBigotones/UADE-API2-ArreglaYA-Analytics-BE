@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import { MetricsController } from '../controllers/metricsController';
+import { authenticateToken } from '../middleware/authMiddleware';
 
 const router = Router();
 const newMetricsController = new MetricsController();
+
+// Proteger TODAS las rutas de métricas - solo usuarios ADMIN autenticados
+router.use(authenticateToken);
 
 /**
  * @swagger
@@ -468,5 +472,83 @@ router.get('/pedidos/mapa-calor', newMetricsController.getPedidosMapaCalor.bind(
  *         description: Error en los parámetros de entrada
  */
 router.get('/prestadores/zonas', newMetricsController.getPrestadoresZonas.bind(newMetricsController));
+
+/**
+ * @swagger
+ * /api/metrica/matching/conversion:
+ *   get:
+ *     summary: Tasa de conversión de Matching a Cotización Aceptada
+ *     description: Porcentaje de cotizaciones emitidas que terminaron en una cotización aceptada
+ *     tags: [Matching]
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [hoy, ultimos_7_dias, ultimos_30_dias, ultimo_ano, personalizado]
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       200:
+ *         description: Tasa de conversión de matching
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/CardMetricResponse'
+ */
+router.get('/matching/conversion', newMetricsController.getMatchingConversion.bind(newMetricsController));
+
+/**
+ * @swagger
+ * /api/metrica/matching/lead-time:
+ *   get:
+ *     summary: Tiempo promedio de Matching a Cotización
+ *     description: Minutos promedio desde la solicitud creada hasta la primera cotización emitida
+ *     tags: [Matching]
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [hoy, ultimos_7_dias, ultimos_30_dias, ultimo_ano, personalizado]
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       200:
+ *         description: Lead time de matching a cotización
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/CardMetricResponse'
+ */
+router.get('/matching/lead-time', newMetricsController.getMatchingLeadTime.bind(newMetricsController));
 
 export default router;

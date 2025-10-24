@@ -3,6 +3,36 @@ Transform: AWS::Serverless-2016-10-31
 Description: ArreglaYA Metrics BE - Express on Lambda + HTTP API
 
 Parameters:
+  DBHost:
+    Type: String
+    Description: Database host
+  DBUsername:
+    Type: String
+    Description: Database username
+  DBPassword:
+    Type: String
+    Description: Database password
+    NoEcho: true
+  DBName:
+    Type: String
+    Description: Database name
+  UsersApiBaseUrl:
+    Type: String
+    Description: Users API base URL
+  CoreHubApiKey:
+    Type: String
+    Description: Core Hub API key
+    NoEcho: true
+  CoreHubUrl:
+    Type: String
+    Description: Core Hub URL
+  WebhookSecret:
+    Type: String
+    Description: Webhook secret
+    NoEcho: true
+  WebhookBaseUrl:
+    Type: String
+    Description: Webhook base URL
   Stage:
     Type: String
     Default: prod

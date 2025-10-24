@@ -65,11 +65,6 @@ export class SubscriptionManager {
       this.healthCheckInterval = null;
     }
 
-    // Optionally deactivate subscriptions on shutdown
-    if (config.nodeEnv === 'development') {
-      await this.deactivateAllSubscriptions();
-    }
-
     this.isInitialized = false;
     logger.info('✅ SubscriptionManager shutdown complete');
   }
@@ -159,12 +154,31 @@ export class SubscriptionManager {
       const existingSubscriptions = await this.subscriptionService.getAnalyticsSubscriptions();
       logger.info(`Found ${existingSubscriptions.length} existing subscriptions`);
 
+      // Define expected subscriptions
+      const expectedSquads = [
+        { squadName: 'users', topic: '*', eventName: '*' },
+        { squadName: 'payments', topic: '*', eventName: '*' },
+        { squadName: 'matching', topic: '*', eventName: '*' },
+        { squadName: 'catalogue', topic: '*', eventName: '*' },
+        { squadName: 'search', topic: '*', eventName: '*' }
+      ];
+
+      // Find which squads are already subscribed
+      const existingSquads = existingSubscriptions.map(sub => sub.squadName);
+      const missingSquads = expectedSquads.filter(squad => !existingSquads.includes(squad.squadName));
+
+      // Verify existing subscriptions
       if (existingSubscriptions.length > 0) {
-        // Verify existing subscriptions are active and have correct webhook URL
         await this.verifyExistingSubscriptions(existingSubscriptions, webhookUrl);
+      }
+
+      // Create missing subscriptions
+      if (missingSquads.length > 0) {
+        const squadNames = missingSquads.map(s => s.squadName).join(', ');
+        logger.info(`📝 Creating ${missingSquads.length} missing subscriptions for squads: ${squadNames}`);
+        await this.createMissingSubscriptions(missingSquads, webhookUrl);
       } else {
-        // Create new subscriptions
-        await this.createInitialSubscriptions(webhookUrl);
+        logger.info('✅ All expected subscriptions already exist');
       }
 
       // Refresh our local cache
@@ -228,6 +242,37 @@ export class SubscriptionManager {
     }
   }
 
+  private async createMissingSubscriptions(
+    missingSquads: Array<{ squadName: string; topic: string; eventName: string }>,
+    webhookUrl: string
+  ): Promise<void> {
+    logger.info(`🆕 Creating ${missingSquads.length} missing subscriptions...`);
+
+    const createdSubscriptions: SubscriptionResponse[] = [];
+
+    for (const squad of missingSquads) {
+      try {
+        logger.info(`Creating subscription for squad: ${squad.squadName}`);
+        
+        const subscription = await this.subscriptionService.createAnalyticsSubscription({
+          squadName: squad.squadName,
+          topic: squad.topic,
+          eventName: squad.eventName,
+          webhookUrl: webhookUrl
+        });
+
+        createdSubscriptions.push(subscription);
+        logger.info(`✅ Created subscription for squad ${squad.squadName}`);
+        
+      } catch (error) {
+        logger.error(`❌ Failed to create subscription for squad ${squad.squadName}:`, error);
+        // Continue with other subscriptions even if one fails
+      }
+    }
+
+    logger.info(`✅ Successfully created ${createdSubscriptions.length}/${missingSquads.length} missing subscriptions`);
+  }
+
   private startHealthMonitoring(): void {
     const healthCheckInterval = 5 * 60 * 1000; // 5 minutes
     
@@ -280,23 +325,6 @@ export class SubscriptionManager {
       logger.info('✅ Subscription recovery completed');
     } catch (error) {
       logger.error('❌ Subscription recovery failed:', error);
-    }
-  }
-
-  private async deactivateAllSubscriptions(): Promise<void> {
-    logger.info('🔄 Deactivating all subscriptions...');
-
-    try {
-      for (const subscription of this.subscriptions) {
-        if (subscription.status === SubscriptionStatus.ACTIVE && subscription.subscriptionId) {
-          await this.subscriptionService.deactivateSubscription(subscription.subscriptionId);
-          logger.debug(`   Deactivated: ${subscription.subscriptionId}`);
-        }
-      }
-      
-      logger.info('✅ All subscriptions deactivated');
-    } catch (error) {
-      logger.error('❌ Failed to deactivate subscriptions:', error);
     }
   }
 

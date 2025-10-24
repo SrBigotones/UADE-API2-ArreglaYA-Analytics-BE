@@ -48,6 +48,18 @@ export const createDataSource = async () => {
     ssl: finalConfig.ssl
   });
 
+  // Log seguro del password (tipo y longitud)
+  try {
+    const pwd: any = (finalConfig as any).password;
+    logger.info('Database password debug:', {
+      type: typeof pwd,
+      length: typeof pwd === 'string' ? pwd.length : undefined,
+      isSet: typeof pwd !== 'undefined' && pwd !== null && pwd !== ''
+    });
+  } catch (_) {
+    // ignore logging errors
+  }
+
   return AppDataSource;
 };
 
