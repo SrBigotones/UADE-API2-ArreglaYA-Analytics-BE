@@ -76,22 +76,32 @@ jobs:
         run: |
           set +x # Desactivar echo de comandos
           
-          # Función para enmascarar valores sensibles
-          mask_sensitive() {
-            echo "::add-mask::$1"
-            echo "$1"
+          # Función para desenmascarar valores
+          unmask_value() {
+            echo "${1#::add-mask::}"
           }
           
-          # Obtener valores enmascarados de forma segura
-          DB_HOST_VALUE=$(mask_sensitive "$DB_HOST")
-          DB_USERNAME_VALUE=$(mask_sensitive "$DB_USERNAME")
-          DB_PASSWORD_VALUE=$(mask_sensitive "$DB_PASSWORD")
-          DB_NAME_VALUE=$(mask_sensitive "$DB_NAME")
-          USERS_API_BASE_URL_VALUE=$(mask_sensitive "$USERS_API_BASE_URL")
-          CORE_HUB_API_KEY_VALUE=$(mask_sensitive "$CORE_HUB_API_KEY")
-          CORE_HUB_URL_VALUE=$(mask_sensitive "$CORE_HUB_URL")
-          WEBHOOK_SECRET_VALUE=$(mask_sensitive "$WEBHOOK_SECRET")
-          WEBHOOK_BASE_URL_VALUE=$(mask_sensitive "$WEBHOOK_BASE_URL")
+          # Desenmascarar valores antes del deploy
+          DB_HOST_CLEAN=$(unmask_value "$DB_HOST")
+          DB_USERNAME_CLEAN=$(unmask_value "$DB_USERNAME")
+          DB_PASSWORD_CLEAN=$(unmask_value "$DB_PASSWORD")
+          DB_NAME_CLEAN=$(unmask_value "$DB_NAME")
+          USERS_API_BASE_URL_CLEAN=$(unmask_value "$USERS_API_BASE_URL")
+          CORE_HUB_API_KEY_CLEAN=$(unmask_value "$CORE_HUB_API_KEY")
+          CORE_HUB_URL_CLEAN=$(unmask_value "$CORE_HUB_URL")
+          WEBHOOK_SECRET_CLEAN=$(unmask_value "$WEBHOOK_SECRET")
+          WEBHOOK_BASE_URL_CLEAN=$(unmask_value "$WEBHOOK_BASE_URL")
+          
+          # Add masks for sensitive values (ahora con los valores limpios)
+          echo "::add-mask::$DB_HOST_CLEAN"
+          echo "::add-mask::$DB_USERNAME_CLEAN"
+          echo "::add-mask::$DB_PASSWORD_CLEAN"
+          echo "::add-mask::$DB_NAME_CLEAN"
+          echo "::add-mask::$USERS_API_BASE_URL_CLEAN"
+          echo "::add-mask::$CORE_HUB_API_KEY_CLEAN"
+          echo "::add-mask::$CORE_HUB_URL_CLEAN"
+          echo "::add-mask::$WEBHOOK_SECRET_CLEAN"
+          echo "::add-mask::$WEBHOOK_BASE_URL_CLEAN"
           
           echo "::debug::Starting SAM deployment..."
           
@@ -102,14 +112,14 @@ jobs:
             --resolve-s3 \
             --parameter-overrides \
             Stage=stage \
-            DBHost="$DB_HOST_VALUE" \
-            DBUsername="$DB_USERNAME_VALUE" \
-            DBPassword="$DB_PASSWORD_VALUE" \
-            DBName="$DB_NAME_VALUE" \
-            UsersApiBaseUrl="$USERS_API_BASE_URL_VALUE" \
-            CoreHubApiKey="$CORE_HUB_API_KEY_VALUE" \
-            CoreHubUrl="$CORE_HUB_URL_VALUE" \
-            WebhookSecret="$WEBHOOK_SECRET_VALUE" \
-            WebhookBaseUrl="$WEBHOOK_BASE_URL_VALUE"
+            DBHost="$DB_HOST_CLEAN" \
+            DBUsername="$DB_USERNAME_CLEAN" \
+            DBPassword="$DB_PASSWORD_CLEAN" \
+            DBName="$DB_NAME_CLEAN" \
+            UsersApiBaseUrl="$USERS_API_BASE_URL_CLEAN" \
+            CoreHubApiKey="$CORE_HUB_API_KEY_CLEAN" \
+            CoreHubUrl="$CORE_HUB_URL_CLEAN" \
+            WebhookSecret="$WEBHOOK_SECRET_CLEAN" \
+            WebhookBaseUrl="$WEBHOOK_BASE_URL_CLEAN"
           
           echo "::debug::SAM deployment completed"
