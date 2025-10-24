@@ -155,17 +155,17 @@ export class SubscriptionManager {
       logger.info(`Found ${existingSubscriptions.length} existing subscriptions`);
 
       // Define expected subscriptions
-      const expectedTopics = [
-        'users.*.#',
-        'payments.*.#',
-        'matching.*.#',
-        'catalogue.*.#',
-        'search.*.#'
+      const expectedSquads = [
+        { squadName: 'users', topic: '*', eventName: '#' },
+        { squadName: 'payments', topic: '*', eventName: '#' },
+        { squadName: 'matching', topic: '*', eventName: '#' },
+        { squadName: 'catalogue', topic: '*', eventName: '#' },
+        { squadName: 'search', topic: '*', eventName: '#' }
       ];
 
-      // Find which topics are already subscribed
-      const existingTopics = existingSubscriptions.map(sub => sub.topic);
-      const missingTopics = expectedTopics.filter(topic => !existingTopics.includes(topic));
+      // Find which squads are already subscribed
+      const existingSquads = existingSubscriptions.map(sub => sub.squadName);
+      const missingSquads = expectedSquads.filter(squad => !existingSquads.includes(squad.squadName));
 
       // Verify existing subscriptions
       if (existingSubscriptions.length > 0) {
@@ -173,9 +173,10 @@ export class SubscriptionManager {
       }
 
       // Create missing subscriptions
-      if (missingTopics.length > 0) {
-        logger.info(`📝 Creating ${missingTopics.length} missing subscriptions: ${missingTopics.join(', ')}`);
-        await this.createMissingSubscriptions(missingTopics, webhookUrl);
+      if (missingSquads.length > 0) {
+        const squadNames = missingSquads.map(s => s.squadName).join(', ');
+        logger.info(`📝 Creating ${missingSquads.length} missing subscriptions for squads: ${squadNames}`);
+        await this.createMissingSubscriptions(missingSquads, webhookUrl);
       } else {
         logger.info('✅ All expected subscriptions already exist');
       }
@@ -241,33 +242,35 @@ export class SubscriptionManager {
     }
   }
 
-  private async createMissingSubscriptions(missingTopics: string[], webhookUrl: string): Promise<void> {
-    logger.info(`🆕 Creating ${missingTopics.length} missing subscriptions...`);
+  private async createMissingSubscriptions(
+    missingSquads: Array<{ squadName: string; topic: string; eventName: string }>,
+    webhookUrl: string
+  ): Promise<void> {
+    logger.info(`🆕 Creating ${missingSquads.length} missing subscriptions...`);
 
     const createdSubscriptions: SubscriptionResponse[] = [];
 
-    for (const topic of missingTopics) {
+    for (const squad of missingSquads) {
       try {
-        logger.info(`Creating subscription for topic: ${topic}`);
+        logger.info(`Creating subscription for squad: ${squad.squadName}`);
         
-        const squadName = this.subscriptionService.getSquadName();
         const subscription = await this.subscriptionService.createAnalyticsSubscription({
-          squadName: squadName,
-          topic: topic,
-          eventName: '#',
+          squadName: squad.squadName,
+          topic: squad.topic,
+          eventName: squad.eventName,
           webhookUrl: webhookUrl
         });
 
         createdSubscriptions.push(subscription);
-        logger.info(`✅ Created subscription for ${topic}`);
+        logger.info(`✅ Created subscription for squad ${squad.squadName}`);
         
       } catch (error) {
-        logger.error(`❌ Failed to create subscription for ${topic}:`, error);
+        logger.error(`❌ Failed to create subscription for squad ${squad.squadName}:`, error);
         // Continue with other subscriptions even if one fails
       }
     }
 
-    logger.info(`✅ Successfully created ${createdSubscriptions.length}/${missingTopics.length} missing subscriptions`);
+    logger.info(`✅ Successfully created ${createdSubscriptions.length}/${missingSquads.length} missing subscriptions`);
   }
 
   private startHealthMonitoring(): void {

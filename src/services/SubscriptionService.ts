@@ -96,40 +96,38 @@ export class SubscriptionService {
   async subscribeToAllArreglaYAEvents(webhookUrl: string): Promise<SubscriptionResponse[]> {
     const subscriptions: SubscriptionResponse[] = [];
     logger.info('Subscribing to all ArreglaYA events');
-    // Add environment suffix to squad name to avoid conflicts between environments
-    const squadName = this.getSquadName();
     
-    logger.info(`Using squad name: ${squadName} for environment: ${config.nodeEnv}`);
+    logger.info(`Using environment: ${config.nodeEnv}`);
     
     const eventSubscriptions = [
       {
-        squadName,
-        topic: 'users.*.#',
-        eventName: '*',
+        squadName: 'users',
+        topic: '*',
+        eventName: '#',
         description: 'All user events from Users squad'
       },
       {
-        squadName,
-        topic: 'payments.*.#',
-        eventName: '*',
+        squadName: 'payments',
+        topic: '*',
+        eventName: '#',
         description: 'All payment events from Payments squad'
       },
       {
-        squadName,
-        topic: 'matching.*.#',
-        eventName: '*',
+        squadName: 'matching',
+        topic: '*',
+        eventName: '#',
         description: 'All matching events from Matching squad'
       },
       {
-        squadName,
-        topic: 'catalogue.*.#',
-        eventName: '*',
+        squadName: 'catalogue',
+        topic: '*',
+        eventName: '#',
         description: 'All catalogue events from Catalogue squad'
       },
       {
-        squadName,
-        topic: 'search.*.#',
-        eventName: '*',
+        squadName: 'search',
+        topic: '*',
+        eventName: '#',
         description: 'All search events from Search squad'
       }
     ];
