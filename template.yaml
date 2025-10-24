@@ -40,8 +40,11 @@ Resources:
               Action:
                 - ssm:GetParameter
                 - ssm:GetParameters
+                - ssm:GetParametersByPath
               Resource:
                 - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/arreglaya/analytics/*'
+                - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/arreglaya/analytics/${Stage}/*'
+                - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/arreglaya/analytics/${Stage}/db/*'
         - AWSLambdaVPCAccessExecutionRole
       CodeUri: .
       Handler: dist/lambda-handler.handler
