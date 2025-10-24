@@ -74,36 +74,34 @@ jobs:
 
       - name: Deploy SAM application
         run: |
-          {
-            set +x # Desactivar echo de comandos
-            
-            # Crear archivo temporal para los parámetros
-            PARAMS_FILE=$(mktemp)
-            
-            # Escribir parámetros al archivo
-            cat > "$PARAMS_FILE" << EOF
-            Stage=stage
-            DBHost=${{ env.DB_HOST }}
-            DBUsername=${{ env.DB_USERNAME }}
-            DBPassword=${{ env.DB_PASSWORD }}
-            DBName=${{ env.DB_NAME }}
-            UsersApiBaseUrl=${{ env.USERS_API_BASE_URL }}
-            CoreHubApiKey=${{ env.CORE_HUB_API_KEY }}
-            CoreHubUrl=${{ env.CORE_HUB_URL }}
-            WebhookSecret=${{ env.WEBHOOK_SECRET }}
-            WebhookBaseUrl=${{ env.WEBHOOK_BASE_URL }}
-            EOF
-            
-            # Ejecutar sam deploy con parámetros desde archivo
-            sam deploy \
+          set +x # Desactivar echo de comandos
+          
+          # Crear archivo temporal para los parámetros
+          PARAMS_FILE=$(mktemp)
+          
+          # Escribir parámetros al archivo de forma segura
+          cat << 'PARAMETERS' > "$PARAMS_FILE"
+          Stage=stage
+          DBHost=${{ env.DB_HOST }}
+          DBUsername=${{ env.DB_USERNAME }}
+          DBPassword=${{ env.DB_PASSWORD }}
+          DBName=${{ env.DB_NAME }}
+          UsersApiBaseUrl=${{ env.USERS_API_BASE_URL }}
+          CoreHubApiKey=${{ env.CORE_HUB_API_KEY }}
+          CoreHubUrl=${{ env.CORE_HUB_URL }}
+          WebhookSecret=${{ env.WEBHOOK_SECRET }}
+          WebhookBaseUrl=${{ env.WEBHOOK_BASE_URL }}
+          PARAMETERS
+          
+          # Ejecutar sam deploy sin mostrar los parámetros
+          echo "::debug::Starting SAM deployment..."
+          sam deploy \
             --stack-name arreglaya-analytics-be-stage \
             --no-confirm-changeset \
             --capabilities CAPABILITY_IAM \
             --resolve-s3 \
-            --parameter-overrides "$(cat $PARAMS_FILE)"
-            
-            # Limpiar
-            rm -f "$PARAMS_FILE"
-            
-            echo "::debug::SAM deployment completed"
-          } 2>/dev/null # Suprimir errores en la salida
+            --parameter-overrides "$(cat $PARAMS_FILE)" > >(grep -v "parameter-overrides") 2>&1
+          
+          # Limpiar
+          rm -f "$PARAMS_FILE"
+          echo "::debug::SAM deployment completed"
