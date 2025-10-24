@@ -54,15 +54,15 @@ Resources:
           STAGE: !Ref Stage
           NODE_ENV: !If [IsProduction, 'production', 'development']
           SSM_PATH_PREFIX: !Sub '/arreglaya/analytics/${Stage}/db'
-          DB_HOST: !Sub '{{resolve:ssm-secure:/arreglaya/analytics/${Stage}/db/host}}'
-          DB_USERNAME: !Sub '{{resolve:ssm-secure:/arreglaya/analytics/${Stage}/db/username}}'
-          DB_PASSWORD: !Sub '{{resolve:ssm-secure:/arreglaya/analytics/${Stage}/db/password}}'
-          DB_NAME: !Sub '{{resolve:ssm-secure:/arreglaya/analytics/${Stage}/db/name}}'
-          USERS_API_BASE_URL: !Sub '{{resolve:ssm-secure:/arreglaya/analytics/${Stage}/db/users-api-base-url}}'
-          CORE_HUB_API_KEY: !Sub '{{resolve:ssm-secure:/arreglaya/analytics/${Stage}/db/core-hub-api-key}}'
-          CORE_HUB_URL: !Sub '{{resolve:ssm-secure:/arreglaya/analytics/${Stage}/db/core-hub-url}}'
-          WEBHOOK_SECRET: !Sub '{{resolve:ssm-secure:/arreglaya/analytics/${Stage}/db/webhook-secret}}'
-          WEBHOOK_BASE_URL: !Sub '{{resolve:ssm-secure:/arreglaya/analytics/${Stage}/db/webhook-base-url}}'
+          DB_HOST: !Sub '/arreglaya/analytics/${Stage}/db/host'
+          DB_USERNAME: !Sub '/arreglaya/analytics/${Stage}/db/username'
+          DB_PASSWORD: !Sub '/arreglaya/analytics/${Stage}/db/password'
+          DB_NAME: !Sub '/arreglaya/analytics/${Stage}/db/name'
+          USERS_API_BASE_URL: !Sub '/arreglaya/analytics/${Stage}/db/users-api-base-url'
+          CORE_HUB_API_KEY: !Sub '/arreglaya/analytics/${Stage}/db/core-hub-api-key'
+          CORE_HUB_URL: !Sub '/arreglaya/analytics/${Stage}/db/core-hub-url'
+          WEBHOOK_SECRET: !Sub '/arreglaya/analytics/${Stage}/db/webhook-secret'
+          WEBHOOK_BASE_URL: !Sub '/arreglaya/analytics/${Stage}/db/webhook-base-url'
       VpcConfig:
         SecurityGroupIds:
           - sg-06cb3c7cc1c6a444b
