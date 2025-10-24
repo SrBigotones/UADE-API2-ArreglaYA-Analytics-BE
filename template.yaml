@@ -1,38 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: ArreglaYA Metrics BE - Express on Lambda + HTTP API
-
-Parameters:
-  DBHost:
-    Type: String
-    Description: Database host
-  DBUsername:
-    Type: String
-    Description: Database username
-  DBPassword:
-    Type: String
-    Description: Database password
-    NoEcho: true
-  DBName:
-    Type: String
-    Description: Database name
-  UsersApiBaseUrl:
-    Type: String
-    Description: Users API base URL
-  CoreHubApiKey:
-    Type: String
-    Description: Core Hub API key
-    NoEcho: true
-  CoreHubUrl:
-    Type: String
-    Description: Core Hub URL
-  WebhookSecret:
-    Type: String
-    Description: Webhook secret
-    NoEcho: true
-  WebhookBaseUrl:
-    Type: String
-    Description: Webhook base URL
   Stage:
     Type: String
     Default: prod
@@ -81,6 +49,15 @@ Resources:
           STAGE: !Ref Stage
           NODE_ENV: !If [IsProduction, 'production', 'development']
           SSM_PATH_PREFIX: !Sub '/arreglaya/analytics/${Stage}/db'
+          DB_HOST: !Sub '{{resolve:ssm:/arreglaya/analytics/${Stage}/db/host}}'
+          DB_USERNAME: !Sub '{{resolve:ssm:/arreglaya/analytics/${Stage}/db/username}}'
+          DB_PASSWORD: !Sub '{{resolve:ssm:/arreglaya/analytics/${Stage}/db/password}}'
+          DB_NAME: !Sub '{{resolve:ssm:/arreglaya/analytics/${Stage}/db/name}}'
+          USERS_API_BASE_URL: !Sub '{{resolve:ssm:/arreglaya/analytics/${Stage}/db/users-api-base-url}}'
+          CORE_HUB_API_KEY: !Sub '{{resolve:ssm:/arreglaya/analytics/${Stage}/db/core-hub-api-key}}'
+          CORE_HUB_URL: !Sub '{{resolve:ssm:/arreglaya/analytics/${Stage}/db/core-hub-url}}'
+          WEBHOOK_SECRET: !Sub '{{resolve:ssm:/arreglaya/analytics/${Stage}/db/webhook-secret}}'
+          WEBHOOK_BASE_URL: !Sub '{{resolve:ssm:/arreglaya/analytics/${Stage}/db/webhook-base-url}}'
       VpcConfig:
         SecurityGroupIds:
           - sg-06cb3c7cc1c6a444b
