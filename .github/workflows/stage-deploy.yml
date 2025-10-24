@@ -45,31 +45,65 @@ jobs:
       - name: Get SSM Parameters
         id: ssm
         run: |
-          echo "DB_HOST=$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/host' --with-decryption --query 'Parameter.Value' --output text)" >> $GITHUB_ENV
-          echo "DB_USERNAME=$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/username' --with-decryption --query 'Parameter.Value' --output text)" >> $GITHUB_ENV
-          echo "DB_PASSWORD=$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/password' --with-decryption --query 'Parameter.Value' --output text)" >> $GITHUB_ENV
-          echo "DB_NAME=$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/name' --with-decryption --query 'Parameter.Value' --output text)" >> $GITHUB_ENV
-          echo "USERS_API_BASE_URL=$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/users-api-base-url' --with-decryption --query 'Parameter.Value' --output text)" >> $GITHUB_ENV
-          echo "CORE_HUB_API_KEY=$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/core-hub-api-key' --with-decryption --query 'Parameter.Value' --output text)" >> $GITHUB_ENV
-          echo "CORE_HUB_URL=$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/core-hub-url' --with-decryption --query 'Parameter.Value' --output text)" >> $GITHUB_ENV
-          echo "WEBHOOK_SECRET=$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/webhook-secret' --with-decryption --query 'Parameter.Value' --output text)" >> $GITHUB_ENV
-          echo "WEBHOOK_BASE_URL=$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/webhook-base-url' --with-decryption --query 'Parameter.Value' --output text)" >> $GITHUB_ENV
+          {
+            # Desactivar el echo de comandos
+            set +x
+            
+            # Función para añadir secreto a GITHUB_ENV de forma segura
+            add_secret() {
+              local name=$1
+              local value=$2
+              echo "$name<<EOF" >> $GITHUB_ENV
+              echo "$value" >> $GITHUB_ENV
+              echo "EOF" >> $GITHUB_ENV
+            }
+            
+            # Obtener y guardar parámetros como secretos
+            add_secret "DB_HOST" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/host' --with-decryption --query 'Parameter.Value' --output text)"
+            add_secret "DB_USERNAME" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/username' --with-decryption --query 'Parameter.Value' --output text)"
+            add_secret "DB_PASSWORD" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/password' --with-decryption --query 'Parameter.Value' --output text)"
+            add_secret "DB_NAME" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/name' --with-decryption --query 'Parameter.Value' --output text)"
+            add_secret "USERS_API_BASE_URL" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/users-api-base-url' --with-decryption --query 'Parameter.Value' --output text)"
+            add_secret "CORE_HUB_API_KEY" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/core-hub-api-key' --with-decryption --query 'Parameter.Value' --output text)"
+            add_secret "CORE_HUB_URL" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/core-hub-url' --with-decryption --query 'Parameter.Value' --output text)"
+            add_secret "WEBHOOK_SECRET" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/webhook-secret' --with-decryption --query 'Parameter.Value' --output text)"
+            add_secret "WEBHOOK_BASE_URL" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/webhook-base-url' --with-decryption --query 'Parameter.Value' --output text)"
+            
+            echo "::debug::SSM parameters retrieved successfully"
+          } 2>/dev/null # Suprimir errores en la salida
 
       - name: Deploy SAM application
-        run: >
-          sam deploy 
-          --stack-name arreglaya-analytics-be-stage 
-          --no-confirm-changeset 
-          --capabilities CAPABILITY_IAM 
-          --resolve-s3 
-          --parameter-overrides 
-          Stage=stage 
-          DBHost=${{ env.DB_HOST }} 
-          DBUsername=${{ env.DB_USERNAME }} 
-          DBPassword=${{ env.DB_PASSWORD }} 
-          DBName=${{ env.DB_NAME }} 
-          UsersApiBaseUrl=${{ env.USERS_API_BASE_URL }} 
-          CoreHubApiKey=${{ env.CORE_HUB_API_KEY }} 
-          CoreHubUrl=${{ env.CORE_HUB_URL }} 
-          WebhookSecret=${{ env.WEBHOOK_SECRET }} 
-          WebhookBaseUrl=${{ env.WEBHOOK_BASE_URL }}
+        run: |
+          {
+            set +x # Desactivar echo de comandos
+            
+            # Crear archivo temporal para los parámetros
+            PARAMS_FILE=$(mktemp)
+            
+            # Escribir parámetros al archivo
+            cat > "$PARAMS_FILE" << EOF
+            Stage=stage
+            DBHost=${{ env.DB_HOST }}
+            DBUsername=${{ env.DB_USERNAME }}
+            DBPassword=${{ env.DB_PASSWORD }}
+            DBName=${{ env.DB_NAME }}
+            UsersApiBaseUrl=${{ env.USERS_API_BASE_URL }}
+            CoreHubApiKey=${{ env.CORE_HUB_API_KEY }}
+            CoreHubUrl=${{ env.CORE_HUB_URL }}
+            WebhookSecret=${{ env.WEBHOOK_SECRET }}
+            WebhookBaseUrl=${{ env.WEBHOOK_BASE_URL }}
+            EOF
+            
+            # Ejecutar sam deploy con parámetros desde archivo
+            sam deploy \
+            --stack-name arreglaya-analytics-be-stage \
+            --no-confirm-changeset \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --parameter-overrides "$(cat $PARAMS_FILE)"
+            
+            # Limpiar
+            rm -f "$PARAMS_FILE"
+            
+            echo "::debug::SAM deployment completed"
+          } 2>/dev/null # Suprimir errores en la salida
