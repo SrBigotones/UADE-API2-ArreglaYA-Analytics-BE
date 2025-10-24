@@ -53,16 +53,15 @@ Resources:
         Variables:
           STAGE: !Ref Stage
           NODE_ENV: !If [IsProduction, 'production', 'development']
-          SSM_PATH_PREFIX: !Sub '/arreglaya/analytics/${Stage}/db'
-          DB_HOST: !Sub '/arreglaya/analytics/${Stage}/db/host'
-          DB_USERNAME: !Sub '/arreglaya/analytics/${Stage}/db/username'
-          DB_PASSWORD: !Sub '/arreglaya/analytics/${Stage}/db/password'
-          DB_NAME: !Sub '/arreglaya/analytics/${Stage}/db/name'
-          USERS_API_BASE_URL: !Sub '/arreglaya/analytics/${Stage}/db/users-api-base-url'
-          CORE_HUB_API_KEY: !Sub '/arreglaya/analytics/${Stage}/db/core-hub-api-key'
-          CORE_HUB_URL: !Sub '/arreglaya/analytics/${Stage}/db/core-hub-url'
-          WEBHOOK_SECRET: !Sub '/arreglaya/analytics/${Stage}/db/webhook-secret'
-          WEBHOOK_BASE_URL: !Sub '/arreglaya/analytics/${Stage}/db/webhook-base-url'
+          DB_HOST: !Ref DBHost
+          DB_USERNAME: !Ref DBUsername
+          DB_PASSWORD: !Ref DBPassword
+          DB_NAME: !Ref DBName
+          USERS_API_BASE_URL: !Ref UsersApiBaseUrl
+          CORE_HUB_API_KEY: !Ref CoreHubApiKey
+          CORE_HUB_URL: !Ref CoreHubUrl
+          WEBHOOK_SECRET: !Ref WebhookSecret
+          WEBHOOK_BASE_URL: !Ref WebhookBaseUrl
       VpcConfig:
         SecurityGroupIds:
           - sg-06cb3c7cc1c6a444b
