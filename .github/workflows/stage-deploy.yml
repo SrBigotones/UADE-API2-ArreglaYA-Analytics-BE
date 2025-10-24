@@ -1,0 +1,51 @@
+name: Deploy to Stage
+
+on:
+  push:
+    branches: [develop]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      
+      # Install dependencies and build TypeScript
+      - run: npm ci
+      - run: npm run build
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN_STAGE }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: aws-actions/setup-sam@v2
+      
+      # Delete the stack if it exists in ROLLBACK_COMPLETE state
+      - name: Delete failed stack
+        run: |
+          if aws cloudformation describe-stacks --stack-name arreglaya-analytics-be-stage 2>&1 | grep -q 'ROLLBACK_COMPLETE'; then
+            aws cloudformation delete-stack --stack-name arreglaya-analytics-be-stage
+            aws cloudformation wait stack-delete-complete --stack-name arreglaya-analytics-be-stage
+          fi
+        continue-on-error: true
+      
+      - run: sam build --use-container
+      
+      # Deploy with secure parameters
+      - run: >
+          sam deploy 
+          --stack-name arreglaya-analytics-be-stage 
+          --no-confirm-changeset 
+          --capabilities CAPABILITY_IAM 
+          --resolve-s3 
+          --parameter-overrides Stage=stage

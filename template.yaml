@@ -33,6 +33,15 @@ Parameters:
   WebhookBaseUrl:
     Type: String
     Description: Webhook base URL
+  Stage:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - prod
+      - stage
+
+Conditions:
+  IsProduction: !Equals [!Ref Stage, 'prod']
 
 Globals:
   Function:
@@ -69,9 +78,9 @@ Resources:
       Runtime: nodejs20.x
       Environment:
         Variables:
-          STAGE: 'prod'
-          NODE_ENV: 'production'
-          SSM_PATH_PREFIX: '/arreglaya/analytics/prod/db'
+          STAGE: !Ref Stage
+          NODE_ENV: !If [IsProduction, 'production', 'development']
+          SSM_PATH_PREFIX: !Sub '/arreglaya/analytics/${Stage}/db'
       VpcConfig:
         SecurityGroupIds:
           - sg-06cb3c7cc1c6a444b
