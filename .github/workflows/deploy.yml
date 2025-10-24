@@ -48,12 +48,12 @@ jobs:
           --capabilities CAPABILITY_IAM 
           --resolve-s3 
           --parameter-overrides 
-          DBHost='${{ secrets.DB_HOST }}'
-          DBUsername='${{ secrets.DB_USERNAME }}'
-          DBPassword='${{ secrets.DB_PASSWORD }}'
-          DBName='${{ secrets.DB_NAME }}'
-          UsersApiBaseUrl='${{ secrets.USERS_API_BASE_URL }}'
-          CoreHubApiKey='${{ secrets.CORE_HUB_API_KEY }}'
-          CoreHubUrl='${{ secrets.CORE_HUB_URL }}'
-          WebhookSecret='${{ secrets.WEBHOOK_SECRET }}'
-          WebhookBaseUrl='${{ secrets.WEBHOOK_BASE_URL }}'
+          "DBHost=${{ secrets.DB_HOST }}
+          DBUsername=${{ secrets.DB_USERNAME }}
+          DBPassword=${{ secrets.DB_PASSWORD }}
+          DBName=${{ secrets.DB_NAME }}
+          UsersApiBaseUrl=${{ secrets.USERS_API_BASE_URL }}
+          CoreHubApiKey=${{ secrets.CORE_HUB_API_KEY }}
+          CoreHubUrl=${{ secrets.CORE_HUB_URL }}
+          WebhookSecret=${{ secrets.WEBHOOK_SECRET }}
+          WebhookBaseUrl=${{ secrets.WEBHOOK_BASE_URL }}"
