@@ -96,8 +96,9 @@ Resources:
         SecurityGroupIds:
           - sg-06cb3c7cc1c6a444b
         SubnetIds:
-          - subnet-0375b830ae4709b21
-          - subnet-0a261e8ee3a674914
+          - subnet-04877be02999384a9  # Subnet pública para acceso a Internet
+          - subnet-0375b830ae4709b21  # Subnet privada en AZ1 para acceso a RDS
+          - subnet-0a261e8ee3a674914  # Subnet privada en AZ2 para acceso a RDS
       Events:
         ApiEvent:
           Type: HttpApi
