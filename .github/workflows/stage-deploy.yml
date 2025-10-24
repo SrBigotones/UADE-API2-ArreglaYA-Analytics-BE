@@ -73,54 +73,43 @@ jobs:
           } 2>/dev/null # Suprimir errores en la salida
 
       - name: Deploy SAM application
-        env:
-          # Configurar para ocultar secretos en logs
-          PARAMETERS: |
-            Stage=stage
-            DBHost=***
-            DBUsername=***
-            DBPassword=***
-            DBName=***
-            UsersApiBaseUrl=***
-            CoreHubApiKey=***
-            CoreHubUrl=***
-            WebhookSecret=***
-            WebhookBaseUrl=***
         run: |
-          {
-            set +x # Desactivar echo de comandos
-            
-            # Crear archivo temporal seguro
-            PARAMS_FILE=$(mktemp -t params.XXXXXX)
-            chmod 600 "$PARAMS_FILE"
-            
-            # Escribir parámetros de forma segura
-            echo "Stage=stage" > "$PARAMS_FILE"
-            echo "DBHost='$DB_HOST'" >> "$PARAMS_FILE"
-            echo "DBUsername='$DB_USERNAME'" >> "$PARAMS_FILE"
-            echo "DBPassword='$DB_PASSWORD'" >> "$PARAMS_FILE"
-            echo "DBName='$DB_NAME'" >> "$PARAMS_FILE"
-            echo "UsersApiBaseUrl='$USERS_API_BASE_URL'" >> "$PARAMS_FILE"
-            echo "CoreHubApiKey='$CORE_HUB_API_KEY'" >> "$PARAMS_FILE"
-            echo "CoreHubUrl='$CORE_HUB_URL'" >> "$PARAMS_FILE"
-            echo "WebhookSecret='$WEBHOOK_SECRET'" >> "$PARAMS_FILE"
-            echo "WebhookBaseUrl='$WEBHOOK_BASE_URL'" >> "$PARAMS_FILE"
-            
-            # Log seguro de inicio
-            echo "::debug::Starting SAM deployment with parameters:"
-            echo "$PARAMETERS"
-            
-            # Ejecutar sam deploy con salida filtrada
-            sam deploy \
-              --stack-name arreglaya-analytics-be-stage \
-              --no-confirm-changeset \
-              --capabilities CAPABILITY_IAM \
-              --resolve-s3 \
-              --parameter-overrides "$(cat $PARAMS_FILE)" 2>&1 | \
-              sed -E 's/(DBHost|DBUsername|DBPassword|DBName|UsersApiBaseUrl|CoreHubApiKey|CoreHubUrl|WebhookSecret|WebhookBaseUrl)=[^ ]*/***/g'
-            
-            # Limpiar de forma segura
-            shred -u "$PARAMS_FILE"
-            
-            echo "::debug::SAM deployment completed"
-          } 2> >(sed 's/[[:print:]]//g')
+          set +x # Desactivar echo de comandos
+          
+          # Función para enmascarar valores sensibles
+          mask_sensitive() {
+            echo "::add-mask::$1"
+            echo "$1"
+          }
+          
+          # Obtener valores enmascarados de forma segura
+          DB_HOST_VALUE=$(mask_sensitive "$DB_HOST")
+          DB_USERNAME_VALUE=$(mask_sensitive "$DB_USERNAME")
+          DB_PASSWORD_VALUE=$(mask_sensitive "$DB_PASSWORD")
+          DB_NAME_VALUE=$(mask_sensitive "$DB_NAME")
+          USERS_API_BASE_URL_VALUE=$(mask_sensitive "$USERS_API_BASE_URL")
+          CORE_HUB_API_KEY_VALUE=$(mask_sensitive "$CORE_HUB_API_KEY")
+          CORE_HUB_URL_VALUE=$(mask_sensitive "$CORE_HUB_URL")
+          WEBHOOK_SECRET_VALUE=$(mask_sensitive "$WEBHOOK_SECRET")
+          WEBHOOK_BASE_URL_VALUE=$(mask_sensitive "$WEBHOOK_BASE_URL")
+          
+          echo "::debug::Starting SAM deployment..."
+          
+          sam deploy \
+            --stack-name arreglaya-analytics-be-stage \
+            --no-confirm-changeset \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --parameter-overrides \
+            Stage=stage \
+            DBHost="$DB_HOST_VALUE" \
+            DBUsername="$DB_USERNAME_VALUE" \
+            DBPassword="$DB_PASSWORD_VALUE" \
+            DBName="$DB_NAME_VALUE" \
+            UsersApiBaseUrl="$USERS_API_BASE_URL_VALUE" \
+            CoreHubApiKey="$CORE_HUB_API_KEY_VALUE" \
+            CoreHubUrl="$CORE_HUB_URL_VALUE" \
+            WebhookSecret="$WEBHOOK_SECRET_VALUE" \
+            WebhookBaseUrl="$WEBHOOK_BASE_URL_VALUE"
+          
+          echo "::debug::SAM deployment completed"
