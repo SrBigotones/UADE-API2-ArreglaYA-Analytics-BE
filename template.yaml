@@ -1,6 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: ArreglaYA Metrics BE - Express on Lambda + HTTP API
+
+Parameters:
   Stage:
     Type: String
     Default: prod
