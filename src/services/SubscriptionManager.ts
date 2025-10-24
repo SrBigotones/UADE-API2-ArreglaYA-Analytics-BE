@@ -156,11 +156,11 @@ export class SubscriptionManager {
 
       // Define expected subscriptions
       const expectedSquads = [
-        { squadName: 'users', topic: '*', eventName: '#' },
-        { squadName: 'payments', topic: '*', eventName: '#' },
-        { squadName: 'matching', topic: '*', eventName: '#' },
-        { squadName: 'catalogue', topic: '*', eventName: '#' },
-        { squadName: 'search', topic: '*', eventName: '#' }
+        { squadName: 'users', topic: '*', eventName: '*' },
+        { squadName: 'payments', topic: '*', eventName: '*' },
+        { squadName: 'matching', topic: '*', eventName: '*' },
+        { squadName: 'catalogue', topic: '*', eventName: '*' },
+        { squadName: 'search', topic: '*', eventName: '*' }
       ];
 
       // Find which squads are already subscribed

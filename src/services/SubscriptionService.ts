@@ -103,31 +103,31 @@ export class SubscriptionService {
       {
         squadName: 'users',
         topic: '*',
-        eventName: '#',
+        eventName: '*',
         description: 'All user events from Users squad'
       },
       {
         squadName: 'payments',
         topic: '*',
-        eventName: '#',
+        eventName: '*',
         description: 'All payment events from Payments squad'
       },
       {
         squadName: 'matching',
         topic: '*',
-        eventName: '#',
+        eventName: '*',
         description: 'All matching events from Matching squad'
       },
       {
         squadName: 'catalogue',
         topic: '*',
-        eventName: '#',
+        eventName: '*',
         description: 'All catalogue events from Catalogue squad'
       },
       {
         squadName: 'search',
         topic: '*',
-        eventName: '#',
+        eventName: '*',
         description: 'All search events from Search squad'
       }
     ];
