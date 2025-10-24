@@ -4,7 +4,7 @@ dotenv.config();
 
 const config = {
   port: process.env.PORT || 3000,
-  nodeEnv: process.env.NODE_ENV || 'development',
+  nodeEnv: process.env.NODE_ENV || 'local',
   database: {
     type: 'postgres' as const,
     host: process.env.DB_HOST || 'localhost',
