@@ -1,4 +1,5 @@
-import axios, { AxiosResponse } from 'axios';
+import axios from '../config/axios';
+import { AxiosResponse } from 'axios';
 import { logger } from '../config/logger';
 import { config } from '../config';
 import { featureFlagService, FEATURE_FLAGS } from './FeatureFlagService';

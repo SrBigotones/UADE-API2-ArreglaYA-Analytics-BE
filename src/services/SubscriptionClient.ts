@@ -1,4 +1,5 @@
-import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
+import { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
+import { createAxiosInstance } from '../config/axios';
 import { 
   SubscriptionRequest, 
   SubscriptionResponse, 
@@ -11,6 +12,9 @@ import config from '../config';
 /**
  * HTTP Client for Core Hub Subscription API
  * Handles all communication with the core subscription endpoints
+ * 
+ * Usa createAxiosInstance() para garantizar que los interceptores de logging
+ * se apliquen a todas las peticiones al Core Hub
  */
 export class SubscriptionClient {
   private client: AxiosInstance;
@@ -26,38 +30,18 @@ export class SubscriptionClient {
       headers['X-API-KEY'] = config.coreHub.apiKey;
     }
 
-    this.client = axios.create({
+    // Usar createAxiosInstance en vez de axios.create para mantener interceptores
+    this.client = createAxiosInstance({
       baseURL: config.coreHub.url,
       timeout: config.coreHub.timeout,
       headers
     });
 
-    // Add request interceptor for logging
-    this.client.interceptors.request.use(
-      (config) => {
-        logger.debug(`Making request to Core Hub: ${config.method?.toUpperCase()} ${config.url}`, {
-          data: config.data,
-          params: config.params
-        });
-        return config;
-      },
-      (error) => {
-        logger.error('Request interceptor error:', error);
-        return Promise.reject(error);
-      }
-    );
-
-    // Add response interceptor for error handling
+    // Add custom error handler for Core Hub specific errors
     this.client.interceptors.response.use(
-      (response) => {
-        logger.debug(`Core Hub response: ${response.status} ${response.statusText}`, {
-          data: response.data
-        });
-        return response;
-      },
+      (response) => response,
       (error: AxiosError) => {
         const coreHubError = this.handleApiError(error);
-        logger.error('Core Hub API error:', coreHubError);
         return Promise.reject(coreHubError);
       }
     );
