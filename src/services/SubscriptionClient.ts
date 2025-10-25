@@ -19,14 +19,17 @@ import config from '../config';
 export class SubscriptionClient {
   private client: AxiosInstance;
 
-  constructor() {
+  constructor(coreHubConfig?: typeof config.coreHub) {
+    // Use provided config or get current values from global config (allows SSM to update)
+    const coreHub = coreHubConfig || config.coreHub;
+    
     // Log the Core Hub configuration being used
-    logger.info('🔧 Initializing SubscriptionClient with Core Hub URL:', config.coreHub.url);
+    logger.info('🔧 Initializing SubscriptionClient with Core Hub URL:', coreHub.url);
     logger.info('📝 Core Hub config:', {
-      url: config.coreHub.url,
-      timeout: config.coreHub.timeout,
-      hasApiKey: !!config.coreHub.apiKey,
-      retryAttempts: config.coreHub.retryAttempts
+      url: coreHub.url,
+      timeout: coreHub.timeout,
+      hasApiKey: !!coreHub.apiKey,
+      retryAttempts: coreHub.retryAttempts
     });
 
     const headers: Record<string, string> = {
@@ -35,8 +38,8 @@ export class SubscriptionClient {
     };
 
     // Add X-API-Key header if configured (case sensitive!)
-    if (config.coreHub.apiKey) {
-      headers['X-API-Key'] = config.coreHub.apiKey;
+    if (coreHub.apiKey) {
+      headers['X-API-Key'] = coreHub.apiKey;
       logger.info('✅ Core Hub API Key configured');
     } else {
       logger.warn('⚠️ No Core Hub API Key configured');
@@ -44,8 +47,8 @@ export class SubscriptionClient {
 
     // Usar createAxiosInstance en vez de axios.create para mantener interceptores
     this.client = createAxiosInstance({
-      baseURL: config.coreHub.url,
-      timeout: config.coreHub.timeout,
+      baseURL: coreHub.url,
+      timeout: coreHub.timeout,
       headers,
       // Configuración para mejorar la estabilidad de la conexión
       maxRedirects: 5,
@@ -57,12 +60,12 @@ export class SubscriptionClient {
       // Configuración de Keep-Alive
       httpAgent: new (require('http').Agent)({
         keepAlive: true,
-        keepAliveMsecs: config.coreHub.keepAliveTimeout,
+        keepAliveMsecs: coreHub.keepAliveTimeout,
         maxSockets: 100
       }),
       httpsAgent: new (require('https').Agent)({
         keepAlive: true,
-        keepAliveMsecs: config.coreHub.keepAliveTimeout,
+        keepAliveMsecs: coreHub.keepAliveTimeout,
         maxSockets: 100
       })
     });
@@ -70,24 +73,24 @@ export class SubscriptionClient {
     // Implementar mecanismo de retry
     let retryCount = 0;
     this.client.interceptors.response.use(undefined, async (error) => {
-      const config = error.config;
+      const requestConfig = error.config;
       
       // Solo reintentar en errores de red o 5xx
       if (
-        retryCount < config.coreHub.retryAttempts && 
+        retryCount < coreHub.retryAttempts && 
         (error.code === 'ECONNABORTED' || 
          error.code === 'ECONNREFUSED' || 
          error.message.includes('socket hang up') ||
          (error.response && error.response.status >= 500))
       ) {
         retryCount++;
-        logger.warn(`Retrying request (attempt ${retryCount}/${config.coreHub.retryAttempts})...`);
+        logger.warn(`Retrying request (attempt ${retryCount}/${coreHub.retryAttempts})...`);
         
         // Esperar antes de reintentar
-        await new Promise(resolve => setTimeout(resolve, config.coreHub.retryDelay));
+        await new Promise(resolve => setTimeout(resolve, coreHub.retryDelay));
         
         // Reintentar la petición
-        return this.client(config);
+        return this.client(requestConfig);
       }
       
       return Promise.reject(error);
