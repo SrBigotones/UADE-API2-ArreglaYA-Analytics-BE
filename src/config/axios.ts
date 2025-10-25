@@ -99,8 +99,23 @@ applyLoggingInterceptors(axios);
  * pero manteniendo el mismo logging
  */
 export function createAxiosInstance(config?: any): AxiosInstance {
-  const instance = axios.create(config);
+  // Merge default config with provided config
+  const mergedConfig = {
+    ...config,
+    httpsAgent: new (require('https').Agent)({
+      rejectUnauthorized: process.env.NODE_ENV === 'production'
+    })
+  };
+
+  const instance = axios.create(mergedConfig);
   applyLoggingInterceptors(instance);
+  
+  // Log HTTPS configuration
+  logger.info('Creating Axios instance with HTTPS config:', {
+    rejectUnauthorized: process.env.NODE_ENV === 'production',
+    environment: process.env.NODE_ENV
+  });
+
   return instance;
 }
 
