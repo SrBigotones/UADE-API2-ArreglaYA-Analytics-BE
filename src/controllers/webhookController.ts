@@ -89,14 +89,16 @@ export class WebhookController {
       });
 
       logger.debug(`💽 Persisting event ${messageId} to database...`);
-      await eventRepository.save(newEvent);
-      logger.info(`✅ Event ${messageId} saved to database (id: ${newEvent.id})`);
+      const savedEvent = await eventRepository.save(newEvent);
+      logger.info(`✅ Event ${messageId} saved to database (id: ${savedEvent.id})`);
+      logger.debug(`💾 Saved event details:`, JSON.stringify(savedEvent, null, 2));
 
       // Mark event as processed
       logger.info(`🏷️ Marking event ${messageId} as processed...`);
-      newEvent.processed = true;
-      await eventRepository.save(newEvent);
+      savedEvent.processed = true;
+      const updatedEvent = await eventRepository.save(savedEvent);
       logger.info(`✅ Event ${messageId} marked as processed`);
+      logger.debug(`✔️ Updated event:`, JSON.stringify(updatedEvent, null, 2));
 
       // Send ACK to Core Hub to confirm successful processing
       logger.info(`📤 Sending ACK to Core Hub for message ${messageId}...`);
