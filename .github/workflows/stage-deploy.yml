@@ -124,8 +124,8 @@ jobs:
               --query 'Environment.Variables' \
               --output json)
             
-            # Add DEPLOYMENT_TIMESTAMP to existing variables
-            UPDATED_ENV=$(echo "$CURRENT_ENV" | jq --arg ts "$(date +%s)" '. + {DEPLOYMENT_TIMESTAMP: $ts}')
+            # Add DEPLOYMENT_TIMESTAMP to existing variables (compact JSON)
+            UPDATED_ENV=$(echo "$CURRENT_ENV" | jq -c --arg ts "$(date +%s)" '. + {DEPLOYMENT_TIMESTAMP: $ts}')
             
             # Update function with all variables preserved
             aws lambda update-function-configuration \
