@@ -103,6 +103,15 @@ jobs:
               CoreHubUrl="$CORE_HUB_URL" \
               WebhookSecret="$WEBHOOK_SECRET" \
               WebhookBaseUrl="$WEBHOOK_BASE_URL" \
-            --no-execute-changeset false
+            --no-fail-on-empty-changeset \
+            --force-upload
           
           echo "::debug::SAM deployment completed"
+
+      - name: Update Lambda Function Configuration
+        run: |
+          FUNCTION_NAME=$(aws lambda list-functions --query "Functions[?contains(FunctionName, 'arreglaya-analytics-be-stage')].FunctionName" --output text)
+          if [ ! -z "$FUNCTION_NAME" ]; then
+            aws lambda update-function-configuration --function-name $FUNCTION_NAME --environment "Variables={DEPLOYMENT_TIMESTAMP=$(date +%s)}"
+            echo "::debug::Lambda function configuration updated to force new deployment"
+          fi
