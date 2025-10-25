@@ -118,6 +118,11 @@ export class WebhookController {
    */
   private async sendAckToCoreHub(messageId: string, subscriptionId?: string): Promise<void> {
     try {
+      if (!subscriptionId) {
+        logger.warn(`Cannot send ACK for message ${messageId}: subscriptionId is missing`);
+        return;
+      }
+
       const { getSubscriptionService } = await import('../services/SubscriptionService');
       const subscriptionService = getSubscriptionService();
       
