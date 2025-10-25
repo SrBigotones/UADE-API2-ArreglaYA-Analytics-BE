@@ -51,8 +51,6 @@ Globals:
     Environment:
       Variables:
         NODE_OPTIONS: "--enable-source-maps"
-        STAGE: "prod"
-        NODE_ENV: "production"
 
 Resources:
   HttpApi:

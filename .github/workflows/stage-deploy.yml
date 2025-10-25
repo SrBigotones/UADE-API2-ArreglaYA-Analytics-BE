@@ -108,10 +108,26 @@ jobs:
           
           echo "::debug::SAM deployment completed"
 
-      - name: Update Lambda Function Configuration
+      - name: Force Lambda update
         run: |
+          set +x  # Disable command echo for security
           FUNCTION_NAME=$(aws lambda list-functions --query "Functions[?contains(FunctionName, 'arreglaya-analytics-be-stage')].FunctionName" --output text)
           if [ ! -z "$FUNCTION_NAME" ]; then
-            aws lambda update-function-configuration --function-name $FUNCTION_NAME --environment "Variables={DEPLOYMENT_TIMESTAMP=$(date +%s)}"
-            echo "::debug::Lambda function configuration updated to force new deployment"
+            # Get current environment variables (quietly)
+            CURRENT_ENV=$(aws lambda get-function-configuration \
+              --function-name $FUNCTION_NAME \
+              --query 'Environment.Variables' \
+              --output json 2>/dev/null)
+            
+            # Add DEPLOYMENT_TIMESTAMP to existing variables
+            UPDATED_ENV=$(echo $CURRENT_ENV | jq --arg ts "$(date +%s)" '. + {DEPLOYMENT_TIMESTAMP: $ts}')
+            
+            # Update function with all variables preserved (suppress output)
+            aws lambda update-function-configuration \
+              --function-name $FUNCTION_NAME \
+              --environment "Variables=$UPDATED_ENV" \
+              --no-cli-pager \
+              > /dev/null 2>&1
+            
+            echo "::debug::Lambda function updated with timestamp, all env vars preserved"
           fi
