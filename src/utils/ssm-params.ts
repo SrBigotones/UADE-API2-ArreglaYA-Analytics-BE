@@ -27,8 +27,11 @@ export interface DBConfig {
 }
 
 export async function getDBConfig(): Promise<DBConfig> {
-    // Use the exact path as configured in AWS Parameter Store
-    const prefix = '/arreglaya/analytics/prod/db';
+    // Use environment-specific path
+    const stage = process.env.STAGE || 'prod';
+    const prefix = `/arreglaya/analytics/${stage}/db`;
+    
+    logger.info(`Using stage: ${stage} for SSM parameters`);
     
     const getParam = async (name: string) => {
         const fullPath = `${prefix}/${name}`;
