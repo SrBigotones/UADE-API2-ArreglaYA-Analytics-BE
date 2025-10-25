@@ -2,6 +2,12 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Log environment variables for debugging (especially in Lambda cold starts)
+console.log('🔍 Loading configuration...');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('CORE_HUB_URL from env:', process.env.CORE_HUB_URL);
+console.log('CORE_HUB_API_KEY exists:', !!process.env.CORE_HUB_API_KEY);
+
 const config = {
   port: process.env.PORT || 3000,
   nodeEnv: process.env.NODE_ENV || 'local',

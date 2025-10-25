@@ -7,6 +7,16 @@ import app from './app';
 let serverlessHandler: Handler;
 let dbInitialized = false;
 
+// Track pending async operations
+const pendingOperations = new Set<Promise<any>>();
+
+export function registerPendingOperation(promise: Promise<any>): void {
+  pendingOperations.add(promise);
+  promise.finally(() => {
+    pendingOperations.delete(promise);
+  });
+}
+
 async function initDB() {
   if (!dbInitialized) {
     try {
@@ -42,7 +52,7 @@ async function setupServerless() {
 
 export const handler = async (event: APIGatewayProxyEvent, context: Context) => {
   console.info('Lambda handler started');
-  context.callbackWaitsForEmptyEventLoop = false;
+  context.callbackWaitsForEmptyEventLoop = false; // Let Lambda manage the lifecycle
 
   try {
     // Initialize database if needed
@@ -53,9 +63,18 @@ export const handler = async (event: APIGatewayProxyEvent, context: Context) => 
     // Setup serverless handler if needed
     const handler = await setupServerless();
     console.info('Request received:', event.httpMethod, event.path);
-    
-    return await handler(event, context, () => {});
-    
+
+    // Execute the serverless handler and get response
+    const response = await handler(event, context, () => {});
+
+    // CRITICAL: Wait for pending operations AFTER getting response but BEFORE returning
+    if (pendingOperations.size > 0) {
+      console.info(`⏳ Waiting for ${pendingOperations.size} pending operations to complete...`);
+      await Promise.allSettled(Array.from(pendingOperations));
+      console.info('✅ All pending operations completed');
+    }
+
+    return response;
   } catch (error: any) {
     console.error('Error in handler:', error);
     return {

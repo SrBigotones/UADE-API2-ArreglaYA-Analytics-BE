@@ -20,6 +20,15 @@ export class SubscriptionClient {
   private client: AxiosInstance;
 
   constructor() {
+    // Log the Core Hub configuration being used
+    logger.info('🔧 Initializing SubscriptionClient with Core Hub URL:', config.coreHub.url);
+    logger.info('📝 Core Hub config:', {
+      url: config.coreHub.url,
+      timeout: config.coreHub.timeout,
+      hasApiKey: !!config.coreHub.apiKey,
+      retryAttempts: config.coreHub.retryAttempts
+    });
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Accept': 'application/json'
@@ -28,6 +37,9 @@ export class SubscriptionClient {
     // Add X-API-Key header if configured (case sensitive!)
     if (config.coreHub.apiKey) {
       headers['X-API-Key'] = config.coreHub.apiKey;
+      logger.info('✅ Core Hub API Key configured');
+    } else {
+      logger.warn('⚠️ No Core Hub API Key configured');
     }
 
     // Usar createAxiosInstance en vez de axios.create para mantener interceptores

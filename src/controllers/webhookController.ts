@@ -11,58 +11,42 @@ export class WebhookController {
 
   /**
    * Handle Core Hub webhook events
-   * 
-   * Simple flow:
-   * 1. Receive event
-   * 2. Save to database (processed: true, no ACK needed)
-   * 3. Return 200 OK
+   *
+   * Flow (based on AWS Lambda Extensions pattern):
+   * 1. Start async processing and register it
+   * 2. Send 200 OK immediately
+   * 3. Lambda handler waits for registered operations before returning
+   * 4. Processing completes (save to DB, send ACK)
    */
   public async handleCoreHubWebhook(req: Request, res: Response): Promise<void> {
     const coreHubEvent = req.body;
-    
+
     logger.info('📨 Received Core Hub webhook event:', {
       messageId: coreHubEvent.messageId,
       destination: coreHubEvent.destination,
       timestamp: coreHubEvent.timestamp
     });
 
+    // Start processing and register it BEFORE sending response
+    const processingPromise = this.processEventAsync(coreHubEvent);
+
+    // Register with Lambda handler
     try {
-      // Transform event
-      const eventMessage: EventMessage = this.transformCoreHubEvent(coreHubEvent);
-
-      // Save to database (mark as processed since no ACK needed)
-      const eventRepository = AppDataSource.getRepository(Event);
-      const newEvent = eventRepository.create({
-        squad: eventMessage.squad,
-        topico: eventMessage.topico,
-        evento: eventMessage.evento,
-        cuerpo: eventMessage.cuerpo,
-        timestamp: eventMessage.timestamp || new Date(),
-        processed: true, // Mark as processed immediately
-        messageId: coreHubEvent.messageId,
-        correlationId: coreHubEvent.correlationId,
-        source: 'core-hub'
-      });
-
-      await eventRepository.save(newEvent);
-      logger.info(`✅ Event ${coreHubEvent.messageId} saved to database (id: ${newEvent.id})`);
-
-      // Return 200 OK
-      res.status(200).json({ 
-        success: true, 
-        message: 'Event received and saved',
-        messageId: coreHubEvent.messageId,
-        eventId: newEvent.id
-      });
-
+      const { registerPendingOperation } = await import('../lambda-handler');
+      registerPendingOperation(processingPromise);
+      logger.info(`📝 Registered pending operation for event ${coreHubEvent.messageId}`);
     } catch (error) {
-      logger.error('❌ Failed to save event:', error);
-      res.status(500).json({ 
-        success: false, 
-        message: 'Failed to save event',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
+      logger.warn('⚠️ Not running in Lambda context');
     }
+
+    // Send 200 OK immediately (HTTP response)
+    res.status(200).json({
+      success: true,
+      message: 'Event received',
+      messageId: coreHubEvent.messageId
+    });
+
+    logger.info(`✉️ Response sent for event ${coreHubEvent.messageId}, processing continues...`);
   }
 
   /**
@@ -85,7 +69,7 @@ export class WebhookController {
       // Save event to database
       logger.info(`💾 Saving event ${messageId} to database...`);
       const eventRepository = AppDataSource.getRepository(Event);
-      
+
       logger.debug(`🏗️ Creating event entity for ${messageId}...`);
       const newEvent = eventRepository.create({
         squad: eventMessage.squad,
