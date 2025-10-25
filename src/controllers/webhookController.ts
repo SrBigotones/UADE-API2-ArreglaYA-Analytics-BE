@@ -64,12 +64,18 @@ export class WebhookController {
 
     try {
       logger.info(`⚙️ Processing event ${messageId} asynchronously...`);
+      logger.debug(`📦 Raw Core Hub event:`, JSON.stringify(coreHubEvent, null, 2));
 
       // Transform Core Hub event to internal format
+      logger.info(`🔄 Transforming Core Hub event ${messageId}...`);
       const eventMessage: EventMessage = this.transformCoreHubEvent(coreHubEvent);
+      logger.debug(`✨ Transformed event:`, JSON.stringify(eventMessage, null, 2));
 
       // Save event to database
+      logger.info(`💾 Saving event ${messageId} to database...`);
       const eventRepository = AppDataSource.getRepository(Event);
+      
+      logger.debug(`🏗️ Creating event entity for ${messageId}...`);
       const newEvent = eventRepository.create({
         squad: eventMessage.squad,
         topico: eventMessage.topico,
@@ -83,20 +89,29 @@ export class WebhookController {
         source: 'core-hub'
       });
 
+      logger.debug(`💽 Persisting event ${messageId} to database...`);
       await eventRepository.save(newEvent);
-      logger.info(`💾 Event ${messageId} saved to database (id: ${newEvent.id})`);
+      logger.info(`✅ Event ${messageId} saved to database (id: ${newEvent.id})`);
 
       // Mark event as processed
+      logger.info(`🏷️ Marking event ${messageId} as processed...`);
       newEvent.processed = true;
       await eventRepository.save(newEvent);
+      logger.info(`✅ Event ${messageId} marked as processed`);
 
       // Send ACK to Core Hub to confirm successful processing
+      logger.info(`📤 Sending ACK to Core Hub for message ${messageId}...`);
       await this.sendAckToCoreHub(messageId, subscriptionId);
 
       logger.info(`✅ Successfully processed and ACKed Core Hub event ${messageId}`);
 
     } catch (error) {
-      logger.error(`❌ Failed to process Core Hub event ${messageId}:`, error);
+      logger.error(`❌ Failed to process Core Hub event ${messageId}:`, {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        messageId,
+        subscriptionId
+      });
       // Don't throw - let the error be caught by the caller
     }
   }

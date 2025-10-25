@@ -3,6 +3,7 @@ import serverlessExpress from '@vendia/serverless-express';
 import { Handler, Context, APIGatewayProxyEvent } from 'aws-lambda';
 import { createDataSource, AppDataSource, connectDatabase } from './config/database';
 import app from './app';
+
 let serverlessHandler: Handler;
 let dbInitialized = false;
 
@@ -39,10 +40,9 @@ async function setupServerless() {
 }
 
 
-
 export const handler = async (event: APIGatewayProxyEvent, context: Context) => {
   console.info('Lambda handler started');
-  context.callbackWaitsForEmptyEventLoop = false;
+  context.callbackWaitsForEmptyEventLoop = true; // Wait for async operations
 
   try {
     // Initialize database if needed
