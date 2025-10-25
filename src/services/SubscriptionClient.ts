@@ -33,8 +33,15 @@ export class SubscriptionClient {
     // Usar createAxiosInstance en vez de axios.create para mantener interceptores
     this.client = createAxiosInstance({
       baseURL: config.coreHub.url,
-      timeout: config.coreHub.timeout,
-      headers
+      timeout: config.coreHub.timeout || 10000, // Default timeout 10s si no está configurado
+      headers,
+      // Configuración para mejorar la estabilidad de la conexión
+      maxRedirects: 5,
+      maxBodyLength: 10 * 1024 * 1024, // 10MB
+      maxContentLength: 10 * 1024 * 1024, // 10MB
+      validateStatus: function (status: number) {
+        return status >= 200 && status < 300; // Solo considerar exitosos los códigos 2xx
+      }
     });
 
     // Add custom error handler for Core Hub specific errors
@@ -196,6 +203,33 @@ export class SubscriptionClient {
    * Handle API errors and convert to standardized format
    */
   private handleApiError(error: AxiosError): CoreHubApiError {
+    // Manejar errores de conexión específicamente
+    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      logger.error('Core Hub connection timeout', {
+        code: error.code,
+        url: error.config?.url,
+        timeout: error.config?.timeout
+      });
+      return {
+        message: 'Connection timeout with Core Hub',
+        status: 504,
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    if (error.code === 'ECONNREFUSED' || error.message.includes('socket hang up')) {
+      logger.error('Core Hub connection refused', {
+        code: error.code,
+        url: error.config?.url,
+        baseURL: error.config?.baseURL
+      });
+      return {
+        message: 'Unable to establish connection with Core Hub',
+        status: 503,
+        timestamp: new Date().toISOString()
+      };
+    }
+
     const status = error.response?.status || 500;
     const message = (error.response?.data as any)?.message || error.message || 'Unknown error occurred';
     
