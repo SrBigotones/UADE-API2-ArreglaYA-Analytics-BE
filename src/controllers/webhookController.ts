@@ -21,11 +21,13 @@ export class WebhookController {
   public async handleCoreHubWebhook(req: Request, res: Response): Promise<void> {
     const coreHubEvent = req.body;
 
-    logger.info('📨 Received Core Hub webhook event:', {
-      messageId: coreHubEvent.messageId,
-      destination: coreHubEvent.destination,
-      timestamp: coreHubEvent.timestamp
-    });
+    // Log completo del payload recibido
+    logger.info('📨 ========== CORE HUB WEBHOOK RECEIVED ==========');
+    logger.info('Full payload: ' + JSON.stringify(coreHubEvent, null, 2));
+    logger.info('Message ID: ' + coreHubEvent.messageId);
+    logger.info('Subscription ID: ' + coreHubEvent.subscriptionId);
+    logger.info('All keys: ' + JSON.stringify(Object.keys(coreHubEvent)));
+    logger.info('================================================');
 
     // Start processing and register it BEFORE sending response
     const processingPromise = this.processEventAsync(coreHubEvent);
