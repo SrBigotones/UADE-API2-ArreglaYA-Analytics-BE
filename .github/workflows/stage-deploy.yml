@@ -44,82 +44,64 @@ jobs:
       # Deploy with secure parameters
       - name: Get SSM Parameters
         id: ssm
+        env:
+          PARAM_PATH: /arreglaya/analytics/stage/db
         run: |
           {
-            # Desactivar el echo de comandos
-            set +x
+            set -e  # Exit on any error
+            set +x  # Disable command echo
             
-            # Función para añadir secreto a GITHUB_ENV de forma segura
-            add_secret() {
-              local name=$1
-              local value=$2
-              echo "$name<<EOF" >> $GITHUB_ENV
-              echo "$value" >> $GITHUB_ENV
-              echo "EOF" >> $GITHUB_ENV
+            # Función para obtener y enmascarar parámetro de SSM
+            get_ssm_param() {
+              local param_name=$1
+              local param_value
+              param_value=$(aws ssm get-parameter --name "$PARAM_PATH/$param_name" --with-decryption --query 'Parameter.Value' --output text)
+              # Enmascarar el valor inmediatamente
+              echo "::add-mask::$param_value"
+              echo "$param_value"
             }
             
-            # Obtener y guardar parámetros como secretos
-            add_secret "DB_HOST" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/host' --with-decryption --query 'Parameter.Value' --output text)"
-            add_secret "DB_USERNAME" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/username' --with-decryption --query 'Parameter.Value' --output text)"
-            add_secret "DB_PASSWORD" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/password' --with-decryption --query 'Parameter.Value' --output text)"
-            add_secret "DB_NAME" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/name' --with-decryption --query 'Parameter.Value' --output text)"
-            add_secret "USERS_API_BASE_URL" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/users-api-base-url' --with-decryption --query 'Parameter.Value' --output text)"
-            add_secret "CORE_HUB_API_KEY" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/core-hub-api-key' --with-decryption --query 'Parameter.Value' --output text)"
-            add_secret "CORE_HUB_URL" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/core-hub-url' --with-decryption --query 'Parameter.Value' --output text)"
-            add_secret "WEBHOOK_SECRET" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/webhook-secret' --with-decryption --query 'Parameter.Value' --output text)"
-            add_secret "WEBHOOK_BASE_URL" "$(aws ssm get-parameter --name '/arreglaya/analytics/stage/db/webhook-base-url' --with-decryption --query 'Parameter.Value' --output text)"
-            
-            echo "::debug::SSM parameters retrieved successfully"
-          } 2>/dev/null # Suprimir errores en la salida
+            # Obtener y almacenar parámetros de forma segura
+            {
+              echo "DB_HOST=$(get_ssm_param 'host')" >> "$GITHUB_ENV"
+              echo "DB_USERNAME=$(get_ssm_param 'username')" >> "$GITHUB_ENV"
+              echo "DB_PASSWORD=$(get_ssm_param 'password')" >> "$GITHUB_ENV"
+              echo "DB_NAME=$(get_ssm_param 'name')" >> "$GITHUB_ENV"
+              echo "USERS_API_BASE_URL=$(get_ssm_param 'users-api-base-url')" >> "$GITHUB_ENV"
+              echo "CORE_HUB_API_KEY=$(get_ssm_param 'core-hub-api-key')" >> "$GITHUB_ENV"
+              echo "CORE_HUB_URL=$(get_ssm_param 'core-hub-url')" >> "$GITHUB_ENV"
+              echo "WEBHOOK_SECRET=$(get_ssm_param 'webhook-secret')" >> "$GITHUB_ENV"
+              echo "WEBHOOK_BASE_URL=$(get_ssm_param 'webhook-base-url')" >> "$GITHUB_ENV"
+            } 2>/dev/null
+
+            echo "::debug::SSM parameters retrieved and masked successfully"
+          }
 
       - name: Deploy SAM application
+        env:
+          SAM_CLI_TELEMETRY: 0
         run: |
-          set +x # Desactivar echo de comandos
-          
-          # Función para desenmascarar valores
-          unmask_value() {
-            echo "${1#::add-mask::}"
-          }
-          
-          # Desenmascarar valores antes del deploy
-          DB_HOST_CLEAN=$(unmask_value "$DB_HOST")
-          DB_USERNAME_CLEAN=$(unmask_value "$DB_USERNAME")
-          DB_PASSWORD_CLEAN=$(unmask_value "$DB_PASSWORD")
-          DB_NAME_CLEAN=$(unmask_value "$DB_NAME")
-          USERS_API_BASE_URL_CLEAN=$(unmask_value "$USERS_API_BASE_URL")
-          CORE_HUB_API_KEY_CLEAN=$(unmask_value "$CORE_HUB_API_KEY")
-          CORE_HUB_URL_CLEAN=$(unmask_value "$CORE_HUB_URL")
-          WEBHOOK_SECRET_CLEAN=$(unmask_value "$WEBHOOK_SECRET")
-          WEBHOOK_BASE_URL_CLEAN=$(unmask_value "$WEBHOOK_BASE_URL")
-          
-          # Add masks for sensitive values (ahora con los valores limpios)
-          echo "::add-mask::$DB_HOST_CLEAN"
-          echo "::add-mask::$DB_USERNAME_CLEAN"
-          echo "::add-mask::$DB_PASSWORD_CLEAN"
-          echo "::add-mask::$DB_NAME_CLEAN"
-          echo "::add-mask::$USERS_API_BASE_URL_CLEAN"
-          echo "::add-mask::$CORE_HUB_API_KEY_CLEAN"
-          echo "::add-mask::$CORE_HUB_URL_CLEAN"
-          echo "::add-mask::$WEBHOOK_SECRET_CLEAN"
-          echo "::add-mask::$WEBHOOK_BASE_URL_CLEAN"
+          set +x # Disable command echo
           
           echo "::debug::Starting SAM deployment..."
           
+          # Deploy using masked environment variables directly
           sam deploy \
             --stack-name arreglaya-analytics-be-stage \
             --no-confirm-changeset \
             --capabilities CAPABILITY_IAM \
             --resolve-s3 \
             --parameter-overrides \
-            Stage=stage \
-            DBHost="$DB_HOST_CLEAN" \
-            DBUsername="$DB_USERNAME_CLEAN" \
-            DBPassword="$DB_PASSWORD_CLEAN" \
-            DBName="$DB_NAME_CLEAN" \
-            UsersApiBaseUrl="$USERS_API_BASE_URL_CLEAN" \
-            CoreHubApiKey="$CORE_HUB_API_KEY_CLEAN" \
-            CoreHubUrl="$CORE_HUB_URL_CLEAN" \
-            WebhookSecret="$WEBHOOK_SECRET_CLEAN" \
-            WebhookBaseUrl="$WEBHOOK_BASE_URL_CLEAN"
+              Stage=stage \
+              DBHost="$DB_HOST" \
+              DBUsername="$DB_USERNAME" \
+              DBPassword="$DB_PASSWORD" \
+              DBName="$DB_NAME" \
+              UsersApiBaseUrl="$USERS_API_BASE_URL" \
+              CoreHubApiKey="$CORE_HUB_API_KEY" \
+              CoreHubUrl="$CORE_HUB_URL" \
+              WebhookSecret="$WEBHOOK_SECRET" \
+              WebhookBaseUrl="$WEBHOOK_BASE_URL" \
+            --no-execute-changeset false
           
           echo "::debug::SAM deployment completed"
