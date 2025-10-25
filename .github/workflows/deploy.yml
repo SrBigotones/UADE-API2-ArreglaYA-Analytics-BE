@@ -40,20 +40,67 @@ jobs:
       
       - run: sam build --use-container
       
-      # Deploy with secure parameters
-      - run: >
-          sam deploy 
-          --stack-name arreglaya-analytics-be 
-          --no-confirm-changeset 
-          --capabilities CAPABILITY_IAM 
-          --resolve-s3 
-          --parameter-overrides 
-          "DBHost=${{ secrets.DB_HOST }}
-          DBUsername=${{ secrets.DB_USERNAME }}
-          DBPassword=${{ secrets.DB_PASSWORD }}
-          DBName=${{ secrets.DB_NAME }}
-          UsersApiBaseUrl=${{ secrets.USERS_API_BASE_URL }}
-          CoreHubApiKey=${{ secrets.CORE_HUB_API_KEY }}
-          CoreHubUrl=${{ secrets.CORE_HUB_URL }}
-          WebhookSecret=${{ secrets.WEBHOOK_SECRET }}
-          WebhookBaseUrl=${{ secrets.WEBHOOK_BASE_URL }}"
+      # Get SSM Parameters securely
+      - name: Get SSM Parameters
+        id: ssm
+        env:
+          PARAM_PATH: /arreglaya/analytics/prod/db
+        run: |
+          {
+            set -e  # Exit on any error
+            set +x  # Disable command echo
+            
+            # Función para obtener y enmascarar parámetro de SSM
+            get_ssm_param() {
+              local param_name=$1
+              local value
+              value=$(aws ssm get-parameter --name "$PARAM_PATH/$param_name" --with-decryption --query 'Parameter.Value' --output text)
+              # Enmascarar el valor inmediatamente
+              echo "::add-mask::$value"
+              # Escribir al GITHUB_ENV usando la sintaxis de delimitador
+              echo "$2<<EOF" >> $GITHUB_ENV
+              echo "$value" >> $GITHUB_ENV
+              echo "EOF" >> $GITHUB_ENV
+            }
+            
+            # Obtener y almacenar parámetros de forma segura
+            get_ssm_param 'host' 'DB_HOST'
+            get_ssm_param 'username' 'DB_USERNAME'
+            get_ssm_param 'password' 'DB_PASSWORD'
+            get_ssm_param 'name' 'DB_NAME'
+            get_ssm_param 'users-api-base-url' 'USERS_API_BASE_URL'
+            get_ssm_param 'core-hub-api-key' 'CORE_HUB_API_KEY'
+            get_ssm_param 'core-hub-url' 'CORE_HUB_URL'
+            get_ssm_param 'webhook-secret' 'WEBHOOK_SECRET'
+            get_ssm_param 'webhook-base-url' 'WEBHOOK_BASE_URL'
+
+            echo "::debug::SSM parameters retrieved and masked successfully"
+          } 2>/dev/null
+
+      # Deploy with secure parameter handling
+      - name: Deploy SAM application
+        env:
+          SAM_CLI_TELEMETRY: 0
+        run: |
+          set +x # Disable command echo
+          
+          echo "::debug::Starting SAM deployment..."
+          
+          # Deploy using masked environment variables directly
+          sam deploy \
+            --stack-name arreglaya-analytics-be \
+            --no-confirm-changeset \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --parameter-overrides \
+              Stage=prod \
+              DBHost="$DB_HOST" \
+              DBUsername="$DB_USERNAME" \
+              DBPassword="$DB_PASSWORD" \
+              DBName="$DB_NAME" \
+              UsersApiBaseUrl="$USERS_API_BASE_URL" \
+              CoreHubApiKey="$CORE_HUB_API_KEY" \
+              CoreHubUrl="$CORE_HUB_URL" \
+              WebhookSecret="$WEBHOOK_SECRET" \
+              WebhookBaseUrl="$WEBHOOK_BASE_URL" \
+            --no-execute-changeset false
