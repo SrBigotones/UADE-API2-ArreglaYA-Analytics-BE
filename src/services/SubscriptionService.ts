@@ -314,8 +314,9 @@ export class SubscriptionService {
 
   /**
    * Send ACK to Core Hub for a processed message
+   * Format: POST /messages/ack/{subscriptionId}
    */
-  async acknowledgeMessage(messageId: string, subscriptionId?: string): Promise<void> {
+  async acknowledgeMessage(messageId: string, subscriptionId: string): Promise<void> {
     try {
       logger.info(`Sending ACK for message ${messageId}`, { subscriptionId });
       

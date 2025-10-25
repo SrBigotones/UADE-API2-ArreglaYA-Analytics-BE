@@ -216,13 +216,13 @@ export class SubscriptionClient {
 
   /**
    * Send ACK for a processed message
+   * Format: POST /messages/ack/{subscriptionId}
    */
-  async acknowledgeMessage(messageId: string, subscriptionId?: string): Promise<void> {
+  async acknowledgeMessage(messageId: string, subscriptionId: string): Promise<void> {
     try {
       logger.debug(`Sending ACK for message: ${messageId}`, { subscriptionId });
       
-      const params = subscriptionId ? { subscriptionId } : {};
-      await this.client.post(`/messages/${messageId}/ack`, null, { params });
+      await this.client.post(`/messages/ack/${subscriptionId}`, null);
       
       logger.debug(`ACK sent successfully for message: ${messageId}`);
       
