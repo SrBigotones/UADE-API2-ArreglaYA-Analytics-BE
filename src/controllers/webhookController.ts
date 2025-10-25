@@ -221,12 +221,14 @@ export class WebhookController {
     try {
       const { getSubscriptionManager } = await import('../services/SubscriptionManager');
       const manager = getSubscriptionManager();
-      const status = manager.getStatus();
+      const subscriptions = await manager.getSubscriptions();
 
       res.status(200).json({
         success: true,
         data: {
-          ...status,
+          subscriptionCount: subscriptions.length,
+          activeSubscriptions: subscriptions.filter(sub => sub.status === 'ACTIVE').length,
+          subscriptions: subscriptions,
           timestamp: new Date().toISOString()
         }
       });
