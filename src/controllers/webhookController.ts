@@ -35,10 +35,9 @@ export class WebhookController {
         messageId: coreHubEvent.messageId
       });
 
-      // Process event asynchronously (don't await - fire and forget)
-      this.processEventAsync(coreHubEvent).catch(error => {
-        logger.error(`❌ Async processing failed for message ${coreHubEvent.messageId}:`, error);
-      });
+      // Process event asynchronously but WAIT for it to complete
+      // This ensures Lambda doesn't terminate before processing finishes
+      await this.processEventAsync(coreHubEvent);
 
     } catch (error) {
       logger.error('Error handling Core Hub webhook:', error);
