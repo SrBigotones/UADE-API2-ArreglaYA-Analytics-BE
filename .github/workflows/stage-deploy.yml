@@ -54,28 +54,29 @@ jobs:
             # Función para obtener y enmascarar parámetro de SSM
             get_ssm_param() {
               local param_name=$1
-              local param_value
-              param_value=$(aws ssm get-parameter --name "$PARAM_PATH/$param_name" --with-decryption --query 'Parameter.Value' --output text)
+              local value
+              value=$(aws ssm get-parameter --name "$PARAM_PATH/$param_name" --with-decryption --query 'Parameter.Value' --output text)
               # Enmascarar el valor inmediatamente
-              echo "::add-mask::$param_value"
-              echo "$param_value"
+              echo "::add-mask::$value"
+              # Escribir al GITHUB_ENV usando la sintaxis de delimitador
+              echo "$2<<EOF" >> $GITHUB_ENV
+              echo "$value" >> $GITHUB_ENV
+              echo "EOF" >> $GITHUB_ENV
             }
             
             # Obtener y almacenar parámetros de forma segura
-            {
-              echo "DB_HOST=$(get_ssm_param 'host')" >> "$GITHUB_ENV"
-              echo "DB_USERNAME=$(get_ssm_param 'username')" >> "$GITHUB_ENV"
-              echo "DB_PASSWORD=$(get_ssm_param 'password')" >> "$GITHUB_ENV"
-              echo "DB_NAME=$(get_ssm_param 'name')" >> "$GITHUB_ENV"
-              echo "USERS_API_BASE_URL=$(get_ssm_param 'users-api-base-url')" >> "$GITHUB_ENV"
-              echo "CORE_HUB_API_KEY=$(get_ssm_param 'core-hub-api-key')" >> "$GITHUB_ENV"
-              echo "CORE_HUB_URL=$(get_ssm_param 'core-hub-url')" >> "$GITHUB_ENV"
-              echo "WEBHOOK_SECRET=$(get_ssm_param 'webhook-secret')" >> "$GITHUB_ENV"
-              echo "WEBHOOK_BASE_URL=$(get_ssm_param 'webhook-base-url')" >> "$GITHUB_ENV"
-            } 2>/dev/null
+            get_ssm_param 'host' 'DB_HOST'
+            get_ssm_param 'username' 'DB_USERNAME'
+            get_ssm_param 'password' 'DB_PASSWORD'
+            get_ssm_param 'name' 'DB_NAME'
+            get_ssm_param 'users-api-base-url' 'USERS_API_BASE_URL'
+            get_ssm_param 'core-hub-api-key' 'CORE_HUB_API_KEY'
+            get_ssm_param 'core-hub-url' 'CORE_HUB_URL'
+            get_ssm_param 'webhook-secret' 'WEBHOOK_SECRET'
+            get_ssm_param 'webhook-base-url' 'WEBHOOK_BASE_URL'
 
             echo "::debug::SSM parameters retrieved and masked successfully"
-          }
+          } 2>/dev/null
 
       - name: Deploy SAM application
         env:
