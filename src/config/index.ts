@@ -19,7 +19,7 @@ const config = {
   coreHub: {
     url: process.env.CORE_HUB_URL || 'http://localhost:8080',
     apiKey: process.env.CORE_HUB_API_KEY || '',
-    timeout: parseInt(process.env.CORE_HUB_TIMEOUT || '10000'),
+    timeout: parseInt(process.env.CORE_HUB_TIMEOUT || '60000'), // Aumentado a 60 segundos
   },
   webhookSecret: process.env.WEBHOOK_SECRET || 'your-webhook-secret',
   enableWebhookSignatureValidation: process.env.ENABLE_WEBHOOK_SIGNATURE_VALIDATION === 'true',

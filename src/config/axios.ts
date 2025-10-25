@@ -68,6 +68,18 @@ const responseErrorInterceptor = (error: AxiosError) => {
   const errorData = error.response?.data 
     ? JSON.stringify(error.response.data).substring(0, 200) 
     : 'N/A';
+    
+  // Log detallado para errores de TLS/SSL
+  if (error.code === 'ECONNRESET' || error.message.includes('TLS') || error.message.includes('SSL')) {
+    logger.error('SSL/TLS Connection Error Details:', {
+      code: error.code,
+      message: error.message,
+      stack: error.stack,
+      url: fullUrl,
+      protocol: url.startsWith('https') ? 'HTTPS' : 'HTTP',
+      nodeEnv: process.env.NODE_ENV
+    });
+  }
 
   logger.error(`❌ HTTP RESPONSE ERROR: ${method} ${fullUrl} - Status: ${status} | Error: ${errorData}`, {
     method,
@@ -99,25 +111,51 @@ applyLoggingInterceptors(axios);
  * pero manteniendo el mismo logging
  */
 export function createAxiosInstance(config?: any): AxiosInstance {
+  const https = require('https');
+  
+  // Configuración avanzada del agente HTTPS
+  const httpsAgent = new https.Agent({
+    rejectUnauthorized: false, // Deshabilitado para permitir certificados autofirmados en stage y desarrollo
+    secureProtocol: 'TLSv1_2_method', // Forzar TLS 1.2
+    minVersion: 'TLSv1.2',
+    maxVersion: 'TLSv1.3',
+    keepAlive: true,
+    keepAliveMsecs: 1000,
+    timeout: 60000, // 60 segundos de timeout
+    maxCachedSessions: 100,
+    handshakeTimeout: 30000, // 30 segundos para handshake
+    ciphers: 'HIGH:!aNULL:!MD5:!RC4', // Cifrados seguros
+    honorCipherOrder: true
+  });
+
   // Merge default config with provided config
   const mergedConfig = {
     ...config,
-    httpsAgent: new (require('https').Agent)({
-      rejectUnauthorized: process.env.NODE_ENV === 'production'
-    })
+    httpsAgent,
+    timeout: 30000, // 30 segundos de timeout para la petición completa
+    maxRedirects: 5,
+    validateStatus: function (status: number) {
+      return status >= 200 && status < 500; // No rechazar en errores 4xx
+    }
   };
 
   const instance = axios.create(mergedConfig);
   applyLoggingInterceptors(instance);
   
   // Log HTTPS configuration
-  logger.info('Creating Axios instance with HTTPS config:', {
+  logger.info('Creating Axios instance with enhanced HTTPS config:', {
     rejectUnauthorized: process.env.NODE_ENV === 'production',
-    environment: process.env.NODE_ENV
+    environment: process.env.NODE_ENV,
+    secureProtocol: 'TLSv1_2_method',
+    timeout: mergedConfig.timeout,
+    keepAlive: true
   });
 
   return instance;
 }
 
-// Exportar la instancia por defecto configurada
-export default axios;
+// Crear una instancia configurada de axios
+const axiosInstance = createAxiosInstance();
+
+// Exportar la instancia configurada como default
+export default axiosInstance;

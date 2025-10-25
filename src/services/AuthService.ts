@@ -1,5 +1,5 @@
-import axios from '../config/axios';
-import { AxiosResponse } from 'axios';
+import axiosInstance from '../config/axios';
+import { AxiosResponse, isAxiosError } from 'axios';
 import { logger } from '../config/logger';
 import { config } from '../config';
 import { featureFlagService, FEATURE_FLAGS } from './FeatureFlagService';
@@ -73,7 +73,7 @@ export class AuthService {
 
       logger.info('Intentando autenticar usuario', { email: credentials.email });
 
-      const response: AxiosResponse<LoginResponse> = await axios.post(
+      const response: AxiosResponse<LoginResponse> = await axiosInstance.post(
         `${this.usersApiBaseUrl}/api/users/login`,
         {
           email: credentials.email,
@@ -99,7 +99,7 @@ export class AuthService {
       throw new Error(`Error de autenticación: ${response.status}`);
     } catch (error) {
       logger.error('Error en autenticación' + error);
-      if (axios.isAxiosError(error)) {
+      if (isAxiosError(error)) {
         if (error.response?.status === 401) {
           logger.warn('Credenciales inválidas', { email: credentials.email });
           throw new Error('Credenciales inválidas');
@@ -210,7 +210,7 @@ export class AuthService {
         active: true
       };
     } catch (error) {
-      if (axios.isAxiosError(error)) {
+      if (isAxiosError(error)) {
         if (error.response?.status === 401) {
           logger.warn('Token inválido o expirado');
           throw new Error('Token inválido o expirado');
