@@ -14,43 +14,42 @@ export class WebhookController {
    * This endpoint receives events from the Core Hub subscription system
    * 
    * Flow:
-   * 1. Immediately return 200 OK to Core Hub
-   * 2. Process event asynchronously (save to DB)
-   * 3. Send ACK to Core Hub after successful processing
+   * 1. Return 200 OK immediately to Core Hub
+   * 2. Process event after response is sent but before Lambda terminates
+   * 3. Use setImmediate to ensure processing happens in next event loop
    */
   public async handleCoreHubWebhook(req: Request, res: Response): Promise<void> {
-    try {
-      // Extract Core Hub event data
-      const coreHubEvent = req.body;
-      logger.info('📨 Received Core Hub webhook event:', {
-        messageId: coreHubEvent.messageId,
-        destination: coreHubEvent.destination,
-        timestamp: coreHubEvent.timestamp
+    const coreHubEvent = req.body;
+    
+    logger.info('📨 Received Core Hub webhook event:', {
+      messageId: coreHubEvent.messageId,
+      destination: coreHubEvent.destination,
+      timestamp: coreHubEvent.timestamp
+    });
+
+    // Return 200 OK immediately
+    res.status(200).json({ 
+      success: true, 
+      message: 'Event received, processing',
+      messageId: coreHubEvent.messageId
+    });
+
+    // Use setImmediate to process after response is sent
+    // This allows the response to flush while keeping the Lambda alive
+    const processingPromise = new Promise<void>((resolve, reject) => {
+      setImmediate(async () => {
+        try {
+          await this.processEventAsync(coreHubEvent);
+          resolve();
+        } catch (error) {
+          logger.error('Error in setImmediate processing:', error);
+          reject(error);
+        }
       });
+    });
 
-      // IMMEDIATELY return 200 OK to Core Hub
-      res.status(200).json({ 
-        success: true, 
-        message: 'Event received, processing asynchronously',
-        messageId: coreHubEvent.messageId
-      });
-
-      // Process event asynchronously but WAIT for it to complete
-      // This ensures Lambda doesn't terminate before processing finishes
-      await this.processEventAsync(coreHubEvent);
-
-    } catch (error) {
-      logger.error('Error handling Core Hub webhook:', error);
-      
-      // Only return error if we haven't sent response yet
-      if (!res.headersSent) {
-        res.status(500).json({ 
-          success: false, 
-          message: 'Error receiving Core Hub event',
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
-    }
+    // Wait for processing to complete before Lambda terminates
+    await processingPromise;
   }
 
   /**
