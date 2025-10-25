@@ -3,8 +3,6 @@ import serverlessExpress from '@vendia/serverless-express';
 import { Handler, Context, APIGatewayProxyEvent } from 'aws-lambda';
 import { createDataSource, AppDataSource, connectDatabase } from './config/database';
 import app from './app';
-import { initializeSubscriptions } from './services/SubscriptionManager';
-
 let serverlessHandler: Handler;
 let dbInitialized = false;
 
@@ -40,17 +38,7 @@ async function setupServerless() {
   return serverlessHandler;
 }
 
-async function setupCoreSubscriptions() {
-  // 🔗 Initialize Core Hub subscriptions after server starts
-  try {
-    console.log('🔗 Initializing Core Hub subscriptions...');
-    await initializeSubscriptions();
-    console.log('✅ Core Hub subscriptions initialized successfully');
-  } catch (error) {
-    console.log('❌ Failed to initialize Core Hub subscriptions:', error);
-    // Don't exit - the server can still function without subscriptions
-  }
-}
+
 
 export const handler = async (event: APIGatewayProxyEvent, context: Context) => {
   console.info('Lambda handler started');
@@ -61,8 +49,6 @@ export const handler = async (event: APIGatewayProxyEvent, context: Context) => 
     if (!dbInitialized || (AppDataSource && !AppDataSource.isInitialized)) {
       await initDB();
     }
-
-    setupCoreSubscriptions()
 
     // Setup serverless handler if needed
     const handler = await setupServerless();
