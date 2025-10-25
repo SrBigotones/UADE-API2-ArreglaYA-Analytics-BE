@@ -57,10 +57,14 @@ export class WebhookController {
    */
   private async processEventAsync(coreHubEvent: any): Promise<void> {
     const messageId = coreHubEvent.messageId;
-    const subscriptionId = coreHubEvent.subscriptionId;
+    
+    // Extract squad from routingKey (format: "users.test.created" -> "users")
+    const routingKey = coreHubEvent.routingKey || '';
+    const squad = routingKey.split('.')[0];
+    
+    logger.info(`⚙️ Processing event ${messageId} for squad: ${squad}`);
 
     try {
-      logger.info(`⚙️ Processing event ${messageId} asynchronously...`);
       logger.debug(`📦 Raw Core Hub event:`, JSON.stringify(coreHubEvent, null, 2));
 
       // Transform Core Hub event to internal format
@@ -98,9 +102,20 @@ export class WebhookController {
       logger.info(`✅ Event ${messageId} marked as processed`);
       logger.debug(`✔️ Updated event:`, JSON.stringify(updatedEvent, null, 2));
 
+      // Get subscription ID for this squad from SSM
+      logger.info(`🔍 Looking up subscription ID for squad: ${squad}`);
+      const { getSubscriptionIdForSquad } = await import('../utils/ssm-params');
+      const subscriptionId = await getSubscriptionIdForSquad(squad);
+      
+      if (subscriptionId) {
+        logger.info(`✅ Found subscription ID for squad ${squad}: ${subscriptionId}`);
+      } else {
+        logger.warn(`⚠️ No subscription ID found for squad ${squad}, ACK will be skipped`);
+      }
+
       // Send ACK to Core Hub to confirm successful processing
       logger.info(`📤 Sending ACK to Core Hub for message ${messageId}...`);
-      await this.sendAckToCoreHub(messageId, subscriptionId);
+      await this.sendAckToCoreHub(messageId, subscriptionId || undefined);
 
       logger.info(`✅ Successfully processed and ACKed Core Hub event ${messageId}`);
 
@@ -109,7 +124,7 @@ export class WebhookController {
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
         messageId,
-        subscriptionId
+        squad
       });
       throw error; // Re-throw so Core Hub can retry
     }

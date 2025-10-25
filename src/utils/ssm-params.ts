@@ -244,3 +244,36 @@ export async function getAppConfig(): Promise<{ usersApiBaseUrl: string; webhook
         };
     }
 }
+
+/**
+ * Get subscription IDs mapping from SSM
+ * Maps squad names to their Core Hub subscription IDs
+ * Format in SSM: /arreglaya/analytics/{stage}/subscriptions/{squad}
+ */
+export async function getSubscriptionIdForSquad(squad: string): Promise<string | null> {
+    const stage = process.env.STAGE || 'prod';
+    const paramPath = `/arreglaya/analytics/${stage}/subscriptions/${squad}`;
+    
+    try {
+        logger.info(`Fetching subscription ID for squad: ${squad} from ${paramPath}`);
+        
+        const command = new GetParameterCommand({
+            Name: paramPath,
+            WithDecryption: false // Subscription IDs are not sensitive
+        });
+        
+        const response = await ssmClient.send(command);
+        
+        if (!response.Parameter?.Value) {
+            logger.warn(`No subscription ID found for squad: ${squad}`);
+            return null;
+        }
+        
+        logger.info(`Found subscription ID for squad ${squad}: ${response.Parameter.Value}`);
+        return response.Parameter.Value;
+        
+    } catch (error: any) {
+        logger.warn(`Could not load subscription ID for squad ${squad}:`, error.message);
+        return null;
+    }
+}
