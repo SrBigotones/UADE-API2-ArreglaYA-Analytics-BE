@@ -108,30 +108,12 @@ jobs:
           
           echo "::debug::SAM deployment completed"
 
-      - name: Force Lambda update
+      - name: Add STAGE environment variable
         run: |
-          # Install jq if not present
-          if ! command -v jq &> /dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq jq
-          fi
-          
           FUNCTION_NAME=$(aws lambda list-functions --query "Functions[?contains(FunctionName, 'arreglaya-analytics-be-stage')].FunctionName" --output text)
           if [ ! -z "$FUNCTION_NAME" ]; then
-            # Get current environment variables
-            CURRENT_ENV=$(aws lambda get-function-configuration \
-              --function-name $FUNCTION_NAME \
-              --query 'Environment.Variables' \
-              --output json)
-            
-            # Add DEPLOYMENT_TIMESTAMP to existing variables (compact JSON)
-            UPDATED_ENV=$(echo "$CURRENT_ENV" | jq -c --arg ts "$(date +%s)" '. + {DEPLOYMENT_TIMESTAMP: $ts}')
-            
-            # Update function with all variables preserved
             aws lambda update-function-configuration \
               --function-name $FUNCTION_NAME \
-              --environment "Variables=$UPDATED_ENV" \
-              --output json > /dev/null
-            
-            echo "Lambda function updated with timestamp"
+              --environment "Variables={STAGE=stage,DEPLOYMENT_TIMESTAMP=$(date +%s)}"
+            echo "STAGE variable added to Lambda"
           fi
