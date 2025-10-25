@@ -52,7 +52,7 @@ async function setupServerless() {
 
 export const handler = async (event: APIGatewayProxyEvent, context: Context) => {
   console.info('Lambda handler started');
-  context.callbackWaitsForEmptyEventLoop = true;
+  context.callbackWaitsForEmptyEventLoop = false; // Let Lambda manage the lifecycle
 
   try {
     // Initialize database if needed
@@ -64,14 +64,14 @@ export const handler = async (event: APIGatewayProxyEvent, context: Context) => 
     const handler = await setupServerless();
     console.info('Request received:', event.httpMethod, event.path);
     
-    // Execute the serverless handler
+    // Execute the serverless handler and get response
     const response = await handler(event, context, () => {});
     
-    // Wait for all pending operations to complete
+    // CRITICAL: Wait for pending operations AFTER getting response but BEFORE returning
     if (pendingOperations.size > 0) {
-      console.info(`Waiting for ${pendingOperations.size} pending operations to complete...`);
+      console.info(`⏳ Waiting for ${pendingOperations.size} pending operations to complete...`);
       await Promise.allSettled(Array.from(pendingOperations));
-      console.info('All pending operations completed');
+      console.info('✅ All pending operations completed');
     }
     
     return response;
