@@ -110,8 +110,6 @@ jobs:
 
       - name: Force Lambda update
         run: |
-          set +x  # Disable command echo for security
-          
           # Install jq if not present
           if ! command -v jq &> /dev/null; then
             sudo apt-get update -qq
@@ -120,21 +118,20 @@ jobs:
           
           FUNCTION_NAME=$(aws lambda list-functions --query "Functions[?contains(FunctionName, 'arreglaya-analytics-be-stage')].FunctionName" --output text)
           if [ ! -z "$FUNCTION_NAME" ]; then
-            # Get current environment variables (quietly)
+            # Get current environment variables
             CURRENT_ENV=$(aws lambda get-function-configuration \
               --function-name $FUNCTION_NAME \
               --query 'Environment.Variables' \
-              --output json 2>/dev/null)
+              --output json)
             
             # Add DEPLOYMENT_TIMESTAMP to existing variables
-            UPDATED_ENV=$(echo $CURRENT_ENV | jq --arg ts "$(date +%s)" '. + {DEPLOYMENT_TIMESTAMP: $ts}')
+            UPDATED_ENV=$(echo "$CURRENT_ENV" | jq --arg ts "$(date +%s)" '. + {DEPLOYMENT_TIMESTAMP: $ts}')
             
-            # Update function with all variables preserved (suppress output)
+            # Update function with all variables preserved
             aws lambda update-function-configuration \
               --function-name $FUNCTION_NAME \
               --environment "Variables=$UPDATED_ENV" \
-              --no-cli-pager \
-              > /dev/null 2>&1
+              --output json > /dev/null
             
-            echo "::debug::Lambda function updated with timestamp, all env vars preserved"
+            echo "Lambda function updated with timestamp"
           fi
