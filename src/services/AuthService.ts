@@ -32,11 +32,9 @@ export interface UserInfo {
 }
 
 export class AuthService {
-  private readonly usersApiBaseUrl: string;
-
-  constructor() {
-    // URL del módulo de usuarios
-    this.usersApiBaseUrl = config.usersApiBaseUrl;
+  // No almacenar la URL en el constructor para permitir que se actualice dinámicamente desde SSM
+  private get usersApiBaseUrl(): string {
+    return config.usersApiBaseUrl;
   }
 
   /**
