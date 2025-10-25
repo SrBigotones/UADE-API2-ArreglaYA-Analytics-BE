@@ -119,9 +119,8 @@ export function createAxiosInstance(config?: any): AxiosInstance {
   // Configuración avanzada del agente HTTPS
   const httpsAgent = new https.Agent({
     rejectUnauthorized: false, // Deshabilitado para permitir certificados autofirmados en stage y desarrollo
-    secureProtocol: 'TLSv1_2_method', // Forzar TLS 1.2
-    minVersion: 'TLSv1.2',
-    maxVersion: 'TLSv1.3',
+    minVersion: 'TLSv1.2', // Versión mínima de TLS
+    maxVersion: 'TLSv1.3', // Versión máxima de TLS
     keepAlive: true,
     keepAliveMsecs: 1000,
     timeout: 60000, // 60 segundos de timeout
@@ -149,7 +148,8 @@ export function createAxiosInstance(config?: any): AxiosInstance {
   logger.info('Creating Axios instance with enhanced HTTPS config:', {
     rejectUnauthorized: process.env.NODE_ENV === 'production',
     environment: process.env.NODE_ENV,
-    secureProtocol: 'TLSv1_2_method',
+    minVersion: 'TLSv1.2',
+    maxVersion: 'TLSv1.3',
     timeout: mergedConfig.timeout,
     keepAlive: true
   });
