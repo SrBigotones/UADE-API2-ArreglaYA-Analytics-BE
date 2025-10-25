@@ -11,12 +11,13 @@ export class WebhookController {
 
   /**
    * Handle Core Hub webhook events
-   * This endpoint receives events from the Core Hub subscription system
    * 
    * Flow:
-   * 1. Return 200 OK immediately to Core Hub
-   * 2. Process event after response is sent but before Lambda terminates
-   * 3. Use setImmediate to ensure processing happens in next event loop
+   * 1. Send 200 OK immediately (HTTP response to Core Hub)
+   * 2. Register async processing with Lambda handler
+   * 3. Lambda handler waits for all registered operations before terminating
+   * 4. Processing completes (save to DB, send ACK via separate API call)
+   * 5. Lambda terminates only after ACK is sent
    */
   public async handleCoreHubWebhook(req: Request, res: Response): Promise<void> {
     const coreHubEvent = req.body;
@@ -27,29 +28,28 @@ export class WebhookController {
       timestamp: coreHubEvent.timestamp
     });
 
-    // Return 200 OK immediately
+    // Send 200 OK immediately (HTTP response)
     res.status(200).json({ 
       success: true, 
-      message: 'Event received, processing',
+      message: 'Event received',
       messageId: coreHubEvent.messageId
     });
 
-    // Use setImmediate to process after response is sent
-    // This allows the response to flush while keeping the Lambda alive
-    const processingPromise = new Promise<void>((resolve, reject) => {
-      setImmediate(async () => {
-        try {
-          await this.processEventAsync(coreHubEvent);
-          resolve();
-        } catch (error) {
-          logger.error('Error in setImmediate processing:', error);
-          reject(error);
-        }
-      });
+    // Start async processing
+    const processingPromise = this.processEventAsync(coreHubEvent).catch(error => {
+      logger.error(`Failed to process event ${coreHubEvent.messageId}:`, error);
     });
-
-    // Wait for processing to complete before Lambda terminates
-    await processingPromise;
+    
+    // Register operation with Lambda handler so it waits before terminating
+    try {
+      const { registerPendingOperation } = await import('../lambda-handler');
+      registerPendingOperation(processingPromise);
+      logger.info(`Registered pending operation for event ${coreHubEvent.messageId}`);
+    } catch (error) {
+      // If not running in Lambda, just await it
+      logger.warn('Not running in Lambda, awaiting processing directly');
+      await processingPromise;
+    }
   }
 
   /**
@@ -112,7 +112,7 @@ export class WebhookController {
         messageId,
         subscriptionId
       });
-      // Don't throw - let the error be caught by the caller
+      throw error; // Re-throw so Core Hub can retry
     }
   }
 
