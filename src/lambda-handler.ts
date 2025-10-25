@@ -2,10 +2,12 @@ import 'reflect-metadata';
 import serverlessExpress from '@vendia/serverless-express';
 import { Handler, Context, APIGatewayProxyEvent } from 'aws-lambda';
 import { createDataSource, AppDataSource, connectDatabase } from './config/database';
+import { loadCoreHubConfig } from './config';
 import app from './app';
 
 let serverlessHandler: Handler;
 let dbInitialized = false;
+let coreHubConfigInitialized = false;
 
 // Track pending async operations
 const pendingOperations = new Set<Promise<any>>();
@@ -55,6 +57,12 @@ export const handler = async (event: APIGatewayProxyEvent, context: Context) => 
   context.callbackWaitsForEmptyEventLoop = false; // Let Lambda manage the lifecycle
 
   try {
+    // Load Core Hub config from SSM if in Lambda (first time only)
+    if (!coreHubConfigInitialized) {
+      await loadCoreHubConfig();
+      coreHubConfigInitialized = true;
+    }
+
     // Initialize database if needed
     if (!dbInitialized || (AppDataSource && !AppDataSource.isInitialized)) {
       await initDB();

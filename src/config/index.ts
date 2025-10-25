@@ -47,3 +47,51 @@ const config = {
 
 export default config;
 export { config };
+
+// Flag to track if Core Hub config has been loaded from SSM
+let coreHubConfigLoaded = false;
+
+// Function to load all runtime config from SSM (for Lambda)
+export async function loadCoreHubConfig(): Promise<void> {
+  if (coreHubConfigLoaded) {
+    console.log('✅ Runtime config already loaded from SSM');
+    return;
+  }
+
+  const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+  if (!isLambda) {
+    console.log('ℹ️ Not running in Lambda, skipping SSM runtime config load');
+    return;
+  }
+
+  try {
+    console.log('🔄 Loading runtime configuration from SSM...');
+    const { getCoreHubConfig, getAppConfig } = await import('../utils/ssm-params');
+    
+    // Load Core Hub config
+    const coreHubConfig = await getCoreHubConfig();
+    config.coreHub.url = coreHubConfig.url;
+    config.coreHub.apiKey = coreHubConfig.apiKey;
+    
+    console.log('✅ Core Hub config loaded from SSM:', {
+      url: coreHubConfig.url,
+      hasApiKey: !!coreHubConfig.apiKey
+    });
+    
+    // Load App config (Users API, webhook, etc.)
+    const appConfig = await getAppConfig();
+    config.usersApiBaseUrl = appConfig.usersApiBaseUrl;
+    config.webhookSecret = appConfig.webhookSecret;
+    
+    console.log('✅ App config loaded from SSM:', {
+      usersApiBaseUrl: appConfig.usersApiBaseUrl,
+      webhookBaseUrl: appConfig.webhookBaseUrl,
+      hasWebhookSecret: !!appConfig.webhookSecret
+    });
+    
+    coreHubConfigLoaded = true;
+  } catch (error) {
+    console.error('❌ Failed to load runtime config from SSM:', error);
+    console.log('⚠️ Using environment variables or defaults');
+  }
+}
