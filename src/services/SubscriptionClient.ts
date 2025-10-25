@@ -25,23 +25,60 @@ export class SubscriptionClient {
       'Accept': 'application/json'
     };
 
-    // Add X-API-KEY header if configured
+    // Add X-API-Key header if configured (case sensitive!)
     if (config.coreHub.apiKey) {
-      headers['X-API-KEY'] = config.coreHub.apiKey;
+      headers['X-API-Key'] = config.coreHub.apiKey;
     }
 
     // Usar createAxiosInstance en vez de axios.create para mantener interceptores
     this.client = createAxiosInstance({
       baseURL: config.coreHub.url,
-      timeout: config.coreHub.timeout || 10000, // Default timeout 10s si no está configurado
+      timeout: config.coreHub.timeout,
       headers,
       // Configuración para mejorar la estabilidad de la conexión
       maxRedirects: 5,
       maxBodyLength: 10 * 1024 * 1024, // 10MB
       maxContentLength: 10 * 1024 * 1024, // 10MB
       validateStatus: function (status: number) {
-        return status >= 200 && status < 300; // Solo considerar exitosos los códigos 2xx
+        return status >= 200 && status < 300;
+      },
+      // Configuración de Keep-Alive
+      httpAgent: new (require('http').Agent)({
+        keepAlive: true,
+        keepAliveMsecs: config.coreHub.keepAliveTimeout,
+        maxSockets: 100
+      }),
+      httpsAgent: new (require('https').Agent)({
+        keepAlive: true,
+        keepAliveMsecs: config.coreHub.keepAliveTimeout,
+        maxSockets: 100
+      })
+    });
+
+    // Implementar mecanismo de retry
+    let retryCount = 0;
+    this.client.interceptors.response.use(undefined, async (error) => {
+      const config = error.config;
+      
+      // Solo reintentar en errores de red o 5xx
+      if (
+        retryCount < config.coreHub.retryAttempts && 
+        (error.code === 'ECONNABORTED' || 
+         error.code === 'ECONNREFUSED' || 
+         error.message.includes('socket hang up') ||
+         (error.response && error.response.status >= 500))
+      ) {
+        retryCount++;
+        logger.warn(`Retrying request (attempt ${retryCount}/${config.coreHub.retryAttempts})...`);
+        
+        // Esperar antes de reintentar
+        await new Promise(resolve => setTimeout(resolve, config.coreHub.retryDelay));
+        
+        // Reintentar la petición
+        return this.client(config);
       }
+      
+      return Promise.reject(error);
     });
 
     // Add custom error handler for Core Hub specific errors

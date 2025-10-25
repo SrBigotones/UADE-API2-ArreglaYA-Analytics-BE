@@ -15,8 +15,7 @@ const requestInterceptor = (config: InternalAxiosRequestConfig) => {
   logger.info(`🔗 HTTP REQUEST: ${method} ${fullUrl} | Payload: ${payload}`, {
     method,
     url: fullUrl,
-    hasAuth: !!config.headers?.Authorization,
-    hasApiKey: !!config.headers?.['X-API-KEY'],
+    headers: config.headers, // Log todos los headers
     payload: config.data,
     params: config.params
   });
@@ -49,6 +48,8 @@ const responseInterceptor = (response: AxiosResponse) => {
   logger.info(`✅ HTTP RESPONSE: ${method} ${fullUrl} - Status: ${response.status} | Data: ${responseData}`, {
     method,
     url: fullUrl,
+    requestHeaders: response.config.headers, // Headers enviados
+    responseHeaders: response.headers,       // Headers recibidos
     status: response.status,
     statusText: response.statusText,
     data: response.data
@@ -85,6 +86,8 @@ const responseErrorInterceptor = (error: AxiosError) => {
     method,
     url: fullUrl,
     status,
+    requestHeaders: error.config?.headers,   // Headers que enviamos
+    responseHeaders: error.response?.headers, // Headers que recibimos
     errorCode: error.code,
     message: error.message,
     errorData: error.response?.data
