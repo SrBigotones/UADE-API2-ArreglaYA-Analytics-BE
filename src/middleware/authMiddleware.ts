@@ -1,8 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
 import { authService } from '../services/AuthService';
 import { logger } from '../config/logger';
-import { config } from '../config/environment';
+import { featureFlagService, FEATURE_FLAGS } from '../services/FeatureFlagService';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -15,16 +14,9 @@ export interface AuthenticatedRequest extends Request {
   };
 }
 
-export interface JwtPayload {
-  userId: string;
-  email: string;
-  role: string;
-  iat?: number;
-  exp?: number;
-}
-
 /**
- * Middleware para verificar la autenticación JWT
+ * Middleware para verificar la autenticación mediante el servicio de usuarios
+ * Si el feature flag 'bypass_auth_service' está activado, no requiere token y asigna usuario admin mock
  */
 export const authenticateToken = async (
   req: AuthenticatedRequest,
@@ -32,6 +24,30 @@ export const authenticateToken = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    // Verificar si el bypass está activado
+    const bypassEnabled = await featureFlagService.isEnabled(FEATURE_FLAGS.BYPASS_AUTH_SERVICE);
+    
+    if (bypassEnabled) {
+      // Modo bypass: No validar token, asignar usuario admin mock
+      logger.warn('⚠️  BYPASS ACTIVADO: Acceso sin validación de token', {
+        path: req.path,
+        ip: req.ip
+      });
+      
+      req.user = {
+        id: '1',
+        email: 'admin@bypass.com',
+        firstName: 'Admin',
+        lastName: 'Bypass',
+        role: 'ADMIN',
+        active: true
+      };
+      
+      next();
+      return;
+    }
+
+    // Modo normal: Validar token
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
@@ -48,19 +64,8 @@ export const authenticateToken = async (
       return;
     }
 
-    // Verificar el token JWT
-    const decoded = jwt.verify(token, config.jwtSecret) as JwtPayload;
-
-    // Crear información del usuario basada en el token decodificado
-    // No necesitamos hacer una llamada adicional al módulo de usuarios
-    const userInfo = {
-      id: decoded.userId.toString(),
-      email: decoded.email,
-      firstName: 'Usuario', // Información básica del token
-      lastName: 'Sistema',
-      role: decoded.role as 'PRESTADOR' | 'CLIENTE' | 'ADMIN',
-      active: true // Asumimos activo si el token es válido
-    };
+    // Verificar el token con el servicio de usuarios
+    const userInfo = await authService.verifyToken(token);
 
     // Verificar que el usuario esté activo
     if (!userInfo.active) {
@@ -75,16 +80,16 @@ export const authenticateToken = async (
       return;
     }
 
-    // Verificar permisos de admin (por ahora permitimos PRESTADOR y CLIENTE)
+    // Verificar permisos (solo ADMIN puede acceder)
     if (!authService.hasAdminAccess(userInfo.role)) {
-      logger.warn('Intento de acceso sin permisos suficientes', { 
+      logger.warn('Intento de acceso con usuario no admin', { 
         userId: userInfo.id,
         email: userInfo.email,
         role: userInfo.role
       });
       res.status(403).json({ 
-        error: 'Permisos insuficientes',
-        message: 'No tiene permisos para acceder a esta funcionalidad'
+        error: 'Acceso denegado',
+        message: 'Solo usuarios con rol de administrador pueden acceder al sistema de analytics'
       });
       return;
     }
@@ -101,33 +106,46 @@ export const authenticateToken = async (
 
     next();
   } catch (error) {
-    if (error instanceof jwt.JsonWebTokenError) {
-      logger.warn('Token JWT inválido', { 
-        error: error.message,
+    const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+    
+    if (errorMessage.includes('Token inválido') || errorMessage.includes('expirado')) {
+      logger.warn('Token inválido o expirado', { 
         ip: req.ip,
         path: req.path
       });
       res.status(401).json({ 
         error: 'Token inválido',
-        message: 'El token proporcionado no es válido'
+        message: errorMessage
       });
       return;
     }
 
-    if (error instanceof jwt.TokenExpiredError) {
-      logger.warn('Token JWT expirado', { 
+    if (errorMessage.includes('Permisos insuficientes')) {
+      logger.warn('Permisos insuficientes', { 
         ip: req.ip,
         path: req.path
       });
-      res.status(401).json({ 
-        error: 'Token expirado',
-        message: 'El token ha expirado, por favor inicie sesión nuevamente'
+      res.status(403).json({ 
+        error: 'Permisos insuficientes',
+        message: errorMessage
+      });
+      return;
+    }
+
+    if (errorMessage.includes('no disponible')) {
+      logger.error('Servicio de autenticación no disponible', { 
+        ip: req.ip,
+        path: req.path
+      });
+      res.status(503).json({ 
+        error: 'Servicio no disponible',
+        message: 'El servicio de autenticación no está disponible temporalmente'
       });
       return;
     }
 
     logger.error('Error en middleware de autenticación', { 
-      error: error instanceof Error ? error.message : 'Error desconocido',
+      error: errorMessage,
       ip: req.ip,
       path: req.path
     });
@@ -138,39 +156,3 @@ export const authenticateToken = async (
   }
 };
 
-/**
- * Middleware opcional para verificar autenticación (no falla si no hay token)
- */
-export const optionalAuth = async (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (token) {
-      const decoded = jwt.verify(token, config.jwtSecret) as JwtPayload;
-      const userInfo = {
-        id: decoded.userId.toString(),
-        email: decoded.email,
-        firstName: 'Usuario',
-        lastName: 'Sistema',
-        role: decoded.role as 'PRESTADOR' | 'CLIENTE' | 'ADMIN',
-        active: true
-      };
-      
-      if (userInfo.active && authService.hasAdminAccess(userInfo.role)) {
-        req.user = userInfo;
-      }
-    }
-  } catch (error) {
-    // En caso de error, simplemente continuamos sin usuario autenticado
-    logger.debug('Error en autenticación opcional', { 
-      error: error instanceof Error ? error.message : 'Error desconocido'
-    });
-  }
-
-  next();
-};

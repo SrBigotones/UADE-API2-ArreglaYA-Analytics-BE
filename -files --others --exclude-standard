@@ -1,5 +1,0 @@
-[33mda37b9b9[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mfeature/heat-map[m[33m, [m[1;31morigin/feature/crear-metricas[m[33m, [m[1;32mfeature/crear-metricas[m[33m)[m archivo SQL
-[33me35cd0a0[m Creacion de metricas para el frontend
-[33m19ba6c0c[m[33m ([m[1;31morigin/crear-metricas[m[33m, [m[1;32mmain[m[33m)[m Merge branch 'main' of github.com:SrBigotones/UADE-API2-ArreglaYA-Analytics-BE
-[33mfc8ecff5[m Crear endpoint para metricas
-[33mae39241a[m Merge pull request #4 from SrBigotones/feature/pipeline

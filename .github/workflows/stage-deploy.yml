@@ -1,7 +1,8 @@
-name: deploy
+name: Deploy to Stage
+
 on:
   push:
-    branches: [main]
+    branches: [develop]
 
 permissions:
   id-token: write
@@ -24,7 +25,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-to-assume: ${{ vars.AWS_ROLE_ARN_STAGE }}
           aws-region: ${{ vars.AWS_REGION }}
 
       - uses: aws-actions/setup-sam@v2
@@ -32,19 +33,19 @@ jobs:
       # Delete the stack if it exists in ROLLBACK_COMPLETE state
       - name: Delete failed stack
         run: |
-          if aws cloudformation describe-stacks --stack-name arreglaya-analytics-be 2>&1 | grep -q 'ROLLBACK_COMPLETE'; then
-            aws cloudformation delete-stack --stack-name arreglaya-analytics-be
-            aws cloudformation wait stack-delete-complete --stack-name arreglaya-analytics-be
+          if aws cloudformation describe-stacks --stack-name arreglaya-analytics-be-stage 2>&1 | grep -q 'ROLLBACK_COMPLETE'; then
+            aws cloudformation delete-stack --stack-name arreglaya-analytics-be-stage
+            aws cloudformation wait stack-delete-complete --stack-name arreglaya-analytics-be-stage
           fi
         continue-on-error: true
       
       - run: sam build --use-container
       
-      # Get SSM Parameters securely
+      # Deploy with secure parameters
       - name: Get SSM Parameters
         id: ssm
         env:
-          PARAM_PATH: /arreglaya/analytics/prod/db
+          PARAM_PATH: /arreglaya/analytics/stage/db
         run: |
           {
             set -e  # Exit on any error
@@ -77,7 +78,6 @@ jobs:
             echo "::debug::SSM parameters retrieved and masked successfully"
           } 2>/dev/null
 
-      # Deploy with secure parameter handling
       - name: Deploy SAM application
         env:
           SAM_CLI_TELEMETRY: 0
@@ -88,12 +88,12 @@ jobs:
           
           # Deploy using masked environment variables directly
           sam deploy \
-            --stack-name arreglaya-analytics-be \
+            --stack-name arreglaya-analytics-be-stage \
             --no-confirm-changeset \
             --capabilities CAPABILITY_IAM \
             --resolve-s3 \
             --parameter-overrides \
-              Stage=prod \
+              Stage=stage \
               DBHost="$DB_HOST" \
               DBUsername="$DB_USERNAME" \
               DBPassword="$DB_PASSWORD" \
@@ -104,3 +104,5 @@ jobs:
               WebhookSecret="$WEBHOOK_SECRET" \
               WebhookBaseUrl="$WEBHOOK_BASE_URL" \
             --no-execute-changeset false
+          
+          echo "::debug::SAM deployment completed"

@@ -3,8 +3,6 @@ import { AppDataSource } from '../config/database';
 import { Event } from '../models/Event';
 import { EventMessage } from '../types';
 import { logger } from '../config/logger';
-import crypto from 'crypto';
-import config from '../config';
 import { EventNormalizationService } from '../services/EventNormalizationService';
 
 export class WebhookController {
@@ -62,7 +60,6 @@ export class WebhookController {
       });
     }
   }
-
   /**
    * Handle Core Hub webhook events
    * This endpoint receives events from the Core Hub subscription system
@@ -74,19 +71,6 @@ export class WebhookController {
    */
   public async handleCoreHubWebhook(req: Request, res: Response): Promise<void> {
     try {
-      // Verify webhook signature if configured (disabled for testing)
-      // if (config.webhookSecret && process.env.NODE_ENV === 'production') {
-      //   const isValid = this.verifyWebhookSignature(req);
-      //   if (!isValid) {
-      //     logger.warn('Invalid webhook signature from Core Hub');
-      //     res.status(401).json({ 
-      //       success: false, 
-      //       message: 'Invalid webhook signature' 
-      //     });
-      //     return;
-      //   }
-      // }
-
       // Extract Core Hub event data
       const coreHubEvent = req.body;
       logger.info('📨 Received Core Hub webhook event:', {
@@ -243,32 +227,6 @@ export class WebhookController {
         message: 'Error fetching events',
         error: error instanceof Error ? error.message : 'Unknown error'
       });
-    }
-  }
-
-  /**
-   * Verify webhook signature for security
-   */
-  private verifyWebhookSignature(req: Request): boolean {
-    try {
-      const signature = req.headers['x-hub-signature-256'] as string;
-      if (!signature) {
-        return false;
-      }
-
-      const payload = JSON.stringify(req.body);
-      const expectedSignature = 'sha256=' + crypto
-        .createHmac('sha256', config.webhookSecret)
-        .update(payload)
-        .digest('hex');
-
-      return crypto.timingSafeEqual(
-        Buffer.from(signature),
-        Buffer.from(expectedSignature)
-      );
-    } catch (error) {
-      logger.error('Error verifying webhook signature:', error);
-      return false;
     }
   }
 

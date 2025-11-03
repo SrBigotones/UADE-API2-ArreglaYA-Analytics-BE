@@ -1,9 +1,7 @@
 import { Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
 import { body, validationResult } from 'express-validator';
 import { authService, LoginRequest } from '../services/AuthService';
 import { logger } from '../config/logger';
-import { config } from '../config/environment';
 
 export class AuthController {
   /**
@@ -11,6 +9,7 @@ export class AuthController {
    * /api/auth/login:
    *   post:
    *     summary: Autentica un usuario
+   *     description: Solo usuarios con rol ADMIN pueden acceder al sistema de analytics
    *     tags: [Auth]
    *     requestBody:
    *       required: true
@@ -25,7 +24,7 @@ export class AuthController {
    *               email:
    *                 type: string
    *                 format: email
-   *                 example: "prestador_test@gmail.com"
+   *                 example: "admin@arreglaya.com"
    *               password:
    *                 type: string
    *                 example: "123456"
@@ -56,13 +55,15 @@ export class AuthController {
    *                       type: string
    *                     role:
    *                       type: string
-   *                       enum: [PRESTADOR, CLIENTE, ADMIN]
+   *                       enum: [ADMIN]
    *                     active:
    *                       type: boolean
    *       400:
    *         description: Datos inválidos
    *       401:
    *         description: Credenciales inválidas
+   *       403:
+   *         description: Acceso denegado - Usuario no es administrador
    *       500:
    *         description: Error interno del servidor
    */
@@ -86,16 +87,20 @@ export class AuthController {
       // Autenticar con el módulo de usuarios
       const loginResponse = await authService.login({ email, password });
 
-      // Generar JWT propio para nuestro sistema
-      const jwtPayload = {
-        userId: loginResponse.userInfo.id,
-        email: loginResponse.userInfo.email,
-        role: loginResponse.userInfo.role
-      };
-
-      const token = jwt.sign(jwtPayload, config.jwtSecret, {
-        expiresIn: '24h'
-      });
+      // Verificar que el usuario sea ADMIN - solo admins pueden acceder al sistema de analytics
+      if (loginResponse.userInfo.role !== 'ADMIN') {
+        logger.warn('Intento de login con usuario no admin', {
+          userId: loginResponse.userInfo.id,
+          email: loginResponse.userInfo.email,
+          role: loginResponse.userInfo.role
+        });
+        res.status(403).json({
+          success: false,
+          error: 'Acceso denegado',
+          message: 'Solo usuarios con rol de administrador pueden acceder al sistema de analytics'
+        });
+        return;
+      }
 
       logger.info('Login exitoso', {
         userId: loginResponse.userInfo.id,
@@ -106,7 +111,7 @@ export class AuthController {
       res.status(200).json({
         success: true,
         message: 'Login exitoso',
-        token,
+        token: loginResponse.token,
         user: {
           id: loginResponse.userInfo.id,
           email: loginResponse.userInfo.email,

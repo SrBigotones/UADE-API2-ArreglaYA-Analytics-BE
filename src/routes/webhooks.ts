@@ -1,65 +1,10 @@
 import { Router } from 'express';
 import { WebhookController } from '../controllers/webhookController';
-import { webhookValidation } from '../middleware/validation';
+import { authenticateToken } from '../middleware/authMiddleware';
+import { verifyWebhookSignature } from '../middleware/webhookAuth';
 
 const router = Router();
 const webhookController = new WebhookController();
-
-/**
- * @swagger
- * /api/webhooks:
- *   post:
- *     summary: Recibir eventos del Core Hub
- *     description: Endpoint para recibir eventos webhooks del sistema principal de ArreglaYA
- *     tags: [Webhooks]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/WebhookPayload'
- *           example:
- *             queue: "user-events"
- *             event:
- *               squad: "Usuarios y Roles"
- *               topico: "User Management"
- *               evento: "Usuario Creado"
- *               cuerpo:
- *                 userId: "123"
- *                 email: "user@example.com"
- *                 name: "Juan Pérez"
- *     responses:
- *       200:
- *         description: Evento procesado exitosamente
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: "Event processed successfully"
- *                 eventId:
- *                   type: string
- *                   format: uuid
- *                   example: "123e4567-e89b-12d3-a456-426614174000"
- *       400:
- *         description: Error de validación
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       500:
- *         description: Error interno del servidor
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-router.post('/', webhookValidation, webhookController.handleWebhook.bind(webhookController));
 
 /**
  * @swagger
@@ -98,7 +43,9 @@ router.post('/', webhookValidation, webhookController.handleWebhook.bind(webhook
  *       500:
  *         description: Error interno del servidor
  */
-router.post('/core-hub', webhookController.handleCoreHubWebhook.bind(webhookController));
+// POST de Core Hub debe ser PÚBLICO (para recibir eventos externos)
+// La validación de firma está deshabilitada por defecto (ver webhookAuth middleware)
+router.post('/core-hub', verifyWebhookSignature, webhookController.handleCoreHubWebhook.bind(webhookController));
 
 /**
  * @swagger
@@ -107,6 +54,8 @@ router.post('/core-hub', webhookController.handleCoreHubWebhook.bind(webhookCont
  *     summary: Estado de las suscripciones
  *     description: Obtiene el estado actual de las suscripciones al Core Hub
  *     tags: [Webhooks]
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Estado de las suscripciones
@@ -129,8 +78,10 @@ router.post('/core-hub', webhookController.handleCoreHubWebhook.bind(webhookCont
  *                     timestamp:
  *                       type: string
  *                       format: date-time
+ *       401:
+ *         description: No autenticado
  */
-router.get('/subscription-status', webhookController.getSubscriptionStatus.bind(webhookController));
+router.get('/subscription-status', authenticateToken, webhookController.getSubscriptionStatus.bind(webhookController));
 
 /**
  * @swagger
@@ -139,6 +90,8 @@ router.get('/subscription-status', webhookController.getSubscriptionStatus.bind(
  *     summary: Obtener eventos
  *     description: Obtiene una lista de eventos con filtros y paginación
  *     tags: [Webhooks]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: query
  *         name: page
@@ -221,6 +174,8 @@ router.get('/subscription-status', webhookController.getSubscriptionStatus.bind(
  *                     pages:
  *                       type: integer
  *                       example: 15
+ *       401:
+ *         description: No autenticado
  *       500:
  *         description: Error interno del servidor
  *         content:
@@ -228,6 +183,6 @@ router.get('/subscription-status', webhookController.getSubscriptionStatus.bind(
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get('/', webhookController.getEvents.bind(webhookController));
+router.get('/', authenticateToken, webhookController.getEvents.bind(webhookController));
 
 export default router;
