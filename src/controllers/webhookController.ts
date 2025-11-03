@@ -5,10 +5,13 @@ import { EventMessage } from '../types';
 import { logger } from '../config/logger';
 import crypto from 'crypto';
 import config from '../config';
+import { EventNormalizationService } from '../services/EventNormalizationService';
 
 export class WebhookController {
+  private normalizationService: EventNormalizationService;
+
   constructor() {
-    // WebhookController initialization
+    this.normalizationService = new EventNormalizationService();
   }
 
   public async handleWebhook(req: Request, res: Response): Promise<void> {
@@ -31,6 +34,14 @@ export class WebhookController {
       });
 
       await eventRepository.save(newEvent);
+
+      // Normalize event to specialized tables
+      try {
+        await this.normalizationService.normalizeEvent(newEvent);
+      } catch (normalizationError) {
+        logger.error(`Error normalizing event ${newEvent.id}:`, normalizationError);
+        // Continue even if normalization fails - event is still saved
+      }
 
       // Mark event as processed
       newEvent.processed = true;
@@ -141,6 +152,15 @@ export class WebhookController {
 
       await eventRepository.save(newEvent);
       logger.info(`💾 Event ${messageId} saved to database (id: ${newEvent.id})`);
+
+      // Normalize event to specialized tables
+      try {
+        await this.normalizationService.normalizeEvent(newEvent);
+        logger.info(`📊 Event ${messageId} normalized to specialized tables`);
+      } catch (normalizationError) {
+        logger.error(`Error normalizing event ${messageId}:`, normalizationError);
+        // Continue even if normalization fails - event is still saved
+      }
 
       // Mark event as processed
       newEvent.processed = true;
