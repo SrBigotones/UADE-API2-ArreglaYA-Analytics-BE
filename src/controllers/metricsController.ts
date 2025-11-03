@@ -49,6 +49,34 @@ export class MetricsController extends BaseMetricsCalculator {
     return periodType;
   }
 
+  /**
+   * Helper method to calculate card metric with historical data to reduce duplication
+   */
+  private async calculateMetricWithChart(
+    periodType: PeriodType,
+    dateRanges: DateRangeFilter,
+    currentValue: number,
+    previousValue: number,
+    calculateHistoricalValue: (start: Date, end: Date) => Promise<number>,
+    changeType: 'porcentaje' | 'absoluto' = 'porcentaje'
+  ): Promise<CardMetricResponse> {
+    const metric = this.calculateCardMetric(currentValue, previousValue, changeType);
+    const chartData = await this.calculateHistoricalData(
+      periodType,
+      dateRanges,
+      calculateHistoricalValue
+    );
+    metric.chartData = chartData;
+    return metric;
+  }
+
+  /**
+   * Helper to round percentage values consistently
+   */
+  private roundPercentage(value: number): number {
+    return Math.round(value * 100) / 100;
+  }
+
   private async handleError(res: Response, error: any, context: string): Promise<void> {
     logger.error(`Error in ${context}:`, error);
     res.status(400).json({
@@ -72,18 +100,15 @@ export class MetricsController extends BaseMetricsCalculator {
       const currentValue = await this.countSolicitudesByEstado('creada', dateRanges.startDate, dateRanges.endDate);
       const previousValue = await this.countSolicitudesByEstado('creada', dateRanges.previousStartDate, dateRanges.previousEndDate);
 
-      const metric = this.calculateCardMetric(currentValue, previousValue, 'porcentaje');
-      
-      // Agregar datos históricos para gráfico de línea
-      const chartData = await this.calculateHistoricalData(
+      const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
-        async (start: Date, end: Date) => {
-          return await this.countSolicitudesByEstado('creada', start, end);
-        }
+        currentValue,
+        previousValue,
+        async (start: Date, end: Date) => this.countSolicitudesByEstado('creada', start, end),
+        'porcentaje'
       );
       
-      metric.chartData = chartData;
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getVolumenDemanda');
@@ -108,24 +133,19 @@ export class MetricsController extends BaseMetricsCalculator {
       const prevCanceladas = await this.countSolicitudesByEstado('cancelada', dateRanges.previousStartDate, dateRanges.previousEndDate);
       const previousRate = prevCreadas > 0 ? (prevCanceladas / prevCreadas) * 100 : 0;
 
-      const metric = this.calculateCardMetric(
-        Math.round(currentRate * 100) / 100,
-        Math.round(previousRate * 100) / 100,
-        'absoluto'
-      );
-      
-      // Agregar datos históricos para gráfico de línea
-      const chartData = await this.calculateHistoricalData(
+      const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
+        this.roundPercentage(currentRate),
+        this.roundPercentage(previousRate),
         async (start: Date, end: Date) => {
           const creadasInt = await this.countSolicitudesByEstado('creada', start, end);
           const canceladasInt = await this.countSolicitudesByEstado('cancelada', start, end);
           return creadasInt > 0 ? (canceladasInt / creadasInt) * 100 : 0;
-        }
+        },
+        'absoluto'
       );
       
-      metric.chartData = chartData;
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getTasaCancelacionSolicitudes');
@@ -144,18 +164,15 @@ export class MetricsController extends BaseMetricsCalculator {
       const currentAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.startDate, dateRanges.endDate);
       const previousAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.previousStartDate, dateRanges.previousEndDate);
 
-      const metric = this.calculateCardMetric(currentAvg, previousAvg, 'absoluto');
-      
-      // Agregar datos históricos para gráfico de línea
-      const chartData = await this.calculateHistoricalData(
+      const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
-        async (start: Date, end: Date) => {
-          return await this.calculateAverageTimeToFirstQuote(start, end);
-        }
+        currentAvg,
+        previousAvg,
+        async (start: Date, end: Date) => this.calculateAverageTimeToFirstQuote(start, end),
+        'absoluto'
       );
       
-      metric.chartData = chartData;
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getTiempoPrimeraCotizacion');
@@ -181,25 +198,20 @@ export class MetricsController extends BaseMetricsCalculator {
       const prevTotal = prevAceptadas + prevRechazadas;
       const previousRate = prevTotal > 0 ? (prevAceptadas / prevTotal) * 100 : 0;
 
-      const metric = this.calculateCardMetric(
-        Math.round(currentRate * 100) / 100,
-        Math.round(previousRate * 100) / 100,
-        'absoluto'
-      );
-      
-      // Agregar datos históricos para gráfico de línea
-      const chartData = await this.calculateHistoricalData(
+      const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
+        this.roundPercentage(currentRate),
+        this.roundPercentage(previousRate),
         async (start: Date, end: Date) => {
           const aceptadasInt = await this.countCotizacionesByEstado('aceptada', start, end);
           const rechazadasInt = await this.countCotizacionesByEstado('rechazada', start, end);
           const totalInt = aceptadasInt + rechazadasInt;
           return totalInt > 0 ? (aceptadasInt / totalInt) * 100 : 0;
-        }
+        },
+        'absoluto'
       );
       
-      metric.chartData = chartData;
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getConversionCotizacionAceptada');
@@ -229,26 +241,21 @@ export class MetricsController extends BaseMetricsCalculator {
       const prevTotal = prevAprobados + prevRechazados + prevExpirados;
       const previousRate = prevTotal > 0 ? (prevAprobados / prevTotal) * 100 : 0;
 
-      const metric = this.calculateCardMetric(
-        Math.round(currentRate * 100) / 100,
-        Math.round(previousRate * 100) / 100,
-        'absoluto'
-      );
-      
-      // Agregar datos históricos para gráfico de línea
-      const chartData = await this.calculateHistoricalData(
+      const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
+        this.roundPercentage(currentRate),
+        this.roundPercentage(previousRate),
         async (start: Date, end: Date) => {
           const aprobadosInt = await this.countPagosByEstado('approved', start, end);
           const rechazadosInt = await this.countPagosByEstado('rejected', start, end);
           const expiradosInt = await this.countPagosByEstado('expired', start, end);
           const totalInt = aprobadosInt + rechazadosInt + expiradosInt;
           return totalInt > 0 ? (aprobadosInt / totalInt) * 100 : 0;
-        }
+        },
+        'absoluto'
       );
       
-      metric.chartData = chartData;
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getTasaExitoPagos');
@@ -325,18 +332,15 @@ export class MetricsController extends BaseMetricsCalculator {
       const currentAvg = await this.calculateAverageProcessingTimePagos(dateRanges.startDate, dateRanges.endDate);
       const previousAvg = await this.calculateAverageProcessingTimePagos(dateRanges.previousStartDate, dateRanges.previousEndDate);
 
-      const metric = this.calculateCardMetric(currentAvg, previousAvg, 'absoluto');
-      
-      // Agregar datos históricos para gráfico de línea
-      const chartData = await this.calculateHistoricalData(
+      const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
-        async (start: Date, end: Date) => {
-          return await this.calculateAverageProcessingTimePagos(start, end);
-        }
+        currentAvg,
+        previousAvg,
+        async (start: Date, end: Date) => this.calculateAverageProcessingTimePagos(start, end),
+        'absoluto'
       );
       
-      metric.chartData = chartData;
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getTiempoProcesamientoPagos');
@@ -362,23 +366,20 @@ export class MetricsController extends BaseMetricsCalculator {
 
       // Calcular métricas usando el método estándar
       const ingresoBrutoMetric = this.calculateCardMetric(
-        Math.round(ingresoBruto * 100) / 100,
-        Math.round(prevIngresoBruto * 100) / 100,
+        this.roundPercentage(ingresoBruto),
+        this.roundPercentage(prevIngresoBruto),
         'absoluto'
       );
       const ticketMedioMetric = this.calculateCardMetric(
-        Math.round(ticketMedio * 100) / 100,
-        Math.round(prevTicketMedio * 100) / 100,
+        this.roundPercentage(ticketMedio),
+        this.roundPercentage(prevTicketMedio),
         'absoluto'
       );
 
-      // Agregar datos históricos para gráficos de línea
       const ingresoBrutoChartData = await this.calculateHistoricalData(
         periodType,
         dateRanges,
-        async (start: Date, end: Date) => {
-          return await this.sumMontoPagosAprobados(start, end);
-        }
+        async (start: Date, end: Date) => this.sumMontoPagosAprobados(start, end)
       );
 
       const ticketMedioChartData = await this.calculateHistoricalData(
@@ -420,18 +421,15 @@ export class MetricsController extends BaseMetricsCalculator {
       const currentValue = await this.countUsuariosByRol('customer', dateRanges.startDate, dateRanges.endDate);
       const previousValue = await this.countUsuariosByRol('customer', dateRanges.previousStartDate, dateRanges.previousEndDate);
 
-      const metric = this.calculateCardMetric(currentValue, previousValue, 'porcentaje');
-      
-      // Agregar datos históricos para gráfico de línea
-      const chartData = await this.calculateHistoricalData(
+      const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
-        async (start: Date, end: Date) => {
-          return await this.countUsuariosByRol('customer', start, end);
-        }
+        currentValue,
+        previousValue,
+        async (start: Date, end: Date) => this.countUsuariosByRol('customer', start, end),
+        'porcentaje'
       );
       
-      metric.chartData = chartData;
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getNuevosClientes');
@@ -450,18 +448,15 @@ export class MetricsController extends BaseMetricsCalculator {
       const currentValue = await this.countUsuariosByRol('prestador', dateRanges.startDate, dateRanges.endDate);
       const previousValue = await this.countUsuariosByRol('prestador', dateRanges.previousStartDate, dateRanges.previousEndDate);
 
-      const metric = this.calculateCardMetric(currentValue, previousValue, 'porcentaje');
-      
-      // Agregar datos históricos para gráfico de línea
-      const chartData = await this.calculateHistoricalData(
+      const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
-        async (start: Date, end: Date) => {
-          return await this.countUsuariosByRol('prestador', start, end);
-        }
+        currentValue,
+        previousValue,
+        async (start: Date, end: Date) => this.countUsuariosByRol('prestador', start, end),
+        'porcentaje'
       );
       
-      metric.chartData = chartData;
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getNuevosPrestadoresUsuarios');
@@ -480,18 +475,15 @@ export class MetricsController extends BaseMetricsCalculator {
       const currentValue = await this.countUsuariosByRol('admin', dateRanges.startDate, dateRanges.endDate);
       const previousValue = await this.countUsuariosByRol('admin', dateRanges.previousStartDate, dateRanges.previousEndDate);
 
-      const metric = this.calculateCardMetric(currentValue, previousValue, 'porcentaje');
-      
-      // Agregar datos históricos para gráfico de línea
-      const chartData = await this.calculateHistoricalData(
+      const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
-        async (start: Date, end: Date) => {
-          return await this.countUsuariosByRol('admin', start, end);
-        }
+        currentValue,
+        previousValue,
+        async (start: Date, end: Date) => this.countUsuariosByRol('admin', start, end),
+        'porcentaje'
       );
       
-      metric.chartData = chartData;
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getNuevosAdministradores');
@@ -557,8 +549,8 @@ export class MetricsController extends BaseMetricsCalculator {
 
       // Calcular métrica usando el método estándar
       const tasaActivosMetric = this.calculateCardMetric(
-        Math.round(currentRate * 100) / 100,
-        Math.round(previousRate * 100) / 100,
+        this.roundPercentage(currentRate),
+        this.roundPercentage(previousRate),
         'absoluto'
       );
 
@@ -589,18 +581,15 @@ export class MetricsController extends BaseMetricsCalculator {
       const currentAvg = await this.calculateAverageMatchingTime(dateRanges.startDate, dateRanges.endDate);
       const previousAvg = await this.calculateAverageMatchingTime(dateRanges.previousStartDate, dateRanges.previousEndDate);
 
-      const metric = this.calculateCardMetric(currentAvg, previousAvg, 'absoluto');
-      
-      // Agregar datos históricos para gráfico de línea
-      const chartData = await this.calculateHistoricalData(
+      const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
-        async (start: Date, end: Date) => {
-          return await this.calculateAverageMatchingTime(start, end);
-        }
+        currentAvg,
+        previousAvg,
+        async (start: Date, end: Date) => this.calculateAverageMatchingTime(start, end),
+        'absoluto'
       );
       
-      metric.chartData = chartData;
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getTiempoPromedioMatching');
@@ -632,12 +621,11 @@ export class MetricsController extends BaseMetricsCalculator {
         .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
         .getCount();
 
-      const metric = this.calculateCardMetric(pendientes, prevPendientes, 'porcentaje');
-      
-      // Agregar datos históricos para gráfico de línea
-      const chartData = await this.calculateHistoricalData(
+      const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
+        pendientes,
+        prevPendientes,
         async (start: Date, end: Date) => {
           return await repo
             .createQueryBuilder('cotizacion')
@@ -645,10 +633,10 @@ export class MetricsController extends BaseMetricsCalculator {
             .andWhere('cotizacion.timestamp >= :startDate', { startDate: start })
             .andWhere('cotizacion.timestamp <= :endDate', { endDate: end })
             .getCount();
-        }
+        },
+        'porcentaje'
       );
       
-      metric.chartData = chartData;
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getCotizacionesPendientes');
@@ -667,18 +655,15 @@ export class MetricsController extends BaseMetricsCalculator {
       const currentAvg = await this.calculateAverageProviderResponseTime(dateRanges.startDate, dateRanges.endDate);
       const previousAvg = await this.calculateAverageProviderResponseTime(dateRanges.previousStartDate, dateRanges.previousEndDate);
 
-      const metric = this.calculateCardMetric(currentAvg, previousAvg, 'absoluto');
-      
-      // Agregar datos históricos para gráfico de línea
-      const chartData = await this.calculateHistoricalData(
+      const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
-        async (start: Date, end: Date) => {
-          return await this.calculateAverageProviderResponseTime(start, end);
-        }
+        currentAvg,
+        previousAvg,
+        async (start: Date, end: Date) => this.calculateAverageProviderResponseTime(start, end),
+        'absoluto'
       );
       
-      metric.chartData = chartData;
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getTiempoRespuestaPrestador');
@@ -704,11 +689,19 @@ export class MetricsController extends BaseMetricsCalculator {
       const prevTodasEmitidas = await this.countCotizaciones(dateRanges.previousStartDate, dateRanges.previousEndDate);
       const previousRate = prevTodasEmitidas > 0 ? (prevExpiradas / prevTodasEmitidas) * 100 : 0;
 
-      const metric = this.calculateCardMetric(
-        Math.round(currentRate * 100) / 100,
-        Math.round(previousRate * 100) / 100,
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        this.roundPercentage(currentRate),
+        this.roundPercentage(previousRate),
+        async (start: Date, end: Date) => {
+          const expiradas = await this.countCotizacionesByEstado('expirada', start, end);
+          const todasEmitidas = await this.countCotizaciones(start, end);
+          return todasEmitidas > 0 ? (expiradas / todasEmitidas) * 100 : 0;
+        },
         'absoluto'
       );
+      
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getTasaCotizacionesExpiradas');
@@ -895,18 +888,15 @@ export class MetricsController extends BaseMetricsCalculator {
       const currentValue = await this.countPrestadoresByEstado('activo', dateRanges.startDate, dateRanges.endDate);
       const previousValue = await this.countPrestadoresByEstado('activo', dateRanges.previousStartDate, dateRanges.previousEndDate);
 
-      const metric = this.calculateCardMetric(currentValue, previousValue, 'porcentaje');
-      
-      // Agregar datos históricos para gráfico de línea
-      const chartData = await this.calculateHistoricalData(
+      const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
-        async (start: Date, end: Date) => {
-          return await this.countPrestadoresByEstado('activo', start, end);
-        }
+        currentValue,
+        previousValue,
+        async (start: Date, end: Date) => this.countPrestadoresByEstado('activo', start, end),
+        'porcentaje'
       );
       
-      metric.chartData = chartData;
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getNuevosPrestadoresRegistrados');
@@ -931,23 +921,21 @@ export class MetricsController extends BaseMetricsCalculator {
         .andWhere('prestador.timestamp <= :previousDate', { previousDate })
         .getCount();
 
-      const metric = this.calculateCardMetric(currentValue, previousValue, 'porcentaje');
-      
-      // Agregar datos históricos para gráfico de línea (cuenta total activos en cada punto)
-      const chartData = await this.calculateHistoricalData(
+      const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
+        currentValue,
+        previousValue,
         async (start: Date, end: Date) => {
-          // Contar prestadores activos hasta ese momento
           return await AppDataSource.getRepository(Prestador)
             .createQueryBuilder('prestador')
             .where('prestador.estado = :estado', { estado: 'activo' })
             .andWhere('prestador.timestamp <= :endDate', { endDate: end })
             .getCount();
-        }
+        },
+        'porcentaje'
       );
       
-      metric.chartData = chartData;
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getTotalPrestadoresActivos');
@@ -1000,16 +988,11 @@ export class MetricsController extends BaseMetricsCalculator {
 
       const previousRate = prevEmitidas > 0 ? (prevAceptadas / prevEmitidas) * 100 : 0;
 
-      const metric = this.calculateCardMetric(
-        Math.round(currentRate * 100) / 100,
-        Math.round(previousRate * 100) / 100,
-        'absoluto'
-      );
-      
-      // Agregar datos históricos para gráfico de línea
-      const chartData = await this.calculateHistoricalData(
+      const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
+        this.roundPercentage(currentRate),
+        this.roundPercentage(previousRate),
         async (start: Date, end: Date) => {
           const emitidasInt = await cotizacionesRepo
             .createQueryBuilder('cotizacion')
@@ -1026,10 +1009,10 @@ export class MetricsController extends BaseMetricsCalculator {
             .getCount();
           
           return emitidasInt > 0 ? (aceptadasInt / emitidasInt) * 100 : 0;
-        }
+        },
+        'absoluto'
       );
       
-      metric.chartData = chartData;
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getWinRatePorRubro');
