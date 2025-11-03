@@ -3,6 +3,17 @@ import { config } from './index';
 import { logger } from './logger';
 import { getDBConfig, DBConfig } from '../utils/ssm-params';
 import { MigrationService } from '../services/MigrationService';
+// Importar todas las entidades explícitamente
+import { Event } from '../models/Event';
+import { Usuario } from '../models/Usuario';
+import { Servicio } from '../models/Servicio';
+import { Solicitud } from '../models/Solicitud';
+import { Cotizacion } from '../models/Cotizacion';
+import { Habilidad } from '../models/Habilidad';
+import { Zona } from '../models/Zona';
+import { Pago } from '../models/Pago';
+import { Prestador } from '../models/Prestador';
+import { Rubro } from '../models/Rubro';
 
 export const createDataSource = async () => {
   let dbConfig: DBConfig;
@@ -33,7 +44,8 @@ export const createDataSource = async () => {
   // Crear una nueva instancia de DataSource
   AppDataSource = new DataSource({
     ...dbConfig,
-    entities: [__dirname + '/../models/*.{ts,js}'],
+    // Importar entidades explícitamente para evitar problemas de carga
+    entities: [Event, Usuario, Servicio, Solicitud, Cotizacion, Habilidad, Zona, Pago, Prestador, Rubro],
     migrations: [__dirname + '/../migrations/*.{ts,js}'],
     subscribers: [__dirname + '/../subscribers/*.{ts,js}'],
   });

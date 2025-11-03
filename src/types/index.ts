@@ -81,6 +81,7 @@ export interface CardMetricResponse {
   change: number;
   changeType: 'porcentaje' | 'absoluto';
   changeStatus: 'positivo' | 'negativo';
+  chartData?: Array<{ date: string; value: number }>;
 }
 
 export interface PieMetricResponse {

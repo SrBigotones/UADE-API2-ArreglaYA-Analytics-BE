@@ -3,80 +3,17 @@ import { logger } from '../config/logger';
 import { DateRangeService } from '../services/DateRangeService';
 import { BaseMetricsCalculator } from '../services/BaseMetricsCalculator';
 import { CardMetricResponse, PieMetricResponse, PeriodType, DateRangeFilter, HeatmapResponse, ProviderZonesResponse, HeatmapPoint, ProviderZoneData } from '../types';
+import { AppDataSource } from '../config/database';
+import { Solicitud } from '../models/Solicitud';
+import { Cotizacion } from '../models/Cotizacion';
+import { Pago } from '../models/Pago';
+import { Usuario } from '../models/Usuario';
+import { Habilidad } from '../models/Habilidad';
+import { Prestador } from '../models/Prestador';
+import { Rubro } from '../models/Rubro';
 
 export class MetricsController extends BaseMetricsCalculator {
   
-  /**
-   * Calcula la tasa de éxito de pagos como porcentaje
-   * @param startDate - Fecha de inicio
-   * @param endDate - Fecha de fin
-   * @returns Tasa de éxito como porcentaje (0-100)
-   */
-  private async calculatePaymentSuccessRate(startDate: Date, endDate: Date): Promise<number> {
-    // Obtener todos los pagos creados en el período
-    const createdPayments = await this.getEventsByType(
-      'payment.created',
-      startDate,
-      endDate
-    );
-
-    if (createdPayments.length === 0) {
-      return 0;
-    }
-
-    // Obtener todos los eventos de finalización (aprobados, rechazados, expirados)
-    const [approvedPayments, rejectedPayments, expiredPayments] = await Promise.all([
-      this.getEventsByType('payment.approved', startDate, endDate),
-      this.getEventsByType('payment.rejected', startDate, endDate),
-      this.getEventsByType('payment.expired', startDate, endDate)
-    ]);
-
-    // Crear sets de correlationIds para cada estado final
-    const approvedIds = new Set(
-      approvedPayments
-        .filter(p => p.correlationId)
-        .map(p => p.correlationId!)
-    );
-
-    const rejectedIds = new Set(
-      rejectedPayments
-        .filter(p => p.correlationId)
-        .map(p => p.correlationId!)
-    );
-
-    const expiredIds = new Set(
-      expiredPayments
-        .filter(p => p.correlationId)
-        .map(p => p.correlationId!)
-    );
-
-    // Contar pagos por estado, considerando solo los que se crearon en el período
-    let successfulCount = 0;
-    let completedCount = 0; // Total de pagos que llegaron a un estado final
-
-    for (const createdPayment of createdPayments) {
-      if (createdPayment.correlationId) {
-        const correlationId = createdPayment.correlationId;
-        
-        if (approvedIds.has(correlationId)) {
-          successfulCount++;
-          completedCount++;
-        } else if (rejectedIds.has(correlationId) || expiredIds.has(correlationId)) {
-          completedCount++;
-        }
-        // Los pendientes no se cuentan en el total completado
-      }
-    }
-
-    if (completedCount === 0) {
-      return 0;
-    }
-
-    // Calcular tasa de éxito como porcentaje
-    const successRate = (successfulCount / completedCount) * 100;
-    return Math.round(successRate * 100) / 100; // Redondear a 2 decimales
-  }
-
   /**
    * Valida y parsea los parámetros de período de tiempo
    */
@@ -113,429 +50,768 @@ export class MetricsController extends BaseMetricsCalculator {
   }
 
   /**
-   * Calcula la tasa de conversión de Matching a Cotización Aceptada
-   * (cotizaciones aceptadas / cotizaciones completadas [aceptadas o rechazadas]) * 100
+   * Helper method to calculate card metric with historical data to reduce duplication
    */
-  private async calculateMatchingConversionRate(startDate: Date, endDate: Date): Promise<number> {
-    const emitted = await this.getEventsByType('Cotización Emitida', startDate, endDate);
-    if (emitted.length === 0) return 0;
-
-    const [accepted, rejected] = await Promise.all([
-      this.getEventsByType('Cotización Aceptada', startDate, endDate),
-      this.getEventsByType('Cotización Rechazada', startDate, endDate)
-    ]);
-
-    const acceptedIds = new Set(accepted.filter(e => e.correlationId).map(e => e.correlationId!));
-    const rejectedIds = new Set(rejected.filter(e => e.correlationId).map(e => e.correlationId!));
-
-    let successfulCount = 0;
-    let completedCount = 0;
-    for (const em of emitted) {
-      if (!em.correlationId) continue;
-      const cid = em.correlationId;
-      if (acceptedIds.has(cid)) {
-        successfulCount++; completedCount++;
-      } else if (rejectedIds.has(cid)) {
-        completedCount++;
-      }
-    }
-
-    if (completedCount === 0) return 0;
-    const rate = (successfulCount / completedCount) * 100;
-    return Math.round(rate * 100) / 100;
-  }
-
-  /**
-   * GET /api/metrica/matching/conversion
-   * Tasa de conversión de Matching a Cotización Aceptada (tipo card)
-   */
-  public async getMatchingConversion(req: Request, res: Response): Promise<void> {
+  private async calculateMetricWithChart(
+    periodType: PeriodType,
+    dateRanges: DateRangeFilter,
+    currentValue: number,
+    previousValue: number,
+    calculateHistoricalValue: (start: Date, end: Date) => Promise<number>,
+    changeType: 'porcentaje' | 'absoluto' = 'porcentaje'
+  ): Promise<CardMetricResponse> {
     try {
-      const periodType = this.parsePeriodParams(req);
-      const dateRanges = DateRangeService.getPeriodRanges(periodType);
-
-      const currentRate = await this.calculateMatchingConversionRate(
-        dateRanges.startDate,
-        dateRanges.endDate
-      );
-      const previousRate = await this.calculateMatchingConversionRate(
-        dateRanges.previousStartDate,
-        dateRanges.previousEndDate
-      );
-
-      const metric = this.calculateCardMetric(currentRate, previousRate, 'absoluto');
-
-      res.status(200).json({ success: true, data: metric });
-    } catch (error) {
-      logger.error('Error getting matching conversion metrics:', error);
-      res.status(400).json({
-        success: false,
-        message: error instanceof Error ? error.message : 'Error desconocido',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  /**
-   * GET /api/metrica/matching/lead-time
-   * Tiempo promedio desde "Solicitud Creada" a "Cotización Emitida" (minutos)
-   */
-  public async getMatchingLeadTime(req: Request, res: Response): Promise<void> {
-    try {
-      const periodType = this.parsePeriodParams(req);
-      const dateRanges = DateRangeService.getPeriodRanges(periodType);
-
-      // Período actual
-      const currentCreatedReq = await this.getEventsByType('Solicitud Creada', dateRanges.startDate, dateRanges.endDate);
-      const currentQuoted = await this.getEventsByType('Cotización Emitida', dateRanges.startDate, dateRanges.endDate);
-      const currentLifecycle = this.getCompleteLifecycleEvents(currentCreatedReq, currentQuoted, dateRanges.startDate, dateRanges.endDate);
-      const currentAvg = this.calculateAverageProcessingTime(currentLifecycle.created, currentLifecycle.completed);
-
-      // Período anterior
-      const prevCreatedReq = await this.getEventsByType('Solicitud Creada', dateRanges.previousStartDate, dateRanges.previousEndDate);
-      const prevQuoted = await this.getEventsByType('Cotización Emitida', dateRanges.previousStartDate, dateRanges.previousEndDate);
-      const prevLifecycle = this.getCompleteLifecycleEvents(prevCreatedReq, prevQuoted, dateRanges.previousStartDate, dateRanges.previousEndDate);
-      const prevAvg = this.calculateAverageProcessingTime(prevLifecycle.created, prevLifecycle.completed);
-
-      const metric = this.calculateCardMetric(currentAvg, prevAvg, 'absoluto');
-
-      res.status(200).json({ success: true, data: metric });
-    } catch (error) {
-      logger.error('Error getting matching lead time:', error);
-      res.status(400).json({
-        success: false,
-        message: error instanceof Error ? error.message : 'Error desconocido',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  /**
-   * GET /api/metrica/usuarios/creados
-   * Métricas de usuarios creados (tipo card)
-   */
-  public async getUsuariosCreados(req: Request, res: Response): Promise<void> {
-    try {
-      const periodType = this.parsePeriodParams(req);
-      const dateRanges = DateRangeService.getPeriodRanges(periodType);
-
-      const metric = await this.calculateSimpleCardMetric(
-        'users.created',
+      const metric = this.calculateCardMetric(currentValue, previousValue, changeType);
+      const chartData = await this.calculateHistoricalData(
+        periodType,
         dateRanges,
+        calculateHistoricalValue
+      );
+      metric.chartData = chartData;
+      return metric;
+    } catch (error) {
+      logger.error('Error calculating metric with chart:', error);
+      // Return metric without chart data if historical calculation fails
+      const metric = this.calculateCardMetric(currentValue, previousValue, changeType);
+      metric.chartData = [];
+      return metric;
+    }
+  }
+
+  /**
+   * Helper to round percentage values consistently
+   */
+  private roundPercentage(value: number): number {
+    return Math.round(value * 100) / 100;
+  }
+
+  private async handleError(res: Response, error: any, context: string): Promise<void> {
+    logger.error(`Error in ${context}:`, error);
+    res.status(400).json({
+      success: false,
+      message: error instanceof Error ? error.message : 'Error desconocido',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+
+  // ========== 📱 APP DE BÚSQUEDA Y SOLICITUDES ==========
+
+  /**
+   * GET /api/metrica/solicitudes/volumen
+   * 1. Volumen de demanda (N° de solicitudes creadas)
+   */
+  public async getVolumenDemanda(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const currentValue = await this.countSolicitudesByEstado('creada', dateRanges.startDate, dateRanges.endDate);
+      const previousValue = await this.countSolicitudesByEstado('creada', dateRanges.previousStartDate, dateRanges.previousEndDate);
+
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        currentValue,
+        previousValue,
+        async (start: Date, end: Date) => this.countSolicitudesByEstado('creada', start, end),
         'porcentaje'
+      );
+      
+      res.status(200).json({ success: true, data: metric });
+    } catch (error) {
+      await this.handleError(res, error, 'getVolumenDemanda');
+    }
+  }
+
+  /**
+   * GET /api/metrica/solicitudes/tasa-cancelacion
+   * 2. Tasa de cancelación de solicitudes (%)
+   */
+  public async getTasaCancelacionSolicitudes(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const creadas = await this.countSolicitudesByEstado('creada', dateRanges.startDate, dateRanges.endDate);
+      const canceladas = await this.countSolicitudesByEstado('cancelada', dateRanges.startDate, dateRanges.endDate);
+
+      const currentRate = creadas > 0 ? (canceladas / creadas) * 100 : 0;
+
+      const prevCreadas = await this.countSolicitudesByEstado('creada', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevCanceladas = await this.countSolicitudesByEstado('cancelada', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const previousRate = prevCreadas > 0 ? (prevCanceladas / prevCreadas) * 100 : 0;
+
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        this.roundPercentage(currentRate),
+        this.roundPercentage(previousRate),
+        async (start: Date, end: Date) => {
+          const creadasInt = await this.countSolicitudesByEstado('creada', start, end);
+          const canceladasInt = await this.countSolicitudesByEstado('cancelada', start, end);
+          return creadasInt > 0 ? (canceladasInt / creadasInt) * 100 : 0;
+        },
+        'absoluto'
+      );
+      
+      res.status(200).json({ success: true, data: metric });
+    } catch (error) {
+      await this.handleError(res, error, 'getTasaCancelacionSolicitudes');
+    }
+  }
+
+  /**
+   * GET /api/metrica/solicitudes/tiempo-primera-cotizacion
+   * 3. Tiempo a primera cotización (horas)
+   */
+  public async getTiempoPrimeraCotizacion(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const currentAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.startDate, dateRanges.endDate);
+      const previousAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.previousStartDate, dateRanges.previousEndDate);
+
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        currentAvg,
+        previousAvg,
+        async (start: Date, end: Date) => this.calculateAverageTimeToFirstQuote(start, end),
+        'absoluto'
+      );
+      
+      res.status(200).json({ success: true, data: metric });
+    } catch (error) {
+      await this.handleError(res, error, 'getTiempoPrimeraCotizacion');
+    }
+  }
+
+  /**
+   * GET /api/metrica/cotizaciones/conversion-aceptada
+   * 4. Conversión a cotización aceptada (%)
+   */
+  public async getConversionCotizacionAceptada(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const aceptadas = await this.countCotizacionesByEstado('aceptada', dateRanges.startDate, dateRanges.endDate);
+      const rechazadas = await this.countCotizacionesByEstado('rechazada', dateRanges.startDate, dateRanges.endDate);
+      const total = aceptadas + rechazadas;
+      const currentRate = total > 0 ? (aceptadas / total) * 100 : 0;
+
+      const prevAceptadas = await this.countCotizacionesByEstado('aceptada', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevRechazadas = await this.countCotizacionesByEstado('rechazada', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevTotal = prevAceptadas + prevRechazadas;
+      const previousRate = prevTotal > 0 ? (prevAceptadas / prevTotal) * 100 : 0;
+
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        this.roundPercentage(currentRate),
+        this.roundPercentage(previousRate),
+        async (start: Date, end: Date) => {
+          const aceptadasInt = await this.countCotizacionesByEstado('aceptada', start, end);
+          const rechazadasInt = await this.countCotizacionesByEstado('rechazada', start, end);
+          const totalInt = aceptadasInt + rechazadasInt;
+          return totalInt > 0 ? (aceptadasInt / totalInt) * 100 : 0;
+        },
+        'absoluto'
+      );
+      
+      res.status(200).json({ success: true, data: metric });
+    } catch (error) {
+      await this.handleError(res, error, 'getConversionCotizacionAceptada');
+    }
+  }
+
+  // ========== 💳 PAGOS Y FACTURACIÓN ==========
+
+  /**
+   * GET /api/metrica/pagos/tasa-exito
+   * 5. Tasa de éxito de pagos (%)
+   */
+  public async getTasaExitoPagos(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const aprobados = await this.countPagosByEstado('approved', dateRanges.startDate, dateRanges.endDate);
+      const rechazados = await this.countPagosByEstado('rejected', dateRanges.startDate, dateRanges.endDate);
+      const expirados = await this.countPagosByEstado('expired', dateRanges.startDate, dateRanges.endDate);
+      const total = aprobados + rechazados + expirados;
+      const currentRate = total > 0 ? (aprobados / total) * 100 : 0;
+
+      const prevAprobados = await this.countPagosByEstado('approved', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevRechazados = await this.countPagosByEstado('rejected', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevExpirados = await this.countPagosByEstado('expired', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevTotal = prevAprobados + prevRechazados + prevExpirados;
+      const previousRate = prevTotal > 0 ? (prevAprobados / prevTotal) * 100 : 0;
+
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        this.roundPercentage(currentRate),
+        this.roundPercentage(previousRate),
+        async (start: Date, end: Date) => {
+          const aprobadosInt = await this.countPagosByEstado('approved', start, end);
+          const rechazadosInt = await this.countPagosByEstado('rejected', start, end);
+          const expiradosInt = await this.countPagosByEstado('expired', start, end);
+          const totalInt = aprobadosInt + rechazadosInt + expiradosInt;
+          return totalInt > 0 ? (aprobadosInt / totalInt) * 100 : 0;
+        },
+        'absoluto'
+      );
+      
+      res.status(200).json({ success: true, data: metric });
+    } catch (error) {
+      await this.handleError(res, error, 'getTasaExitoPagos');
+    }
+  }
+
+  /**
+   * GET /api/metrica/pagos/distribucion-metodos
+   * 5. Distribución por métodos de pago
+   */
+  public async getDistribucionMetodosPago(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const repo = AppDataSource.getRepository(Pago);
+      const result = await repo
+        .createQueryBuilder('pago')
+        .select('pago.metodo', 'metodo')
+        .addSelect('COUNT(*)', 'count')
+        .where('pago.timestamp_creado >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('pago.timestamp_creado <= :endDate', { endDate: dateRanges.endDate })
+        .andWhere('pago.metodo IS NOT NULL')
+        .groupBy('pago.metodo')
+        .getRawMany();
+
+      const distribution: PieMetricResponse = {};
+      result.forEach(row => {
+        distribution[row.metodo || 'DESCONOCIDO'] = parseInt(row.count);
+      });
+
+      res.status(200).json({ success: true, data: distribution });
+    } catch (error) {
+      await this.handleError(res, error, 'getDistribucionMetodosPago');
+    }
+  }
+
+  /**
+   * GET /api/metrica/pagos/distribucion-eventos
+   * 6. Distribución por tipo de evento de pago (%)
+   */
+  public async getDistribucionEventosPago(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const aprobados = await this.countPagosByEstado('approved', dateRanges.startDate, dateRanges.endDate);
+      const rechazados = await this.countPagosByEstado('rejected', dateRanges.startDate, dateRanges.endDate);
+      const expirados = await this.countPagosByEstado('expired', dateRanges.startDate, dateRanges.endDate);
+      const pendientes = await this.countPagosByEstado('pending', dateRanges.startDate, dateRanges.endDate);
+
+      const distribution: PieMetricResponse = {
+        'APROBADO': aprobados,
+        'RECHAZADO': rechazados,
+        'EXPIRADO': expirados,
+        'PENDIENTE': pendientes
+      };
+
+      res.status(200).json({ success: true, data: distribution });
+    } catch (error) {
+      await this.handleError(res, error, 'getDistribucionEventosPago');
+    }
+  }
+
+  /**
+   * GET /api/metrica/pagos/tiempo-procesamiento
+   * 7. Tiempo promedio de procesamiento de pagos (minutos)
+   */
+  public async getTiempoProcesamientoPagos(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const currentAvg = await this.calculateAverageProcessingTimePagos(dateRanges.startDate, dateRanges.endDate);
+      const previousAvg = await this.calculateAverageProcessingTimePagos(dateRanges.previousStartDate, dateRanges.previousEndDate);
+
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        currentAvg,
+        previousAvg,
+        async (start: Date, end: Date) => this.calculateAverageProcessingTimePagos(start, end),
+        'absoluto'
+      );
+      
+      res.status(200).json({ success: true, data: metric });
+    } catch (error) {
+      await this.handleError(res, error, 'getTiempoProcesamientoPagos');
+    }
+  }
+
+  /**
+   * GET /api/metrica/pagos/ingreso-ticket
+   * 10. Ingreso bruto y ticket medio (ARS)
+   */
+  public async getIngresoTicket(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const ingresoBruto = await this.sumMontoPagosAprobados(dateRanges.startDate, dateRanges.endDate);
+      const cantidadPagos = await this.countPagosByEstado('approved', dateRanges.startDate, dateRanges.endDate);
+      const ticketMedio = cantidadPagos > 0 ? ingresoBruto / cantidadPagos : 0;
+
+      const prevIngresoBruto = await this.sumMontoPagosAprobados(dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevCantidadPagos = await this.countPagosByEstado('approved', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevTicketMedio = prevCantidadPagos > 0 ? prevIngresoBruto / prevCantidadPagos : 0;
+
+      // Calcular métricas usando el método estándar
+      const ingresoBrutoMetric = this.calculateCardMetric(
+        this.roundPercentage(ingresoBruto),
+        this.roundPercentage(prevIngresoBruto),
+        'absoluto'
+      );
+      const ticketMedioMetric = this.calculateCardMetric(
+        this.roundPercentage(ticketMedio),
+        this.roundPercentage(prevTicketMedio),
+        'absoluto'
+      );
+
+      const ingresoBrutoChartData = await this.calculateHistoricalData(
+        periodType,
+        dateRanges,
+        async (start: Date, end: Date) => this.sumMontoPagosAprobados(start, end)
+      );
+
+      const ticketMedioChartData = await this.calculateHistoricalData(
+        periodType,
+        dateRanges,
+        async (start: Date, end: Date) => {
+          const ingresoInt = await this.sumMontoPagosAprobados(start, end);
+          const cantidadInt = await this.countPagosByEstado('approved', start, end);
+          return cantidadInt > 0 ? ingresoInt / cantidadInt : 0;
+        }
+      );
+
+      ingresoBrutoMetric.chartData = ingresoBrutoChartData;
+      ticketMedioMetric.chartData = ticketMedioChartData;
+
+      res.status(200).json({
+        success: true,
+        data: {
+          ingresoBruto: ingresoBrutoMetric,
+          ticketMedio: ticketMedioMetric
+        }
+      });
+    } catch (error) {
+      await this.handleError(res, error, 'getIngresoTicket');
+    }
+  }
+
+  // ========== 👥 USUARIOS Y ROLES ==========
+
+  /**
+   * GET /api/metrica/usuarios/nuevos-clientes
+   * 11. Nuevos clientes registrados
+   */
+  public async getNuevosClientes(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const currentValue = await this.countUsuariosByRol('customer', dateRanges.startDate, dateRanges.endDate);
+      const previousValue = await this.countUsuariosByRol('customer', dateRanges.previousStartDate, dateRanges.previousEndDate);
+
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        currentValue,
+        previousValue,
+        async (start: Date, end: Date) => this.countUsuariosByRol('customer', start, end),
+        'porcentaje'
+      );
+      
+      res.status(200).json({ success: true, data: metric });
+    } catch (error) {
+      await this.handleError(res, error, 'getNuevosClientes');
+    }
+  }
+
+  /**
+   * GET /api/metrica/usuarios/nuevos-prestadores
+   * 11. Nuevos prestadores registrados
+   */
+  public async getNuevosPrestadoresUsuarios(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const currentValue = await this.countUsuariosByRol('prestador', dateRanges.startDate, dateRanges.endDate);
+      const previousValue = await this.countUsuariosByRol('prestador', dateRanges.previousStartDate, dateRanges.previousEndDate);
+
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        currentValue,
+        previousValue,
+        async (start: Date, end: Date) => this.countUsuariosByRol('prestador', start, end),
+        'porcentaje'
+      );
+      
+      res.status(200).json({ success: true, data: metric });
+    } catch (error) {
+      await this.handleError(res, error, 'getNuevosPrestadoresUsuarios');
+    }
+  }
+
+  /**
+   * GET /api/metrica/usuarios/nuevos-administradores
+   * 11. Nuevos administradores registrados
+   */
+  public async getNuevosAdministradores(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const currentValue = await this.countUsuariosByRol('admin', dateRanges.startDate, dateRanges.endDate);
+      const previousValue = await this.countUsuariosByRol('admin', dateRanges.previousStartDate, dateRanges.previousEndDate);
+
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        currentValue,
+        previousValue,
+        async (start: Date, end: Date) => this.countUsuariosByRol('admin', start, end),
+        'porcentaje'
+      );
+      
+      res.status(200).json({ success: true, data: metric });
+    } catch (error) {
+      await this.handleError(res, error, 'getNuevosAdministradores');
+    }
+  }
+
+  /**
+   * GET /api/metrica/usuarios/tasa-roles-activos
+   * 12. Tasa de roles activos (%)
+   */
+  public async getTasaRolesActivos(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const repo = AppDataSource.getRepository(Usuario);
+      
+      const total = await repo
+        .createQueryBuilder('usuario')
+        .where('usuario.timestamp >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .getCount();
+
+      const activos = await repo
+        .createQueryBuilder('usuario')
+        .where('usuario.estado = :estado', { estado: 'activo' })
+        .andWhere('usuario.timestamp >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .getCount();
+
+      const currentRate = total > 0 ? (activos / total) * 100 : 0;
+
+      const prevTotal = await repo
+        .createQueryBuilder('usuario')
+        .where('usuario.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
+        .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
+        .getCount();
+
+      const prevActivos = await repo
+        .createQueryBuilder('usuario')
+        .where('usuario.estado = :estado', { estado: 'activo' })
+        .andWhere('usuario.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
+        .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
+        .getCount();
+
+      const previousRate = prevTotal > 0 ? (prevActivos / prevTotal) * 100 : 0;
+
+      // También devolver distribución por rol
+      const porRol = await repo
+        .createQueryBuilder('usuario')
+        .select('usuario.rol', 'rol')
+        .addSelect('COUNT(*)', 'total')
+        .where('usuario.estado = :estado', { estado: 'activo' })
+        .andWhere('usuario.timestamp >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .groupBy('usuario.rol')
+        .getRawMany();
+
+      const distribution: PieMetricResponse = {};
+      porRol.forEach(row => {
+        distribution[row.rol] = parseInt(row.total);
+      });
+
+      // Calcular métrica usando el método estándar
+      const tasaActivosMetric = this.calculateCardMetric(
+        this.roundPercentage(currentRate),
+        this.roundPercentage(previousRate),
+        'absoluto'
       );
 
       res.status(200).json({
         success: true,
-        data: metric
+        data: {
+          tasaActivos: tasaActivosMetric,
+          distribucionPorRol: distribution
+        }
       });
-
     } catch (error) {
-      logger.error('Error getting usuarios creados metrics:', error);
-      res.status(400).json({
-        success: false,
-        message: error instanceof Error ? error.message : 'Error desconocido',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
+      await this.handleError(res, error, 'getTasaRolesActivos');
+    }
+  }
+
+
+  // ========== 🔄 MATCHING Y AGENDA ==========
+
+  /**
+   * GET /api/metrica/matching/tiempo-promedio
+   * 14. Tiempo promedio de matching
+   */
+  public async getTiempoPromedioMatching(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const currentAvg = await this.calculateAverageMatchingTime(dateRanges.startDate, dateRanges.endDate);
+      const previousAvg = await this.calculateAverageMatchingTime(dateRanges.previousStartDate, dateRanges.previousEndDate);
+
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        currentAvg,
+        previousAvg,
+        async (start: Date, end: Date) => this.calculateAverageMatchingTime(start, end),
+        'absoluto'
+      );
+      
+      res.status(200).json({ success: true, data: metric });
+    } catch (error) {
+      await this.handleError(res, error, 'getTiempoPromedioMatching');
     }
   }
 
   /**
-   * GET /api/metrica/prestadores/registrados
-   * Métricas de prestadores registrados (tipo card)
+   * GET /api/metrica/cotizaciones/pendientes
+   * 15. Cotizaciones pendientes
+   */
+  public async getCotizacionesPendientes(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      // Cotizaciones pendientes son las emitidas que no están aceptadas ni rechazadas ni expiradas
+      const repo = AppDataSource.getRepository(Cotizacion);
+      const pendientes = await repo
+        .createQueryBuilder('cotizacion')
+        .where('cotizacion.estado = :estado', { estado: 'emitida' })
+        .andWhere('cotizacion.timestamp >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .getCount();
+
+      const prevPendientes = await repo
+        .createQueryBuilder('cotizacion')
+        .where('cotizacion.estado = :estado', { estado: 'emitida' })
+        .andWhere('cotizacion.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
+        .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
+        .getCount();
+
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        pendientes,
+        prevPendientes,
+        async (start: Date, end: Date) => {
+          return await repo
+            .createQueryBuilder('cotizacion')
+            .where('cotizacion.estado = :estado', { estado: 'emitida' })
+            .andWhere('cotizacion.timestamp >= :startDate', { startDate: start })
+            .andWhere('cotizacion.timestamp <= :endDate', { endDate: end })
+            .getCount();
+        },
+        'porcentaje'
+      );
+      
+      res.status(200).json({ success: true, data: metric });
+    } catch (error) {
+      await this.handleError(res, error, 'getCotizacionesPendientes');
+    }
+  }
+
+  /**
+   * GET /api/metrica/prestadores/tiempo-respuesta
+   * 16. Tiempo promedio de respuesta del prestador
+   */
+  public async getTiempoRespuestaPrestador(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const currentAvg = await this.calculateAverageProviderResponseTime(dateRanges.startDate, dateRanges.endDate);
+      const previousAvg = await this.calculateAverageProviderResponseTime(dateRanges.previousStartDate, dateRanges.previousEndDate);
+
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        currentAvg,
+        previousAvg,
+        async (start: Date, end: Date) => this.calculateAverageProviderResponseTime(start, end),
+        'absoluto'
+      );
+      
+      res.status(200).json({ success: true, data: metric });
+    } catch (error) {
+      await this.handleError(res, error, 'getTiempoRespuestaPrestador');
+    }
+  }
+
+  /**
+   * GET /api/metrica/cotizaciones/tasa-expiracion
+   * 17. Cotizaciones expiradas (%)
+   */
+  public async getTasaCotizacionesExpiradas(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const expiradas = await this.countCotizacionesByEstado('expirada', dateRanges.startDate, dateRanges.endDate);
+      const emitidas = await this.countCotizacionesByEstado('emitida', dateRanges.startDate, dateRanges.endDate);
+      const totalEmitidas = expiradas + emitidas; // También incluir aceptadas y rechazadas para el total real
+      const todasEmitidas = await this.countCotizaciones(dateRanges.startDate, dateRanges.endDate);
+      const currentRate = todasEmitidas > 0 ? (expiradas / todasEmitidas) * 100 : 0;
+
+      const prevExpiradas = await this.countCotizacionesByEstado('expirada', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevTodasEmitidas = await this.countCotizaciones(dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const previousRate = prevTodasEmitidas > 0 ? (prevExpiradas / prevTodasEmitidas) * 100 : 0;
+
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        this.roundPercentage(currentRate),
+        this.roundPercentage(previousRate),
+        async (start: Date, end: Date) => {
+          const expiradas = await this.countCotizacionesByEstado('expirada', start, end);
+          const todasEmitidas = await this.countCotizaciones(start, end);
+          return todasEmitidas > 0 ? (expiradas / todasEmitidas) * 100 : 0;
+        },
+        'absoluto'
+      );
+      
+      res.status(200).json({ success: true, data: metric });
+    } catch (error) {
+      await this.handleError(res, error, 'getTasaCotizacionesExpiradas');
+    }
+  }
+
+
+  // ========== ENDPOINTS LEGACY (mantener compatibilidad) ==========
+
+  /**
+   * GET /api/metrica/usuarios/creados (legacy)
+   */
+  public async getUsuariosCreados(req: Request, res: Response): Promise<void> {
+    await this.getNuevosClientes(req, res);
+  }
+
+  /**
+   * GET /api/metrica/prestadores/registrados (legacy)
    */
   public async getPrestadoresRegistrados(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
 
-      const metric = await this.calculateSimpleCardMetric(
-        'service.providers.created',
-        dateRanges,
-        'porcentaje'
-      );
+      const currentValue = await this.countUsuariosByRol('prestador', dateRanges.startDate, dateRanges.endDate);
+      const previousValue = await this.countUsuariosByRol('prestador', dateRanges.previousStartDate, dateRanges.previousEndDate);
 
-      res.status(200).json({
-        success: true,
-        data: metric
-      });
-
+      const metric = this.calculateCardMetric(currentValue, previousValue, 'porcentaje');
+      res.status(200).json({ success: true, data: metric });
     } catch (error) {
-      logger.error('Error getting prestadores registrados metrics:', error);
-      res.status(400).json({
-        success: false,
-        message: error instanceof Error ? error.message : 'Error desconocido',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
+      await this.handleError(res, error, 'getPrestadoresRegistrados');
     }
   }
 
   /**
-   * GET /api/metrica/pagos/exitosos
-   * Métricas de tasa de éxito de pagos (tipo card)
+   * GET /api/metrica/pagos/exitosos (legacy)
    */
   public async getPagosExitosos(req: Request, res: Response): Promise<void> {
-    try {
-      const periodType = this.parsePeriodParams(req);
-      const dateRanges = DateRangeService.getPeriodRanges(periodType);
-
-      // Calcular tasa de éxito para el período actual
-      const currentSuccessRate = await this.calculatePaymentSuccessRate(
-        dateRanges.startDate,
-        dateRanges.endDate
-      );
-
-      // Calcular tasa de éxito para el período anterior
-      const previousSuccessRate = await this.calculatePaymentSuccessRate(
-        dateRanges.previousStartDate,
-        dateRanges.previousEndDate
-      );
-
-      const metric = this.calculateCardMetric(
-        currentSuccessRate,
-        previousSuccessRate,
-        'absoluto' // Cambio a absoluto porque ya es un porcentaje
-      );
-
-      res.status(200).json({
-        success: true,
-        data: metric
-      });
-
-    } catch (error) {
-      logger.error('Error getting pagos exitosos metrics:', error);
-      res.status(400).json({
-        success: false,
-        message: error instanceof Error ? error.message : 'Error desconocido',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
+    await this.getTasaExitoPagos(req, res);
   }
 
   /**
-   * GET /api/metrica/pagos/distribucion
-   * Distribución de pagos por estado (tipo pie)
+   * GET /api/metrica/pagos/distribucion (legacy)
    */
   public async getPagosDistribucion(req: Request, res: Response): Promise<void> {
-    try {
-      const periodType = this.parsePeriodParams(req);
-      const dateRanges = DateRangeService.getPeriodRanges(periodType);
-
-      // Obtener todos los pagos creados en el período
-      const createdPayments = await this.getEventsByType(
-        'payment.created',
-        dateRanges.startDate,
-        dateRanges.endDate
-      );
-
-      // Obtener eventos de estado final
-      const approvedPayments = await this.getEventsByType(
-        'payment.approved',
-        dateRanges.startDate,
-        dateRanges.endDate
-      );
-
-      const rejectedPayments = await this.getEventsByType(
-        'payment.rejected',
-        dateRanges.startDate,
-        dateRanges.endDate
-      );
-
-      const expiredPayments = await this.getEventsByType(
-        'payment.expired',
-        dateRanges.startDate,
-        dateRanges.endDate
-      );
-
-      // Crear sets de correlationIds para estados finales
-      const approvedIds = new Set(
-        approvedPayments
-          .filter(p => p.correlationId)
-          .map(p => p.correlationId!)
-      );
-
-      const rejectedIds = new Set(
-        rejectedPayments
-          .filter(p => p.correlationId)
-          .map(p => p.correlationId!)
-      );
-
-      const expiredIds = new Set(
-        expiredPayments
-          .filter(p => p.correlationId)
-          .map(p => p.correlationId!)
-      );
-
-      // Contar distribución
-      let approved = 0;
-      let rejected = 0;
-      let expired = 0;
-      let pending = 0;
-
-      for (const createdPayment of createdPayments) {
-        if (createdPayment.correlationId) {
-          const correlationId = createdPayment.correlationId;
-          
-          if (approvedIds.has(correlationId)) {
-            approved++;
-          } else if (rejectedIds.has(correlationId)) {
-            rejected++;
-          } else if (expiredIds.has(correlationId)) {
-            expired++;
-          } else {
-            pending++;
-          }
-        }
-      }
-
-      const distribution: PieMetricResponse = {
-        'APROBADO': approved,
-        'RECHAZADO': rejected,
-        'EXPIRADO': expired,
-        'PENDIENTE': pending
-      };
-
-      res.status(200).json({
-        success: true,
-        data: distribution
-      });
-
-    } catch (error) {
-      logger.error('Error getting pagos distribución metrics:', error);
-      res.status(400).json({
-        success: false,
-        message: error instanceof Error ? error.message : 'Error desconocido',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
+    await this.getDistribucionEventosPago(req, res);
   }
 
   /**
-   * GET /api/metrica/pagos/tiempoProcesamiento
-   * Tiempo promedio de procesamiento de pagos (tipo card)
+   * GET /api/metrica/pagos/tiempoProcesamiento (legacy)
    */
   public async getPagosTiempoProcesamiento(req: Request, res: Response): Promise<void> {
-    try {
-      const periodType = this.parsePeriodParams(req);
-      const dateRanges = DateRangeService.getPeriodRanges(periodType);
-
-      // Período actual
-      const currentApprovedPayments = await this.getEventsByType(
-        'payment.approved',
-        dateRanges.startDate,
-        dateRanges.endDate
-      );
-
-      const currentCreatedPayments = await this.getEventsByType(
-        'payment.created',
-        dateRanges.startDate,
-        dateRanges.endDate
-      );
-
-      const currentCompleteLifecycle = this.getCompleteLifecycleEvents(
-        currentCreatedPayments,
-        currentApprovedPayments,
-        dateRanges.startDate,
-        dateRanges.endDate
-      );
-
-      const currentAvgTime = this.calculateAverageProcessingTime(
-        currentCompleteLifecycle.created,
-        currentCompleteLifecycle.completed
-      );
-
-      // Período anterior
-      const previousApprovedPayments = await this.getEventsByType(
-        'payment.approved',
-        dateRanges.previousStartDate,
-        dateRanges.previousEndDate
-      );
-
-      const previousCreatedPayments = await this.getEventsByType(
-        'payment.created',
-        dateRanges.previousStartDate,
-        dateRanges.previousEndDate
-      );
-
-      const previousCompleteLifecycle = this.getCompleteLifecycleEvents(
-        previousCreatedPayments,
-        previousApprovedPayments,
-        dateRanges.previousStartDate,
-        dateRanges.previousEndDate
-      );
-
-      const previousAvgTime = this.calculateAverageProcessingTime(
-        previousCompleteLifecycle.created,
-        previousCompleteLifecycle.completed
-      );
-
-      const metric = this.calculateCardMetric(
-        currentAvgTime,
-        previousAvgTime,
-        'absoluto'
-      );
-
-      res.status(200).json({
-        success: true,
-        data: metric
-      });
-
-    } catch (error) {
-      logger.error('Error getting pagos tiempo procesamiento metrics:', error);
-      res.status(400).json({
-        success: false,
-        message: error instanceof Error ? error.message : 'Error desconocido',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
+    await this.getTiempoProcesamientoPagos(req, res);
   }
 
   /**
-   * GET /api/metrica/pedidos/mapa-calor
-   * Mapa de calor de pedidos por ubicación
+   * GET /api/metrica/matching/conversion (legacy)
+   */
+  public async getMatchingConversion(req: Request, res: Response): Promise<void> {
+    await this.getConversionCotizacionAceptada(req, res);
+  }
+
+  /**
+   * GET /api/metrica/matching/lead-time (legacy)
+   */
+  public async getMatchingLeadTime(req: Request, res: Response): Promise<void> {
+    await this.getTiempoPrimeraCotizacion(req, res);
+  }
+
+  /**
+   * GET /api/metrica/pedidos/mapa-calor (legacy - requiere coordenadas que no están en solicitudes)
    */
   public async getPedidosMapaCalor(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
 
-      // Obtener eventos de pedidos creados
-      const orderEvents = await this.getEventsByType(
-        'orders.created',
-        dateRanges.startDate,
-        dateRanges.endDate
-      );
+      const repo = AppDataSource.getRepository(Solicitud);
+      const solicitudes = await repo
+        .createQueryBuilder('solicitud')
+        .where('solicitud.timestamp >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .getMany();
 
-      // Procesar eventos para extraer ubicaciones y crear puntos de calor
-      const heatmapPoints: HeatmapPoint[] = [];
-      const locationCounts = new Map<string, { lat: number; lon: number; count: number }>();
-
-      for (const event of orderEvents) {
-        // Extraer coordenadas del cuerpo del evento
-        const location = this.extractLocationFromEvent(event);
-        if (location) {
-          const key = `${location.lat},${location.lon}`;
-          
-          if (locationCounts.has(key)) {
-            locationCounts.get(key)!.count++;
-          } else {
-            locationCounts.set(key, {
-              lat: location.lat,
-              lon: location.lon,
-              count: 1
-            });
-          }
+      // Agrupar por zona (ya que no tenemos coordenadas)
+      const zonasMap = new Map<string, number>();
+      solicitudes.forEach(s => {
+        if (s.zona) {
+          zonasMap.set(s.zona, (zonasMap.get(s.zona) || 0) + 1);
         }
-      }
+      });
 
-      // Convertir a formato de puntos de calor
-      for (const [, data] of locationCounts) {
+      const heatmapPoints: HeatmapPoint[] = [];
+      // Nota: Sin coordenadas, retornamos puntos ficticios basados en zonas
+      zonasMap.forEach((count, zona) => {
+        // Coordenadas aproximadas por zona (deberían venir de una tabla de zonas)
         heatmapPoints.push({
-          lat: data.lat,
-          lon: data.lon,
-          intensity: data.count
+          lat: -34.6037, // Buenos Aires por defecto
+          lon: -58.3816,
+          intensity: count
         });
-      }
+      });
 
       const response: HeatmapResponse = {
         data: heatmapPoints,
@@ -546,218 +822,293 @@ export class MetricsController extends BaseMetricsCalculator {
         }
       };
 
-      res.status(200).json({
-        success: true,
-        data: response
-      });
-
+      res.status(200).json({ success: true, data: response });
     } catch (error) {
-      logger.error('Error getting pedidos mapa calor:', error);
-      res.status(400).json({
-        success: false,
-        message: error instanceof Error ? error.message : 'Error desconocido',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
+      await this.handleError(res, error, 'getPedidosMapaCalor');
     }
   }
 
   /**
-   * GET /api/metrica/prestadores/zonas
-   * Tipos de prestadores por zonas geográficas
+   * GET /api/metrica/prestadores/zonas (legacy)
    */
   public async getPrestadoresZonas(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
 
-      // Obtener eventos de prestadores creados
-      const providerEvents = await this.getEventsByType(
-        'service.providers.created',
-        dateRanges.startDate,
-        dateRanges.endDate
-      );
+      const usuariosRepo = AppDataSource.getRepository(Usuario);
+      const habilidadesRepo = AppDataSource.getRepository(Habilidad);
 
-      // Procesar eventos para extraer ubicaciones y tipos de prestadores
+      const prestadores = await usuariosRepo
+        .createQueryBuilder('usuario')
+        .where('usuario.rol = :rol', { rol: 'prestador' })
+        .andWhere('usuario.timestamp >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .getMany();
+
       const zoneData: ProviderZoneData[] = [];
-      const providerTypeCounts = new Map<string, Map<string, { lat: number; lon: number; count: number }>>();
 
-      for (const event of providerEvents) {
-        const location = this.extractLocationFromEvent(event);
-        const providerType = this.extractProviderTypeFromEvent(event);
-        
-        if (location && providerType) {
-          const key = `${location.lat},${location.lon}`;
-          
-          if (!providerTypeCounts.has(providerType)) {
-            providerTypeCounts.set(providerType, new Map());
-          }
-          
-          const typeMap = providerTypeCounts.get(providerType)!;
-          
-          if (typeMap.has(key)) {
-            typeMap.get(key)!.count++;
-          } else {
-            typeMap.set(key, {
-              lat: location.lat,
-              lon: location.lon,
-              count: 1
-            });
-          }
-        }
-      }
+      for (const prestador of prestadores) {
+        const habilidades = await habilidadesRepo.find({
+          where: { id_usuario: prestador.id_usuario, activa: true }
+        });
 
-      // Convertir a formato de zonas de prestadores
-      for (const [providerType, locationMap] of providerTypeCounts) {
-        for (const [, data] of locationMap) {
+        habilidades.forEach(h => {
           zoneData.push({
-            lat: data.lat,
-            lon: data.lon,
-            providerType,
-            count: data.count,
-            zoneName: this.getZoneName(data.lat, data.lon)
+            lat: -34.6037, // Coordenadas por defecto
+            lon: -58.3816,
+            providerType: h.nombre_habilidad,
+            count: 1,
+            zoneName: prestador.ubicacion || 'Sin zona'
           });
-        }
+        });
       }
+
+      const providerTypes = Array.from(new Set(zoneData.map(z => z.providerType)));
 
       const response: ProviderZonesResponse = {
         data: zoneData,
-        totalProviders: providerEvents.length,
-        providerTypes: Array.from(providerTypeCounts.keys()),
+        totalProviders: prestadores.length,
+        providerTypes,
         period: {
           startDate: dateRanges.startDate.toISOString(),
           endDate: dateRanges.endDate.toISOString()
         }
       };
 
-      res.status(200).json({
-        success: true,
-        data: response
-      });
-
+      res.status(200).json({ success: true, data: response });
     } catch (error) {
-      logger.error('Error getting prestadores zonas:', error);
-      res.status(400).json({
-        success: false,
-        message: error instanceof Error ? error.message : 'Error desconocido',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
+      await this.handleError(res, error, 'getPrestadoresZonas');
     }
   }
 
+  // ========== 📋 CATÁLOGO DE SERVICIOS Y PRESTADORES ==========
+
   /**
-   * Extrae coordenadas de ubicación de un evento
-   * @param event - Evento del que extraer la ubicación
-   * @returns Coordenadas o null si no se encuentran
+   * GET /api/metrica/prestadores/nuevos-registrados
+   * 1. Nuevos prestadores registrados
    */
-  private extractLocationFromEvent(event: any): { lat: number; lon: number } | null {
+  public async getNuevosPrestadoresRegistrados(req: Request, res: Response): Promise<void> {
     try {
-      const cuerpo = event.cuerpo || {};
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const currentValue = await this.countPrestadoresByEstado('activo', dateRanges.startDate, dateRanges.endDate);
+      const previousValue = await this.countPrestadoresByEstado('activo', dateRanges.previousStartDate, dateRanges.previousEndDate);
+
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        currentValue,
+        previousValue,
+        async (start: Date, end: Date) => this.countPrestadoresByEstado('activo', start, end),
+        'porcentaje'
+      );
       
-      // Buscar coordenadas en diferentes posibles ubicaciones del JSON
-      let lat: number | undefined;
-      let lon: number | undefined;
-
-      // Caso 1: Coordenadas directas
-      if (cuerpo.latitude && cuerpo.longitude) {
-        lat = parseFloat(cuerpo.latitude);
-        lon = parseFloat(cuerpo.longitude);
-      }
-      // Caso 2: Coordenadas en objeto location
-      else if (cuerpo.location?.latitude && cuerpo.location?.longitude) {
-        lat = parseFloat(cuerpo.location.latitude);
-        lon = parseFloat(cuerpo.location.longitude);
-      }
-      // Caso 3: Coordenadas en objeto address
-      else if (cuerpo.address?.latitude && cuerpo.address?.longitude) {
-        lat = parseFloat(cuerpo.address.latitude);
-        lon = parseFloat(cuerpo.address.longitude);
-      }
-      // Caso 4: Coordenadas en objeto coordinates
-      else if (cuerpo.coordinates?.lat && cuerpo.coordinates?.lon) {
-        lat = parseFloat(cuerpo.coordinates.lat);
-        lon = parseFloat(cuerpo.coordinates.lon);
-      }
-      // Caso 5: Coordenadas en array [lat, lon]
-      else if (Array.isArray(cuerpo.coordinates) && cuerpo.coordinates.length >= 2) {
-        lat = parseFloat(cuerpo.coordinates[0]);
-        lon = parseFloat(cuerpo.coordinates[1]);
-      }
-
-      // Validar que las coordenadas sean válidas
-      if (lat !== undefined && lon !== undefined && 
-          !isNaN(lat) && !isNaN(lon) &&
-          lat >= -90 && lat <= 90 && 
-          lon >= -180 && lon <= 180) {
-        return { lat, lon };
-      }
-
-      return null;
+      res.status(200).json({ success: true, data: metric });
     } catch (error) {
-      logger.warn('Error extracting location from event:', error);
-      return null;
+      await this.handleError(res, error, 'getNuevosPrestadoresRegistrados');
     }
   }
 
   /**
-   * Extrae el tipo de prestador de un evento
-   * @param event - Evento del que extraer el tipo
-   * @returns Tipo de prestador o null si no se encuentra
+   * GET /api/metrica/prestadores/total-activos
+   * 2. Cantidad total de prestadores activos
    */
-  private extractProviderTypeFromEvent(event: any): string | null {
+  public async getTotalPrestadoresActivos(req: Request, res: Response): Promise<void> {
     try {
-      const cuerpo = event.cuerpo || {};
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const currentValue = await this.countPrestadoresActivos();
+      const previousDate = new Date(dateRanges.previousEndDate);
+      previousDate.setDate(previousDate.getDate() - 1);
+      const previousValue = await AppDataSource.getRepository(Prestador)
+        .createQueryBuilder('prestador')
+        .where('prestador.estado = :estado', { estado: 'activo' })
+        .andWhere('prestador.timestamp <= :previousDate', { previousDate })
+        .getCount();
+
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        currentValue,
+        previousValue,
+        async (start: Date, end: Date) => {
+          return await AppDataSource.getRepository(Prestador)
+            .createQueryBuilder('prestador')
+            .where('prestador.estado = :estado', { estado: 'activo' })
+            .andWhere('prestador.timestamp <= :endDate', { endDate: end })
+            .getCount();
+        },
+        'porcentaje'
+      );
       
-      // Buscar tipo de prestador en diferentes posibles ubicaciones
-      let providerType: string | undefined;
-
-      if (cuerpo.providerType) {
-        providerType = cuerpo.providerType;
-      } else if (cuerpo.type) {
-        providerType = cuerpo.type;
-      } else if (cuerpo.category) {
-        providerType = cuerpo.category;
-      } else if (cuerpo.serviceType) {
-        providerType = cuerpo.serviceType;
-      }
-
-      return providerType || 'unknown';
+      res.status(200).json({ success: true, data: metric });
     } catch (error) {
-      logger.warn('Error extracting provider type from event:', error);
-      return 'unknown';
+      await this.handleError(res, error, 'getTotalPrestadoresActivos');
     }
   }
 
   /**
-   * Obtiene el nombre de la zona basado en las coordenadas
-   * @param lat - Latitud
-   * @param lon - Longitud
-   * @returns Nombre de la zona o undefined
+   * GET /api/metrica/prestadores/win-rate
+   * 5. Win Rate por rubro (%)
+   * Nota: Calcula el Win Rate global ya que no hay relación directa entre cotizaciones y rubros en el modelo actual
    */
-  private getZoneName(lat: number, lon: number): string | undefined {
-    // Implementación básica de zonas geográficas
-    // En un caso real, esto podría usar una API de geocodificación inversa
-    
-    // Buenos Aires y alrededores
-    if (lat >= -35.0 && lat <= -34.0 && lon >= -59.0 && lon <= -58.0) {
-      return 'Buenos Aires';
+  public async getWinRatePorRubro(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      // Calcular Win Rate global (todas las cotizaciones)
+      const cotizacionesRepo = AppDataSource.getRepository(Cotizacion);
+      
+      const emitidas = await cotizacionesRepo
+        .createQueryBuilder('cotizacion')
+        .where('cotizacion.estado = :estado', { estado: 'emitida' })
+        .andWhere('cotizacion.timestamp >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .getCount();
+
+      const aceptadas = await cotizacionesRepo
+        .createQueryBuilder('cotizacion')
+        .where('cotizacion.estado = :estado', { estado: 'aceptada' })
+        .andWhere('cotizacion.timestamp >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .getCount();
+
+      const currentRate = emitidas > 0 ? (aceptadas / emitidas) * 100 : 0;
+
+      // Calcular para período anterior
+      const prevEmitidas = await cotizacionesRepo
+        .createQueryBuilder('cotizacion')
+        .where('cotizacion.estado = :estado', { estado: 'emitida' })
+        .andWhere('cotizacion.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
+        .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
+        .getCount();
+
+      const prevAceptadas = await cotizacionesRepo
+        .createQueryBuilder('cotizacion')
+        .where('cotizacion.estado = :estado', { estado: 'aceptada' })
+        .andWhere('cotizacion.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
+        .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
+        .getCount();
+
+      const previousRate = prevEmitidas > 0 ? (prevAceptadas / prevEmitidas) * 100 : 0;
+
+      const metric = await this.calculateMetricWithChart(
+        periodType,
+        dateRanges,
+        this.roundPercentage(currentRate),
+        this.roundPercentage(previousRate),
+        async (start: Date, end: Date) => {
+          const emitidasInt = await cotizacionesRepo
+            .createQueryBuilder('cotizacion')
+            .where('cotizacion.estado = :estado', { estado: 'emitida' })
+            .andWhere('cotizacion.timestamp >= :startDate', { startDate: start })
+            .andWhere('cotizacion.timestamp <= :endDate', { endDate: end })
+            .getCount();
+          
+          const aceptadasInt = await cotizacionesRepo
+            .createQueryBuilder('cotizacion')
+            .where('cotizacion.estado = :estado', { estado: 'aceptada' })
+            .andWhere('cotizacion.timestamp >= :startDate', { startDate: start })
+            .andWhere('cotizacion.timestamp <= :endDate', { endDate: end })
+            .getCount();
+          
+          return emitidasInt > 0 ? (aceptadasInt / emitidasInt) * 100 : 0;
+        },
+        'absoluto'
+      );
+      
+      res.status(200).json({ success: true, data: metric });
+    } catch (error) {
+      await this.handleError(res, error, 'getWinRatePorRubro');
     }
-    // Córdoba
-    else if (lat >= -32.0 && lat <= -31.0 && lon >= -65.0 && lon <= -64.0) {
-      return 'Córdoba';
+  }
+
+  /**
+   * GET /api/metrica/solicitudes/mapa-calor
+   * 6. Mapa de calor de pedidos
+   */
+  public async getMapaCalorPedidos(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      const solicitudesPorZona = await this.countSolicitudesPorZona(dateRanges.startDate, dateRanges.endDate);
+      
+      // Por ahora retornamos datos por zona (las coordenadas se pueden mapear después)
+      const points: HeatmapPoint[] = [];
+      
+      // Si hay coordenadas en las solicitudes, usarlas; si no, usar zonas
+      const solicitudes = await AppDataSource.getRepository(Solicitud)
+        .createQueryBuilder('solicitud')
+        .where('solicitud.timestamp >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .getMany();
+
+      // Agrupar por zona y crear puntos (requeriría mapeo de zonas a coordenadas)
+      // Por ahora retornar estructura básica
+      const response: HeatmapResponse = {
+        data: points,
+        totalPoints: solicitudes.length,
+        period: {
+          startDate: dateRanges.startDate.toISOString().split('T')[0],
+          endDate: dateRanges.endDate.toISOString().split('T')[0]
+        }
+      };
+
+      res.status(200).json({ success: true, data: response });
+    } catch (error) {
+      await this.handleError(res, error, 'getMapaCalorPedidos');
     }
-    // Rosario
-    else if (lat >= -33.0 && lat <= -32.0 && lon >= -61.0 && lon <= -60.0) {
-      return 'Rosario';
+  }
+
+  /**
+   * GET /api/metrica/servicios/distribucion
+   * 7. Distribución de servicios
+   */
+  public async getDistribucionServicios(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+
+      // Contar solicitudes agrupadas por habilidad (que representa el tipo de servicio)
+      const habilidadesRepo = AppDataSource.getRepository(Habilidad);
+      const solicitudesRepo = AppDataSource.getRepository(Solicitud);
+
+      const solicitudes = await solicitudesRepo
+        .createQueryBuilder('solicitud')
+        .where('solicitud.timestamp >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .getMany();
+
+      // Agrupar por habilidad asociada (necesitaríamos relación entre solicitud y habilidad)
+      // Por ahora agrupar por nombre de habilidad si está disponible en las solicitudes
+      const distribution: PieMetricResponse = {};
+
+      // Si las solicitudes tienen información de habilidad, agrupar por eso
+      // Si no, usar rubros o categorías
+      const habilidades = await habilidadesRepo.find();
+      
+      for (const habilidad of habilidades) {
+        const count = await solicitudesRepo
+          .createQueryBuilder('solicitud')
+          .innerJoin('habilidades', 'hab', 'hab.id_usuario = solicitud.id_prestador')
+          .where('hab.id_habilidad = :idHabilidad', { idHabilidad: habilidad.id_habilidad })
+          .andWhere('solicitud.timestamp >= :startDate', { startDate: dateRanges.startDate })
+          .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate })
+          .getCount();
+        
+        if (count > 0) {
+          distribution[habilidad.nombre_habilidad] = count;
+        }
+      }
+
+      res.status(200).json({ success: true, data: distribution });
+    } catch (error) {
+      await this.handleError(res, error, 'getDistribucionServicios');
     }
-    // Mendoza
-    else if (lat >= -33.0 && lat <= -32.0 && lon >= -69.0 && lon <= -68.0) {
-      return 'Mendoza';
-    }
-    // Tucumán
-    else if (lat >= -27.0 && lat <= -26.0 && lon >= -66.0 && lon <= -65.0) {
-      return 'Tucumán';
-    }
-    
-    return undefined;
   }
 }

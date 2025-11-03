@@ -3,12 +3,63 @@ import { AppDataSource } from '../config/database';
 import { Event } from '../models/Event';
 import { EventMessage } from '../types';
 import { logger } from '../config/logger';
+import { EventNormalizationService } from '../services/EventNormalizationService';
 
 export class WebhookController {
+  private normalizationService: EventNormalizationService;
+
   constructor() {
-    // WebhookController initialization
+    this.normalizationService = new EventNormalizationService();
   }
 
+  public async handleWebhook(req: Request, res: Response): Promise<void> {
+    try {
+      const { queue, event, correlationId }: { queue: string; event: EventMessage; correlationId?: string } = req.body;
+
+      logger.info(`Received webhook for queue: ${queue}`, { event });
+
+      // Save event to database
+      const eventRepository = AppDataSource.getRepository(Event);
+      const newEvent = eventRepository.create({
+        squad: event.squad,
+        topico: event.topico,
+        evento: event.evento,
+        cuerpo: event.cuerpo,
+        timestamp: event.timestamp || new Date(),
+        processed: false,
+        correlationId: correlationId,
+        source: 'direct-webhook'
+      });
+
+      await eventRepository.save(newEvent);
+
+      // Normalize event to specialized tables
+      try {
+        await this.normalizationService.normalizeEvent(newEvent);
+      } catch (normalizationError) {
+        logger.error(`Error normalizing event ${newEvent.id}:`, normalizationError);
+        // Continue even if normalization fails - event is still saved
+      }
+
+      // Mark event as processed
+      newEvent.processed = true;
+      await eventRepository.save(newEvent);
+
+      res.status(200).json({ 
+        success: true, 
+        message: 'Event processed successfully',
+        eventId: newEvent.id
+      });
+
+    } catch (error) {
+      logger.error('Error processing webhook:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Error processing event',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
   /**
    * Handle Core Hub webhook events
    *
@@ -94,6 +145,15 @@ export class WebhookController {
       const savedEvent = await eventRepository.save(newEvent);
       logger.info(`✅ Event ${messageId} saved to database (id: ${savedEvent.id})`);
       logger.debug(`💾 Saved event details:`, JSON.stringify(savedEvent, null, 2));
+
+      // Normalize event to specialized tables
+      try {
+        await this.normalizationService.normalizeEvent(newEvent);
+        logger.info(`📊 Event ${messageId} normalized to specialized tables`);
+      } catch (normalizationError) {
+        logger.error(`Error normalizing event ${messageId}:`, normalizationError);
+        // Continue even if normalization fails - event is still saved
+      }
 
       // Mark event as processed
       logger.info(`🏷️ Marking event ${messageId} as processed...`);

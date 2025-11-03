@@ -102,6 +102,21 @@ export class AuthService {
           logger.warn('Credenciales inválidas', { email: credentials.email });
           throw new Error('Credenciales inválidas');
         }
+        if (error.response?.status === 403) {
+          logger.error('Acceso denegado por el servidor de usuarios (posible problema de CORS o configuración)', { 
+            email: credentials.email,
+            status: error.response.status,
+            data: error.response.data
+          });
+          // En desarrollo, usar datos mock si hay problema de acceso
+          if (config.nodeEnv === 'development') {
+            logger.warn('Usando datos mock para desarrollo debido a error 403', { 
+              email: credentials.email 
+            });
+            return this.getMockUserData(credentials.email);
+          }
+          throw new Error('Acceso denegado por el servidor de autenticación');
+        }
         if (error.response?.status === 500) {
           logger.error('Error interno del servidor de usuarios', { 
             email: credentials.email,
@@ -120,7 +135,8 @@ export class AuthService {
         
         logger.error('Error de conexión con el módulo de usuarios', { 
           email: credentials.email,
-          error: error.message 
+          error: error.message,
+          status: error.response?.status
         });
         throw new Error('Error de conexión con el servidor de autenticación');
       }
