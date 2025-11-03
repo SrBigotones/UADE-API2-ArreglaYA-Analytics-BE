@@ -193,11 +193,20 @@ export class BaseMetricsCalculator {
     const historicalData: Array<{ date: string; value: number }> = [];
 
     for (const interval of intervals) {
-      const value = await calculateValue(interval.start, interval.end);
-      historicalData.push({
-        date: interval.label,
-        value: Math.round(value * 100) / 100 // Redondear a 2 decimales
-      });
+      try {
+        const value = await calculateValue(interval.start, interval.end);
+        const numericValue = typeof value === 'number' && !isNaN(value) ? value : 0;
+        historicalData.push({
+          date: interval.label || interval.date,
+          value: Math.round(numericValue * 100) / 100
+        });
+      } catch (error) {
+        logger.error(`Error calculating historical value for interval ${interval.label}:`, error);
+        historicalData.push({
+          date: interval.label || interval.date,
+          value: 0
+        });
+      }
     }
 
     return historicalData;

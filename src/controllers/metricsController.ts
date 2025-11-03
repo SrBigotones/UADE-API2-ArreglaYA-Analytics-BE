@@ -60,14 +60,22 @@ export class MetricsController extends BaseMetricsCalculator {
     calculateHistoricalValue: (start: Date, end: Date) => Promise<number>,
     changeType: 'porcentaje' | 'absoluto' = 'porcentaje'
   ): Promise<CardMetricResponse> {
-    const metric = this.calculateCardMetric(currentValue, previousValue, changeType);
-    const chartData = await this.calculateHistoricalData(
-      periodType,
-      dateRanges,
-      calculateHistoricalValue
-    );
-    metric.chartData = chartData;
-    return metric;
+    try {
+      const metric = this.calculateCardMetric(currentValue, previousValue, changeType);
+      const chartData = await this.calculateHistoricalData(
+        periodType,
+        dateRanges,
+        calculateHistoricalValue
+      );
+      metric.chartData = chartData;
+      return metric;
+    } catch (error) {
+      logger.error('Error calculating metric with chart:', error);
+      // Return metric without chart data if historical calculation fails
+      const metric = this.calculateCardMetric(currentValue, previousValue, changeType);
+      metric.chartData = [];
+      return metric;
+    }
   }
 
   /**
