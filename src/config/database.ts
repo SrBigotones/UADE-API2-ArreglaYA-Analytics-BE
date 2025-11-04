@@ -119,15 +119,10 @@ const runMigrationsOnConnect = async (): Promise<void> => {
     // Ejecutar migraciones de esquema
     await migrationService.runMigrationsOnStartup();
     
-    // Ejecutar seeds solo en desarrollo/testing
-    if (config.nodeEnv === 'development' || config.nodeEnv === 'test') {
-      await migrationService.runSeeds();
-    }
-    
     // Mostrar información de estado
     const info = await migrationService.getMigrationInfo();
     if (info) {
-      logger.info(`📊 Estado de migraciones: ${info.migrations} migraciones, ${info.seeds} seeds aplicados`);
+      logger.info(`📊 Estado de migraciones: ${info.migrations} migraciones aplicadas, última: ${info.lastMigration}`);
     }
     
   } catch (error) {
