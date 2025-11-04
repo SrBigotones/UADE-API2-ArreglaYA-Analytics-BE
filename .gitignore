@@ -3,3 +3,5 @@
 .env
 .aws-sam/
 /dist/
+.DS_Store
+src/config/UADE-API2-ArreglaYA-Analytics-BE.code-workspace

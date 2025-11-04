@@ -14,6 +14,7 @@ import { Zona } from '../models/Zona';
 import { Pago } from '../models/Pago';
 import { Prestador } from '../models/Prestador';
 import { Rubro } from '../models/Rubro';
+import { FeatureFlag } from '../models/FeatureFlag';
 
 export const createDataSource = async () => {
   let dbConfig: DBConfig;
@@ -45,7 +46,7 @@ export const createDataSource = async () => {
   AppDataSource = new DataSource({
     ...dbConfig,
     // Importar entidades explícitamente para evitar problemas de carga
-    entities: [Event, Usuario, Servicio, Solicitud, Cotizacion, Habilidad, Zona, Pago, Prestador, Rubro],
+    entities: [Event, Usuario, Servicio, Solicitud, Cotizacion, Habilidad, Zona, Pago, Prestador, Rubro, FeatureFlag],
     migrations: [__dirname + '/../migrations/*.{ts,js}'],
     subscribers: [__dirname + '/../subscribers/*.{ts,js}'],
   });
@@ -118,15 +119,10 @@ const runMigrationsOnConnect = async (): Promise<void> => {
     // Ejecutar migraciones de esquema
     await migrationService.runMigrationsOnStartup();
     
-    // Ejecutar seeds solo en desarrollo/testing
-    if (config.nodeEnv === 'development' || config.nodeEnv === 'test') {
-      await migrationService.runSeeds();
-    }
-    
     // Mostrar información de estado
     const info = await migrationService.getMigrationInfo();
     if (info) {
-      logger.info(`📊 Estado de migraciones: ${info.migrations} migraciones, ${info.seeds} seeds aplicados`);
+      logger.info(`📊 Estado de migraciones: ${info.migrations} migraciones aplicadas, última: ${info.lastMigration}`);
     }
     
   } catch (error) {
