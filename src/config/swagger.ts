@@ -234,6 +234,7 @@ const options = {
   },
   apis: [
     './src/routes/*.ts',
+    './src/routes/metrics/*.ts',
     './src/controllers/*.ts'
   ]
 };
