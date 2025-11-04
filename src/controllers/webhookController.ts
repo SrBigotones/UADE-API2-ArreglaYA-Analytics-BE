@@ -72,13 +72,9 @@ export class WebhookController {
   public async handleCoreHubWebhook(req: Request, res: Response): Promise<void> {
     const coreHubEvent = req.body;
 
-    // Log completo del payload recibido
-    logger.info('📨 ========== CORE HUB WEBHOOK RECEIVED ==========');
-    logger.info('Full payload: ' + JSON.stringify(coreHubEvent, null, 2));
-    logger.info('Message ID: ' + coreHubEvent.messageId);
-    logger.info('Subscription ID: ' + coreHubEvent.subscriptionId);
-    logger.info('All keys: ' + JSON.stringify(Object.keys(coreHubEvent)));
-    logger.info('================================================');
+    // Log compacto del payload recibido (JSON en una línea)
+    logger.info(`📨 CORE HUB WEBHOOK | msgId: ${coreHubEvent.messageId} | routingKey: ${coreHubEvent.routingKey} | topic: ${coreHubEvent.topic} | event: ${coreHubEvent.eventName}`);
+    logger.info(`📦 Full payload: ${JSON.stringify(coreHubEvent)}`);
 
     // Start processing and register it BEFORE sending response
     const processingPromise = this.processEventAsync(coreHubEvent);
@@ -116,18 +112,12 @@ export class WebhookController {
     logger.info(`⚙️ Processing event ${messageId} for squad: ${squad}`);
 
     try {
-      logger.debug(`📦 Raw Core Hub event:`, JSON.stringify(coreHubEvent, null, 2));
-
       // Transform Core Hub event to internal format
-      logger.info(`🔄 Transforming Core Hub event ${messageId}...`);
       const eventMessage: EventMessage = this.transformCoreHubEvent(coreHubEvent);
-      logger.debug(`✨ Transformed event:`, JSON.stringify(eventMessage, null, 2));
 
       // Save event to database
-      logger.info(`💾 Saving event ${messageId} to database...`);
       const eventRepository = AppDataSource.getRepository(Event);
 
-      logger.debug(`🏗️ Creating event entity for ${messageId}...`);
       const newEvent = eventRepository.create({
         squad: eventMessage.squad,
         topico: eventMessage.topico,
@@ -141,43 +131,35 @@ export class WebhookController {
         source: 'core-hub'
       });
 
-      logger.debug(`💽 Persisting event ${messageId} to database...`);
       const savedEvent = await eventRepository.save(newEvent);
-      logger.info(`✅ Event ${messageId} saved to database (id: ${savedEvent.id})`);
-      logger.debug(`💾 Saved event details:`, JSON.stringify(savedEvent, null, 2));
+      logger.info(`💾 Event saved | id: ${savedEvent.id} | squad: ${savedEvent.squad} | topico: ${savedEvent.topico} | evento: ${savedEvent.evento}`);
 
       // Normalize event to specialized tables
       try {
         await this.normalizationService.normalizeEvent(newEvent);
         logger.info(`📊 Event ${messageId} normalized to specialized tables`);
       } catch (normalizationError) {
-        logger.error(`Error normalizing event ${messageId}:`, normalizationError);
+        logger.error(`❌ Error normalizing event ${messageId}:`, normalizationError);
         // Continue even if normalization fails - event is still saved
       }
 
       // Mark event as processed
-      logger.info(`🏷️ Marking event ${messageId} as processed...`);
       savedEvent.processed = true;
-      const updatedEvent = await eventRepository.save(savedEvent);
+      await eventRepository.save(savedEvent);
       logger.info(`✅ Event ${messageId} marked as processed`);
-      logger.debug(`✔️ Updated event:`, JSON.stringify(updatedEvent, null, 2));
 
       // Get subscription ID for this squad from SSM
-      logger.info(`🔍 Looking up subscription ID for squad: ${squad}`);
       const { getSubscriptionIdForSquad } = await import('../utils/ssm-params');
       const subscriptionId = await getSubscriptionIdForSquad(squad);
       
-      if (subscriptionId) {
-        logger.info(`✅ Found subscription ID for squad ${squad}: ${subscriptionId}`);
-      } else {
+      if (!subscriptionId) {
         logger.warn(`⚠️ No subscription ID found for squad ${squad}, ACK will be skipped`);
       }
 
       // Send ACK to Core Hub to confirm successful processing
-      logger.info(`📤 Sending ACK to Core Hub for message ${messageId}...`);
       await this.sendAckToCoreHub(messageId, subscriptionId || undefined);
 
-      logger.info(`✅ Successfully processed and ACKed Core Hub event ${messageId}`);
+      logger.info(`✅ Successfully processed and ACKed event ${messageId}`);
 
     } catch (error) {
       logger.error(`❌ Failed to process Core Hub event ${messageId}:`, {
@@ -269,14 +251,56 @@ export class WebhookController {
    */
   private transformCoreHubEvent(coreHubEvent: any): EventMessage {
     // Core Hub event structure based on MessageEnvelope from uade-core-backend
-    const { destination, payload, messageId, timestamp } = coreHubEvent;
+    const { destination, payload, messageId, timestamp, routingKey, topic, eventName } = coreHubEvent;
     
-    // Extract squad from destination channel or use default
-    const squad = this.extractSquadFromChannel(destination?.channel) || 'unknown';
+    // Strategy 1: Try to extract from routingKey (format: "squad.topic.event")
+    let squad = 'unknown';
+    let topico = 'unknown';
+    let evento = 'unknown';
+    let extractionMethod = 'none';
     
-    // Extract topic and event from destination
-    const topico = destination?.channel || 'unknown';
-    const evento = destination?.routingKey || 'unknown';
+    if (routingKey && routingKey !== 'undefined') {
+      const parts = routingKey.split('.');
+      if (parts.length >= 3) {
+        squad = parts[0];
+        topico = parts[1];
+        evento = parts[2];
+        extractionMethod = 'routingKey(3-parts)';
+      } else if (parts.length === 2) {
+        // Format: "topic.event" (no squad)
+        topico = parts[0];
+        evento = parts[1];
+        extractionMethod = 'routingKey(2-parts)';
+      }
+    }
+    
+    // Strategy 2: Use topic and eventName from root level
+    if (topico === 'unknown' && topic) {
+      topico = topic;
+      extractionMethod = extractionMethod === 'none' ? 'root-topic' : extractionMethod + '+root-topic';
+    }
+    if (evento === 'unknown' && eventName) {
+      evento = eventName;
+      extractionMethod = extractionMethod === 'none' ? 'root-eventName' : extractionMethod + '+root-eventName';
+    }
+    
+    // Strategy 3: Fallback to payload fields
+    if (topico === 'unknown' && payload?.topic) {
+      topico = payload.topic;
+      extractionMethod = extractionMethod === 'none' ? 'payload-topic' : extractionMethod + '+payload-topic';
+    }
+    if (evento === 'unknown' && payload?.eventName) {
+      evento = payload.eventName;
+      extractionMethod = extractionMethod === 'none' ? 'payload-eventName' : extractionMethod + '+payload-eventName';
+    }
+    
+    // Strategy 4: Try destination.channel
+    if (topico === 'unknown' && destination?.channel) {
+      topico = destination.channel;
+      extractionMethod = extractionMethod === 'none' ? 'destination-channel' : extractionMethod + '+destination-channel';
+    }
+    
+    logger.info(`🔍 Extracted [${extractionMethod}] squad: ${squad} | topico: ${topico} | evento: ${evento}`);
 
     return {
       squad,
@@ -287,6 +311,7 @@ export class WebhookController {
         timestamp,
         payload,
         destination,
+        routingKey,
         // Preserve original Core Hub structure
         originalEvent: coreHubEvent
       },
