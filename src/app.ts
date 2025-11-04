@@ -7,7 +7,7 @@ import morgan from 'morgan';
 
 // importa tus rutas, middlewares, swagger, etc.
 import webhookRoutes from './routes/webhooks';
-import newMetricsRoutes from './routes/newMetrics';
+import metricsRoutes from './routes/metrics';
 import authRoutes from './routes/auth';
 import adminRoutes from './routes/admin';
 import testDataRoutes from './routes/testData';
@@ -31,7 +31,7 @@ app.get('/health', healthController.healthCheck.bind(healthController));
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/webhooks', webhookRoutes);
-app.use('/api/metrica', newMetricsRoutes);
+app.use('/api/metrica', metricsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/test-data', testDataRoutes);
 

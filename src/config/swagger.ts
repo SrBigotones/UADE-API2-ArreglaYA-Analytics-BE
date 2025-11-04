@@ -228,12 +228,113 @@ const options = {
             success: { type: 'boolean', example: true },
             message: { type: 'string', example: 'Operation successful' }
           }
+        },
+        CardMetricResponse: {
+          type: 'object',
+          properties: {
+            value: {
+              type: 'number',
+              description: 'Valor actual de la métrica',
+              example: 150
+            },
+            change: {
+              type: 'number',
+              description: 'Cambio respecto al período anterior (absoluto o porcentaje)',
+              example: 25
+            },
+            changeType: {
+              type: 'string',
+              enum: ['porcentaje', 'absoluto'],
+              description: 'Tipo de cambio calculado',
+              example: 'porcentaje'
+            },
+            changeStatus: {
+              type: 'string',
+              enum: ['positivo', 'negativo'],
+              description: 'Estado del cambio',
+              example: 'positivo'
+            },
+            chartData: {
+              type: 'array',
+              description: 'Datos históricos para gráfico',
+              items: {
+                type: 'object',
+                properties: {
+                  date: { type: 'string', example: '1/11' },
+                  value: { type: 'number', example: 125 }
+                }
+              }
+            }
+          }
+        },
+        PieMetricResponse: {
+          type: 'object',
+          additionalProperties: {
+            type: 'number'
+          },
+          example: {
+            'APROBADO': 850,
+            'RECHAZADO': 45,
+            'PENDIENTE': 105
+          }
+        },
+        HeatmapPoint: {
+          type: 'object',
+          properties: {
+            lat: { type: 'number', example: -34.6037 },
+            lon: { type: 'number', example: -58.3816 },
+            intensity: { type: 'number', example: 25 }
+          }
+        },
+        HeatmapResponse: {
+          type: 'object',
+          properties: {
+            data: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/HeatmapPoint' }
+            },
+            totalPoints: { type: 'number', example: 150 },
+            period: {
+              type: 'object',
+              properties: {
+                startDate: { type: 'string', example: '2025-01-01' },
+                endDate: { type: 'string', example: '2025-01-31' }
+              }
+            }
+          }
+        },
+        MetricSuccessResponse: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean', example: true },
+            data: {
+              oneOf: [
+                { $ref: '#/components/schemas/CardMetricResponse' },
+                { $ref: '#/components/schemas/PieMetricResponse' },
+                { $ref: '#/components/schemas/HeatmapResponse' }
+              ]
+            }
+          }
+        }
+      },
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'JWT token de autenticación (solo usuarios ADMIN)'
         }
       }
-    }
+    },
+    security: [
+      {
+        bearerAuth: []
+      }
+    ]
   },
   apis: [
     './src/routes/*.ts',
+    './src/routes/metrics/*.ts',
     './src/controllers/*.ts'
   ]
 };
