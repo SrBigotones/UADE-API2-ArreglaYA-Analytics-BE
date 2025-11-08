@@ -1,5 +1,6 @@
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
+import path from 'path';
 import { config } from './index';
 
 const options = {
@@ -333,9 +334,14 @@ const options = {
     ]
   },
   apis: [
-    './src/routes/*.ts',
-    './src/routes/metrics/*.ts',
-    './src/controllers/*.ts'
+    path.join(__dirname, '../routes/*.ts'),
+    path.join(__dirname, '../routes/metrics/*.ts'),
+    path.join(__dirname, '../routes/metrics/usuarios.ts'),
+    path.join(__dirname, '../routes/metrics/solicitudes.ts'),
+    path.join(__dirname, '../routes/metrics/pagos.ts'),
+    path.join(__dirname, '../routes/metrics/prestadores.ts'),
+    path.join(__dirname, '../routes/metrics/matching.ts'),
+    path.join(__dirname, '../controllers/*.ts')
   ]
 };
 
