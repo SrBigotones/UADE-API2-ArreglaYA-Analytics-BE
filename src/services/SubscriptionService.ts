@@ -14,17 +14,16 @@ import config from '../config';
  * Provides business logic and caching for subscription operations
  */
 export class SubscriptionService {
-  private client: SubscriptionClient;
   private subscriptionCache: Map<string, SubscriptionResponse> = new Map();
   private cacheTimeout = 5 * 60 * 1000; // 5 minutes
 
+  // Create client dynamically to always use current config from SSM
+  private get client(): SubscriptionClient {
+    return createSubscriptionClient();
+  }
+
   constructor() {
-    this.client = createSubscriptionClient();
-    
-    logger.info('SubscriptionService initialized with Core Hub config:', {
-      baseUrl: config.coreHub.url,
-      timeout: config.coreHub.timeout
-    });
+    logger.info('SubscriptionService initialized');
   }
 
   /**
@@ -315,8 +314,9 @@ export class SubscriptionService {
 
   /**
    * Send ACK to Core Hub for a processed message
+   * Format: POST /messages/ack/{subscriptionId}
    */
-  async acknowledgeMessage(messageId: string, subscriptionId?: string): Promise<void> {
+  async acknowledgeMessage(messageId: string, subscriptionId: string): Promise<void> {
     try {
       logger.info(`Sending ACK for message ${messageId}`, { subscriptionId });
       

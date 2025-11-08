@@ -81,6 +81,7 @@ export interface CardMetricResponse {
   change: number;
   changeType: 'porcentaje' | 'absoluto';
   changeStatus: 'positivo' | 'negativo';
+  chartData?: Array<{ date: string; value: number }>;
 }
 
 export interface PieMetricResponse {
@@ -132,4 +133,13 @@ export interface ProviderZonesResponse {
     startDate: string;
     endDate: string;
   };
+}
+
+// Tipos para segmentación de métricas
+export interface SegmentationFilters {
+  rubro?: string | number; // nombre o id del rubro
+  zona?: string;
+  metodo?: string; // método de pago
+  tipoSolicitud?: 'abierta' | 'dirigida'; // tipo de solicitud
+  monto?: { min?: number; max?: number }; // rango de montos para pagos
 }

@@ -3,55 +3,99 @@ import { AppDataSource } from '../config/database';
 import { Event } from '../models/Event';
 import { EventMessage } from '../types';
 import { logger } from '../config/logger';
+import { EventNormalizationService } from '../services/EventNormalizationService';
 
 export class WebhookController {
+  private normalizationService: EventNormalizationService;
+
   constructor() {
-    // WebhookController initialization
+    this.normalizationService = new EventNormalizationService();
   }
 
-  /**
-   * Handle Core Hub webhook events
-   * This endpoint receives events from the Core Hub subscription system
-   * 
-   * Flow:
-   * 1. Immediately return 200 OK to Core Hub
-   * 2. Process event asynchronously (save to DB)
-   * 3. Send ACK to Core Hub after successful processing
-   */
-  public async handleCoreHubWebhook(req: Request, res: Response): Promise<void> {
+  public async handleWebhook(req: Request, res: Response): Promise<void> {
     try {
-      // Extract Core Hub event data
-      const coreHubEvent = req.body;
-      logger.info('📨 Received Core Hub webhook event:', {
-        messageId: coreHubEvent.messageId,
-        destination: coreHubEvent.destination,
-        timestamp: coreHubEvent.timestamp
+      const { queue, event, correlationId }: { queue: string; event: EventMessage; correlationId?: string } = req.body;
+
+      logger.info(`Received webhook for queue: ${queue}`, { event });
+
+      // Save event to database
+      const eventRepository = AppDataSource.getRepository(Event);
+      const newEvent = eventRepository.create({
+        squad: event.squad,
+        topico: event.topico,
+        evento: event.evento,
+        cuerpo: event.cuerpo,
+        timestamp: event.timestamp || new Date(),
+        processed: false,
+        correlationId: correlationId,
+        source: 'direct-webhook'
       });
 
-      // IMMEDIATELY return 200 OK to Core Hub
+      await eventRepository.save(newEvent);
+
+      // Normalize event to specialized tables
+      try {
+        await this.normalizationService.normalizeEvent(newEvent);
+      } catch (normalizationError) {
+        logger.error(`Error normalizing event ${newEvent.id}:`, normalizationError);
+        // Continue even if normalization fails - event is still saved
+      }
+
+      // Mark event as processed
+      newEvent.processed = true;
+      await eventRepository.save(newEvent);
+
       res.status(200).json({ 
         success: true, 
-        message: 'Event received, processing asynchronously',
-        messageId: coreHubEvent.messageId
-      });
-
-      // Process event asynchronously (don't await - fire and forget)
-      this.processEventAsync(coreHubEvent).catch(error => {
-        logger.error(`❌ Async processing failed for message ${coreHubEvent.messageId}:`, error);
+        message: 'Event processed successfully',
+        eventId: newEvent.id
       });
 
     } catch (error) {
-      logger.error('Error handling Core Hub webhook:', error);
-      
-      // Only return error if we haven't sent response yet
-      if (!res.headersSent) {
-        res.status(500).json({ 
-          success: false, 
-          message: 'Error receiving Core Hub event',
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
+      logger.error('Error processing webhook:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Error processing event',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
+  }
+  /**
+   * Handle Core Hub webhook events
+   *
+   * Flow (based on AWS Lambda Extensions pattern):
+   * 1. Start async processing and register it
+   * 2. Send 200 OK immediately
+   * 3. Lambda handler waits for registered operations before returning
+   * 4. Processing completes (save to DB, send ACK)
+   */
+  public async handleCoreHubWebhook(req: Request, res: Response): Promise<void> {
+    const coreHubEvent = req.body;
+
+    // Log compacto del payload recibido (JSON en una línea)
+    logger.info(`📨 CORE HUB WEBHOOK | msgId: ${coreHubEvent.messageId} | routingKey: ${coreHubEvent.routingKey} | topic: ${coreHubEvent.topic} | event: ${coreHubEvent.eventName}`);
+    logger.info(`📦 Full payload: ${JSON.stringify(coreHubEvent)}`);
+
+    // Start processing and register it BEFORE sending response
+    const processingPromise = this.processEventAsync(coreHubEvent);
+
+    // Register with Lambda handler
+    try {
+      const { registerPendingOperation } = await import('../lambda-handler');
+      registerPendingOperation(processingPromise);
+      logger.info(`📝 Registered pending operation for event ${coreHubEvent.messageId}`);
+    } catch (error) {
+      logger.warn('⚠️ Not running in Lambda context');
+    }
+
+    // Send 200 OK immediately (HTTP response)
+    res.status(200).json({
+      success: true,
+      message: 'Event received',
+      messageId: coreHubEvent.messageId
+    });
+
+    logger.info(`✉️ Response sent for event ${coreHubEvent.messageId}, processing continues...`);
   }
 
   /**
@@ -60,16 +104,20 @@ export class WebhookController {
    */
   private async processEventAsync(coreHubEvent: any): Promise<void> {
     const messageId = coreHubEvent.messageId;
-    const subscriptionId = coreHubEvent.subscriptionId;
+    
+    // Extract squad from routingKey (format: "users.test.created" -> "users")
+    const routingKey = coreHubEvent.routingKey || '';
+    const squad = routingKey.split('.')[0];
+    
+    logger.info(`⚙️ Processing event ${messageId} for squad: ${squad}`);
 
     try {
-      logger.info(`⚙️ Processing event ${messageId} asynchronously...`);
-
       // Transform Core Hub event to internal format
       const eventMessage: EventMessage = this.transformCoreHubEvent(coreHubEvent);
 
       // Save event to database
       const eventRepository = AppDataSource.getRepository(Event);
+
       const newEvent = eventRepository.create({
         squad: eventMessage.squad,
         topico: eventMessage.topico,
@@ -83,21 +131,44 @@ export class WebhookController {
         source: 'core-hub'
       });
 
-      await eventRepository.save(newEvent);
-      logger.info(`💾 Event ${messageId} saved to database (id: ${newEvent.id})`);
+      const savedEvent = await eventRepository.save(newEvent);
+      logger.info(`💾 Event saved | id: ${savedEvent.id} | squad: ${savedEvent.squad} | topico: ${savedEvent.topico} | evento: ${savedEvent.evento}`);
+
+      // Normalize event to specialized tables
+      try {
+        await this.normalizationService.normalizeEvent(newEvent);
+        logger.info(`📊 Event ${messageId} normalized to specialized tables`);
+      } catch (normalizationError) {
+        logger.error(`❌ Error normalizing event ${messageId}:`, normalizationError);
+        // Continue even if normalization fails - event is still saved
+      }
 
       // Mark event as processed
-      newEvent.processed = true;
-      await eventRepository.save(newEvent);
+      savedEvent.processed = true;
+      await eventRepository.save(savedEvent);
+      logger.info(`✅ Event ${messageId} marked as processed`);
+
+      // Get subscription ID for this squad from SSM
+      const { getSubscriptionIdForSquad } = await import('../utils/ssm-params');
+      const subscriptionId = await getSubscriptionIdForSquad(squad);
+      
+      if (!subscriptionId) {
+        logger.warn(`⚠️ No subscription ID found for squad ${squad}, ACK will be skipped`);
+      }
 
       // Send ACK to Core Hub to confirm successful processing
-      await this.sendAckToCoreHub(messageId, subscriptionId);
+      await this.sendAckToCoreHub(messageId, subscriptionId || undefined);
 
-      logger.info(`✅ Successfully processed and ACKed Core Hub event ${messageId}`);
+      logger.info(`✅ Successfully processed and ACKed event ${messageId}`);
 
     } catch (error) {
-      logger.error(`❌ Failed to process Core Hub event ${messageId}:`, error);
-      // Don't throw - let the error be caught by the caller
+      logger.error(`❌ Failed to process Core Hub event ${messageId}:`, {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        messageId,
+        squad
+      });
+      throw error; // Re-throw so Core Hub can retry
     }
   }
 
@@ -106,6 +177,11 @@ export class WebhookController {
    */
   private async sendAckToCoreHub(messageId: string, subscriptionId?: string): Promise<void> {
     try {
+      if (!subscriptionId) {
+        logger.warn(`Cannot send ACK for message ${messageId}: subscriptionId is missing`);
+        return;
+      }
+
       const { getSubscriptionService } = await import('../services/SubscriptionService');
       const subscriptionService = getSubscriptionService();
       
@@ -175,14 +251,56 @@ export class WebhookController {
    */
   private transformCoreHubEvent(coreHubEvent: any): EventMessage {
     // Core Hub event structure based on MessageEnvelope from uade-core-backend
-    const { destination, payload, messageId, timestamp } = coreHubEvent;
+    const { destination, payload, messageId, timestamp, routingKey, topic, eventName } = coreHubEvent;
     
-    // Extract squad from destination channel or use default
-    const squad = this.extractSquadFromChannel(destination?.channel) || 'unknown';
+    // Strategy 1: Try to extract from routingKey (format: "squad.topic.event")
+    let squad = 'unknown';
+    let topico = 'unknown';
+    let evento = 'unknown';
+    let extractionMethod = 'none';
     
-    // Extract topic and event from destination
-    const topico = destination?.channel || 'unknown';
-    const evento = destination?.routingKey || 'unknown';
+    if (routingKey && routingKey !== 'undefined') {
+      const parts = routingKey.split('.');
+      if (parts.length >= 3) {
+        squad = parts[0];
+        topico = parts[1];
+        evento = parts[2];
+        extractionMethod = 'routingKey(3-parts)';
+      } else if (parts.length === 2) {
+        // Format: "topic.event" (no squad)
+        topico = parts[0];
+        evento = parts[1];
+        extractionMethod = 'routingKey(2-parts)';
+      }
+    }
+    
+    // Strategy 2: Use topic and eventName from root level
+    if (topico === 'unknown' && topic) {
+      topico = topic;
+      extractionMethod = extractionMethod === 'none' ? 'root-topic' : extractionMethod + '+root-topic';
+    }
+    if (evento === 'unknown' && eventName) {
+      evento = eventName;
+      extractionMethod = extractionMethod === 'none' ? 'root-eventName' : extractionMethod + '+root-eventName';
+    }
+    
+    // Strategy 3: Fallback to payload fields
+    if (topico === 'unknown' && payload?.topic) {
+      topico = payload.topic;
+      extractionMethod = extractionMethod === 'none' ? 'payload-topic' : extractionMethod + '+payload-topic';
+    }
+    if (evento === 'unknown' && payload?.eventName) {
+      evento = payload.eventName;
+      extractionMethod = extractionMethod === 'none' ? 'payload-eventName' : extractionMethod + '+payload-eventName';
+    }
+    
+    // Strategy 4: Try destination.channel
+    if (topico === 'unknown' && destination?.channel) {
+      topico = destination.channel;
+      extractionMethod = extractionMethod === 'none' ? 'destination-channel' : extractionMethod + '+destination-channel';
+    }
+    
+    logger.info(`🔍 Extracted [${extractionMethod}] squad: ${squad} | topico: ${topico} | evento: ${evento}`);
 
     return {
       squad,
@@ -193,6 +311,7 @@ export class WebhookController {
         timestamp,
         payload,
         destination,
+        routingKey,
         // Preserve original Core Hub structure
         originalEvent: coreHubEvent
       },
@@ -221,12 +340,14 @@ export class WebhookController {
     try {
       const { getSubscriptionManager } = await import('../services/SubscriptionManager');
       const manager = getSubscriptionManager();
-      const status = manager.getStatus();
+      const subscriptions = await manager.getSubscriptions();
 
       res.status(200).json({
         success: true,
         data: {
-          ...status,
+          subscriptionCount: subscriptions.length,
+          activeSubscriptions: subscriptions.filter(sub => sub.status === 'ACTIVE').length,
+          subscriptions: subscriptions,
           timestamp: new Date().toISOString()
         }
       });

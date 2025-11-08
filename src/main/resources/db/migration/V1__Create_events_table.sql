@@ -1,3 +1,7 @@
+-- Enable UUID extension (for compatibility with older PostgreSQL versions)
+-- PostgreSQL 13+ has gen_random_uuid() built-in, but uuid-ossp provides uuid_generate_v4()
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 -- Create events table
 CREATE TABLE IF NOT EXISTS events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

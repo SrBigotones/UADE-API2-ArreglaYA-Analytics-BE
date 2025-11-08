@@ -3,6 +3,18 @@ import { config } from './index';
 import { logger } from './logger';
 import { getDBConfig, DBConfig } from '../utils/ssm-params';
 import { MigrationService } from '../services/MigrationService';
+// Importar todas las entidades explícitamente
+import { Event } from '../models/Event';
+import { Usuario } from '../models/Usuario';
+import { Servicio } from '../models/Servicio';
+import { Solicitud } from '../models/Solicitud';
+import { Cotizacion } from '../models/Cotizacion';
+import { Habilidad } from '../models/Habilidad';
+import { Zona } from '../models/Zona';
+import { Pago } from '../models/Pago';
+import { Prestador } from '../models/Prestador';
+import { Rubro } from '../models/Rubro';
+import { FeatureFlag } from '../models/FeatureFlag';
 
 export const createDataSource = async () => {
   let dbConfig: DBConfig;
@@ -33,7 +45,8 @@ export const createDataSource = async () => {
   // Crear una nueva instancia de DataSource
   AppDataSource = new DataSource({
     ...dbConfig,
-    entities: [__dirname + '/../models/*.{ts,js}'],
+    // Importar entidades explícitamente para evitar problemas de carga
+    entities: [Event, Usuario, Servicio, Solicitud, Cotizacion, Habilidad, Zona, Pago, Prestador, Rubro, FeatureFlag],
     migrations: [__dirname + '/../migrations/*.{ts,js}'],
     subscribers: [__dirname + '/../subscribers/*.{ts,js}'],
   });
@@ -106,15 +119,10 @@ const runMigrationsOnConnect = async (): Promise<void> => {
     // Ejecutar migraciones de esquema
     await migrationService.runMigrationsOnStartup();
     
-    // Ejecutar seeds solo en desarrollo/testing
-    if (config.nodeEnv === 'development' || config.nodeEnv === 'test') {
-      await migrationService.runSeeds();
-    }
-    
     // Mostrar información de estado
     const info = await migrationService.getMigrationInfo();
     if (info) {
-      logger.info(`📊 Estado de migraciones: ${info.migrations} migraciones, ${info.seeds} seeds aplicados`);
+      logger.info(`📊 Estado de migraciones: ${info.migrations} migraciones aplicadas, última: ${info.lastMigration}`);
     }
     
   } catch (error) {

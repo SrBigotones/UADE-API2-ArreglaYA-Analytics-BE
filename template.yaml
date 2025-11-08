@@ -51,8 +51,6 @@ Globals:
     Environment:
       Variables:
         NODE_OPTIONS: "--enable-source-maps"
-        STAGE: "prod"
-        NODE_ENV: "production"
 
 Resources:
   HttpApi:
@@ -75,7 +73,6 @@ Resources:
                 - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/arreglaya/analytics/*'
                 - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/arreglaya/analytics/${Stage}/*'
                 - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/arreglaya/analytics/${Stage}/db/*'
-        - AWSLambdaVPCAccessExecutionRole
       CodeUri: .
       Handler: dist/lambda-handler.handler
       Runtime: nodejs20.x
@@ -92,13 +89,6 @@ Resources:
           CORE_HUB_URL: !Ref CoreHubUrl
           WEBHOOK_SECRET: !Ref WebhookSecret
           WEBHOOK_BASE_URL: !Ref WebhookBaseUrl
-      VpcConfig:
-        SecurityGroupIds:
-          - sg-06cb3c7cc1c6a444b
-        SubnetIds:
-          - subnet-04877be02999384a9  # Subnet pública para acceso a Internet
-          - subnet-0375b830ae4709b21  # Subnet privada en AZ1 para acceso a RDS
-          - subnet-0a261e8ee3a674914  # Subnet privada en AZ2 para acceso a RDS
       Events:
         ApiEvent:
           Type: HttpApi

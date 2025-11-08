@@ -2,11 +2,22 @@ import 'reflect-metadata';
 import serverlessExpress from '@vendia/serverless-express';
 import { Handler, Context, APIGatewayProxyEvent } from 'aws-lambda';
 import { createDataSource, AppDataSource, connectDatabase } from './config/database';
+import { loadCoreHubConfig } from './config';
 import app from './app';
-import { initializeSubscriptions } from './services/SubscriptionManager';
 
 let serverlessHandler: Handler;
 let dbInitialized = false;
+let coreHubConfigInitialized = false;
+
+// Track pending async operations
+const pendingOperations = new Set<Promise<any>>();
+
+export function registerPendingOperation(promise: Promise<any>): void {
+  pendingOperations.add(promise);
+  promise.finally(() => {
+    pendingOperations.delete(promise);
+  });
+}
 
 async function initDB() {
   if (!dbInitialized) {
@@ -40,35 +51,38 @@ async function setupServerless() {
   return serverlessHandler;
 }
 
-async function setupCoreSubscriptions() {
-  // 🔗 Initialize Core Hub subscriptions after server starts
-  try {
-    console.log('🔗 Initializing Core Hub subscriptions...');
-    await initializeSubscriptions();
-    console.log('✅ Core Hub subscriptions initialized successfully');
-  } catch (error) {
-    console.log('❌ Failed to initialize Core Hub subscriptions:', error);
-    // Don't exit - the server can still function without subscriptions
-  }
-}
 
 export const handler = async (event: APIGatewayProxyEvent, context: Context) => {
   console.info('Lambda handler started');
-  context.callbackWaitsForEmptyEventLoop = false;
+  context.callbackWaitsForEmptyEventLoop = false; // Let Lambda manage the lifecycle
 
   try {
+    // Load Core Hub config from SSM if in Lambda (first time only)
+    if (!coreHubConfigInitialized) {
+      await loadCoreHubConfig();
+      coreHubConfigInitialized = true;
+    }
+
     // Initialize database if needed
     if (!dbInitialized || (AppDataSource && !AppDataSource.isInitialized)) {
       await initDB();
     }
 
-    setupCoreSubscriptions()
-
     // Setup serverless handler if needed
     const handler = await setupServerless();
     console.info('Request received:', event.httpMethod, event.path);
-    
-    return handler(event, context, () => {});
+
+    // Execute the serverless handler and get response
+    const response = await handler(event, context, () => {});
+
+    // CRITICAL: Wait for pending operations AFTER getting response but BEFORE returning
+    if (pendingOperations.size > 0) {
+      console.info(`⏳ Waiting for ${pendingOperations.size} pending operations to complete...`);
+      await Promise.allSettled(Array.from(pendingOperations));
+      console.info('✅ All pending operations completed');
+    }
+
+    return response;
   } catch (error: any) {
     console.error('Error in handler:', error);
     return {

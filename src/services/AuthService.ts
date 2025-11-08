@@ -1,5 +1,5 @@
-import axios from '../config/axios';
-import { AxiosResponse } from 'axios';
+import axiosInstance from '../config/axios';
+import { AxiosResponse, isAxiosError } from 'axios';
 import { logger } from '../config/logger';
 import { config } from '../config';
 import { featureFlagService, FEATURE_FLAGS } from './FeatureFlagService';
@@ -32,11 +32,9 @@ export interface UserInfo {
 }
 
 export class AuthService {
-  private readonly usersApiBaseUrl: string;
-
-  constructor() {
-    // URL del módulo de usuarios
-    this.usersApiBaseUrl = config.usersApiBaseUrl;
+  // No almacenar la URL en el constructor para permitir que se actualice dinámicamente desde SSM
+  private get usersApiBaseUrl(): string {
+    return config.usersApiBaseUrl;
   }
 
   /**
@@ -73,7 +71,7 @@ export class AuthService {
 
       logger.info('Intentando autenticar usuario', { email: credentials.email });
 
-      const response: AxiosResponse<LoginResponse> = await axios.post(
+      const response: AxiosResponse<LoginResponse> = await axiosInstance.post(
         `${this.usersApiBaseUrl}/api/users/login`,
         {
           email: credentials.email,
@@ -99,10 +97,25 @@ export class AuthService {
       throw new Error(`Error de autenticación: ${response.status}`);
     } catch (error) {
       logger.error('Error en autenticación' + error);
-      if (axios.isAxiosError(error)) {
+      if (isAxiosError(error)) {
         if (error.response?.status === 401) {
           logger.warn('Credenciales inválidas', { email: credentials.email });
           throw new Error('Credenciales inválidas');
+        }
+        if (error.response?.status === 403) {
+          logger.error('Acceso denegado por el servidor de usuarios (posible problema de CORS o configuración)', { 
+            email: credentials.email,
+            status: error.response.status,
+            data: error.response.data
+          });
+          // En desarrollo, usar datos mock si hay problema de acceso
+          if (config.nodeEnv === 'development') {
+            logger.warn('Usando datos mock para desarrollo debido a error 403', { 
+              email: credentials.email 
+            });
+            return this.getMockUserData(credentials.email);
+          }
+          throw new Error('Acceso denegado por el servidor de autenticación');
         }
         if (error.response?.status === 500) {
           logger.error('Error interno del servidor de usuarios', { 
@@ -122,7 +135,8 @@ export class AuthService {
         
         logger.error('Error de conexión con el módulo de usuarios', { 
           email: credentials.email,
-          error: error.message 
+          error: error.message,
+          status: error.response?.status
         });
         throw new Error('Error de conexión con el servidor de autenticación');
       }
@@ -210,7 +224,7 @@ export class AuthService {
         active: true
       };
     } catch (error) {
-      if (axios.isAxiosError(error)) {
+      if (isAxiosError(error)) {
         if (error.response?.status === 401) {
           logger.warn('Token inválido o expirado');
           throw new Error('Token inválido o expirado');

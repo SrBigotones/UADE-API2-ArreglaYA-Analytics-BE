@@ -19,22 +19,81 @@ import config from '../config';
 export class SubscriptionClient {
   private client: AxiosInstance;
 
-  constructor() {
+  constructor(coreHubConfig?: typeof config.coreHub) {
+    // Use provided config or get current values from global config (allows SSM to update)
+    const coreHub = coreHubConfig || config.coreHub;
+    
+    // Log the Core Hub configuration being used
+    logger.info('🔧 Initializing SubscriptionClient with Core Hub URL:', coreHub.url);
+    logger.info('📝 Core Hub config:', {
+      url: coreHub.url,
+      timeout: coreHub.timeout,
+      hasApiKey: !!coreHub.apiKey,
+      retryAttempts: coreHub.retryAttempts
+    });
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     };
 
-    // Add X-API-KEY header if configured
-    if (config.coreHub.apiKey) {
-      headers['X-API-KEY'] = config.coreHub.apiKey;
+    // Add X-API-Key header if configured (case sensitive!)
+    if (coreHub.apiKey) {
+      headers['X-API-Key'] = coreHub.apiKey;
+      logger.info('✅ Core Hub API Key configured');
+    } else {
+      logger.warn('⚠️ No Core Hub API Key configured');
     }
 
     // Usar createAxiosInstance en vez de axios.create para mantener interceptores
     this.client = createAxiosInstance({
-      baseURL: config.coreHub.url,
-      timeout: config.coreHub.timeout,
-      headers
+      baseURL: coreHub.url,
+      timeout: coreHub.timeout,
+      headers,
+      // Configuración para mejorar la estabilidad de la conexión
+      maxRedirects: 5,
+      maxBodyLength: 10 * 1024 * 1024, // 10MB
+      maxContentLength: 10 * 1024 * 1024, // 10MB
+      validateStatus: function (status: number) {
+        return status >= 200 && status < 300;
+      },
+      // Configuración de Keep-Alive
+      httpAgent: new (require('http').Agent)({
+        keepAlive: true,
+        keepAliveMsecs: coreHub.keepAliveTimeout,
+        maxSockets: 100
+      }),
+      httpsAgent: new (require('https').Agent)({
+        keepAlive: true,
+        keepAliveMsecs: coreHub.keepAliveTimeout,
+        maxSockets: 100
+      })
+    });
+
+    // Implementar mecanismo de retry
+    let retryCount = 0;
+    this.client.interceptors.response.use(undefined, async (error) => {
+      const requestConfig = error.config;
+      
+      // Solo reintentar en errores de red o 5xx
+      if (
+        retryCount < coreHub.retryAttempts && 
+        (error.code === 'ECONNABORTED' || 
+         error.code === 'ECONNREFUSED' || 
+         error.message.includes('socket hang up') ||
+         (error.response && error.response.status >= 500))
+      ) {
+        retryCount++;
+        logger.warn(`Retrying request (attempt ${retryCount}/${coreHub.retryAttempts})...`);
+        
+        // Esperar antes de reintentar
+        await new Promise(resolve => setTimeout(resolve, coreHub.retryDelay));
+        
+        // Reintentar la petición
+        return this.client(requestConfig);
+      }
+      
+      return Promise.reject(error);
     });
 
     // Add custom error handler for Core Hub specific errors
@@ -157,13 +216,16 @@ export class SubscriptionClient {
 
   /**
    * Send ACK for a processed message
+   * Format: POST /messages/ack/{subscriptionId}
+   * Body: { "messageId": "{ID_MENSAJE}" }
    */
-  async acknowledgeMessage(messageId: string, subscriptionId?: string): Promise<void> {
+  async acknowledgeMessage(messageId: string, subscriptionId: string): Promise<void> {
     try {
       logger.debug(`Sending ACK for message: ${messageId}`, { subscriptionId });
       
-      const params = subscriptionId ? { subscriptionId } : {};
-      await this.client.post(`/messages/${messageId}/ack`, null, { params });
+      await this.client.post(`/messages/ack/${subscriptionId}`, {
+        messageId: messageId
+      });
       
       logger.debug(`ACK sent successfully for message: ${messageId}`);
       
@@ -196,6 +258,33 @@ export class SubscriptionClient {
    * Handle API errors and convert to standardized format
    */
   private handleApiError(error: AxiosError): CoreHubApiError {
+    // Manejar errores de conexión específicamente
+    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      logger.error('Core Hub connection timeout', {
+        code: error.code,
+        url: error.config?.url,
+        timeout: error.config?.timeout
+      });
+      return {
+        message: 'Connection timeout with Core Hub',
+        status: 504,
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    if (error.code === 'ECONNREFUSED' || error.message.includes('socket hang up')) {
+      logger.error('Core Hub connection refused', {
+        code: error.code,
+        url: error.config?.url,
+        baseURL: error.config?.baseURL
+      });
+      return {
+        message: 'Unable to establish connection with Core Hub',
+        status: 503,
+        timestamp: new Date().toISOString()
+      };
+    }
+
     const status = error.response?.status || 500;
     const message = (error.response?.data as any)?.message || error.message || 'Unknown error occurred';
     

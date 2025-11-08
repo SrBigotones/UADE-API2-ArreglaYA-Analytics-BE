@@ -112,3 +112,168 @@ export async function getDBConfig(): Promise<DBConfig> {
         throw new Error('Could not load database configuration from SSM: ' + (error.message || 'Unknown error'));
     }
 }
+
+export async function getCoreHubConfig(): Promise<{ url: string; apiKey: string }> {
+    const stage = process.env.STAGE || 'prod';
+    // Todos los parámetros están bajo /db/ path
+    const prefix = `/arreglaya/analytics/${stage}/db`;
+    
+    logger.info(`Fetching Core Hub configuration from SSM with stage: ${stage}`);
+    
+    const getParam = async (name: string, required: boolean = true) => {
+        const fullPath = `${prefix}/${name}`;
+        try {
+            logger.info(`Fetching SSM parameter: ${fullPath}`);
+            
+            const command = new GetParameterCommand({
+                Name: fullPath,
+                WithDecryption: true
+            });
+            
+            const response = await ssmClient.send(command);
+            
+            if (!response.Parameter?.Value) {
+                logger.warn(`Parameter ${fullPath} found but has no value, using default`);
+                return '';
+            }
+            
+            logger.info(`Successfully retrieved parameter: ${fullPath}`);
+            return response.Parameter.Value;
+        } catch (error: any) {
+            if (error.$metadata?.httpStatusCode === 400 && error.__type === 'ParameterNotFound') {
+                logger.warn(`SSM Parameter not found: ${fullPath}, will use environment variable or default`);
+            } else {
+                logger.error(`Error fetching SSM parameter ${fullPath}:`, {
+                    errorType: error.__type,
+                    errorMessage: error.message,
+                    httpStatusCode: error.$metadata?.httpStatusCode
+                });
+            }
+            if (required) {
+                throw error;
+            }
+            return '';
+        }
+    };
+
+    try {
+        const [url, apiKey] = await Promise.all([
+            getParam('core-hub-url'),
+            getParam('core-hub-api-key')
+        ]);
+
+        logger.info(`Successfully retrieved Core Hub configuration. URL: ${url}`);
+
+        return {
+            url: url || process.env.CORE_HUB_URL || 'http://localhost:8080',
+            apiKey: apiKey || process.env.CORE_HUB_API_KEY || ''
+        };
+    } catch (error: any) {
+        logger.warn('Could not load Core Hub config from SSM, falling back to environment variables:', error.message);
+        return {
+            url: process.env.CORE_HUB_URL || 'http://localhost:8080',
+            apiKey: process.env.CORE_HUB_API_KEY || ''
+        };
+    }
+}
+
+export async function getAppConfig(): Promise<{ usersApiBaseUrl: string; webhookSecret: string; webhookBaseUrl: string }> {
+    const stage = process.env.STAGE || 'prod';
+    // Todos los parámetros están bajo /db/ path
+    const prefix = `/arreglaya/analytics/${stage}/db`;
+    
+    logger.info(`Fetching App configuration from SSM with stage: ${stage}`);
+    
+    const getParam = async (name: string) => {
+        const fullPath = `${prefix}/${name}`;
+        try {
+            logger.info(`Fetching SSM parameter: ${fullPath}`);
+            
+            const command = new GetParameterCommand({
+                Name: fullPath,
+                WithDecryption: true
+            });
+            
+            const response = await ssmClient.send(command);
+            
+            if (!response.Parameter?.Value) {
+                logger.warn(`Parameter ${fullPath} found but has no value, using default`);
+                return '';
+            }
+            
+            logger.info(`Successfully retrieved parameter: ${fullPath}`);
+            return response.Parameter.Value;
+        } catch (error: any) {
+            if (error.$metadata?.httpStatusCode === 400 && error.__type === 'ParameterNotFound') {
+                logger.warn(`SSM Parameter not found: ${fullPath}, will use environment variable or default`);
+            } else {
+                logger.error(`Error fetching SSM parameter ${fullPath}:`, {
+                    errorType: error.__type,
+                    errorMessage: error.message,
+                    httpStatusCode: error.$metadata?.httpStatusCode
+                });
+            }
+            throw error;
+        }
+    };
+
+    try {
+        const [usersApiBaseUrl, webhookSecret, webhookBaseUrl] = await Promise.all([
+            getParam('users-api-base-url'),
+            getParam('webhook-secret'),
+            getParam('webhook-base-url')
+        ]);
+
+        logger.info(`Successfully retrieved App configuration.`, {
+            usersApiBaseUrl,
+            webhookBaseUrl,
+            hasWebhookSecret: !!webhookSecret
+        });
+
+        return {
+            usersApiBaseUrl: usersApiBaseUrl || process.env.USERS_API_BASE_URL || 'http://localhost:8080',
+            webhookSecret: webhookSecret || process.env.WEBHOOK_SECRET || '',
+            webhookBaseUrl: webhookBaseUrl || process.env.WEBHOOK_BASE_URL || ''
+        };
+    } catch (error: any) {
+        logger.warn('Could not load App config from SSM, falling back to environment variables:', error.message);
+        return {
+            usersApiBaseUrl: process.env.USERS_API_BASE_URL || 'http://localhost:8080',
+            webhookSecret: process.env.WEBHOOK_SECRET || '',
+            webhookBaseUrl: process.env.WEBHOOK_BASE_URL || ''
+        };
+    }
+}
+
+/**
+ * Get subscription IDs mapping from SSM
+ * Maps squad names to their Core Hub subscription IDs
+ * Format in SSM: /arreglaya/analytics/{stage}/subscriptions/{squad}
+ */
+export async function getSubscriptionIdForSquad(squad: string): Promise<string | null> {
+    const stage = process.env.STAGE || 'prod';
+    const paramPath = `/arreglaya/analytics/${stage}/subscriptions/${squad}`;
+    
+    try {
+        logger.info(`Fetching subscription ID for squad: ${squad} from ${paramPath}`);
+        
+        const command = new GetParameterCommand({
+            Name: paramPath,
+            WithDecryption: false // Subscription IDs are not sensitive
+        });
+        
+        const response = await ssmClient.send(command);
+        
+        if (!response.Parameter?.Value) {
+            logger.warn(`No subscription ID found for squad: ${squad}`);
+            return null;
+        }
+        
+        logger.info(`Found subscription ID for squad ${squad}: ${response.Parameter.Value}`);
+        return response.Parameter.Value;
+        
+    } catch (error: any) {
+        logger.warn(`Could not load subscription ID for squad ${squad}:`, error.message);
+        return null;
+    }
+}
