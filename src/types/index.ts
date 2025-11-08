@@ -134,3 +134,12 @@ export interface ProviderZonesResponse {
     endDate: string;
   };
 }
+
+// Tipos para segmentación de métricas
+export interface SegmentationFilters {
+  rubro?: string | number; // nombre o id del rubro
+  zona?: string;
+  metodo?: string; // método de pago
+  tipoSolicitud?: 'abierta' | 'dirigida'; // tipo de solicitud
+  monto?: { min?: number; max?: number }; // rango de montos para pagos
+}

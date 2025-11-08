@@ -40,6 +40,16 @@ const controller = new SolicitudesMetricsController();
  *           type: string
  *           format: date
  *         description: Fecha de fin (requerido si period es 'personalizado')
+ *       - in: query
+ *         name: rubro
+ *         schema:
+ *           type: string
+ *         description: Filtrar por rubro (opcional)
+ *       - in: query
+ *         name: zona
+ *         schema:
+ *           type: string
+ *         description: Filtrar por zona (opcional)
  *     responses:
  *       200:
  *         description: Métrica de volumen de demanda
@@ -84,6 +94,16 @@ router.get('/volumen', controller.getVolumenDemanda.bind(controller));
  *         schema:
  *           type: string
  *           format: date
+ *       - in: query
+ *         name: rubro
+ *         schema:
+ *           type: string
+ *         description: Filtrar por rubro (opcional)
+ *       - in: query
+ *         name: zona
+ *         schema:
+ *           type: string
+ *         description: Filtrar por zona (opcional)
  *     responses:
  *       200:
  *         description: Tasa de cancelación
@@ -124,6 +144,17 @@ router.get('/tasa-cancelacion', controller.getTasaCancelacionSolicitudes.bind(co
  *         schema:
  *           type: string
  *           format: date
+ *       - in: query
+ *         name: rubro
+ *         schema:
+ *           type: string
+ *         description: Filtrar por rubro (opcional)
+ *       - in: query
+ *         name: tipoSolicitud
+ *         schema:
+ *           type: string
+ *           enum: [abierta, dirigida]
+ *         description: Filtrar por tipo de solicitud (opcional)
  *     responses:
  *       200:
  *         description: Tiempo promedio a primera cotización

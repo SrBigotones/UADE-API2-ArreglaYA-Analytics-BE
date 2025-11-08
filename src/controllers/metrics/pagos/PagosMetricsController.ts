@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { logger } from '../../../config/logger';
 import { DateRangeService } from '../../../services/DateRangeService';
 import { BaseMetricsCalculator } from '../../../services/BaseMetricsCalculator';
-import { PeriodType, PieMetricResponse } from '../../../types';
+import { PeriodType, PieMetricResponse, SegmentationFilters } from '../../../types';
 import { AppDataSource } from '../../../config/database';
 import { Pago } from '../../../models/Pago';
 
@@ -41,6 +41,43 @@ export class PagosMetricsController extends BaseMetricsCalculator {
     }
 
     return periodType;
+  }
+
+  /**
+   * Parsea los parámetros de segmentación del request
+   */
+  private parseSegmentationParams(req: Request): SegmentationFilters | undefined {
+    const { rubro, zona, metodo, minMonto, maxMonto } = req.query;
+    
+    if (!rubro && !zona && !metodo && !minMonto && !maxMonto) {
+      return undefined;
+    }
+
+    const filters: SegmentationFilters = {};
+    
+    if (rubro) {
+      filters.rubro = isNaN(Number(rubro)) ? rubro as string : Number(rubro);
+    }
+    
+    if (zona) {
+      filters.zona = zona as string;
+    }
+    
+    if (metodo) {
+      filters.metodo = metodo as string;
+    }
+    
+    if (minMonto || maxMonto) {
+      filters.monto = {};
+      if (minMonto) {
+        filters.monto.min = Number(minMonto);
+      }
+      if (maxMonto) {
+        filters.monto.max = Number(maxMonto);
+      }
+    }
+
+    return Object.keys(filters).length > 0 ? filters : undefined;
   }
 
   /**
@@ -91,21 +128,23 @@ export class PagosMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/pagos/tasa-exito
    * 5. Tasa de éxito de pagos (%)
+   * Segmentar por: Método de pago, rubro
    */
   public async getTasaExitoPagos(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
-      const aprobados = await this.countPagosByEstado('approved', dateRanges.startDate, dateRanges.endDate);
-      const rechazados = await this.countPagosByEstado('rejected', dateRanges.startDate, dateRanges.endDate);
-      const expirados = await this.countPagosByEstado('expired', dateRanges.startDate, dateRanges.endDate);
+      const aprobados = await this.countPagosByEstado('approved', dateRanges.startDate, dateRanges.endDate, filters);
+      const rechazados = await this.countPagosByEstado('rejected', dateRanges.startDate, dateRanges.endDate, filters);
+      const expirados = await this.countPagosByEstado('expired', dateRanges.startDate, dateRanges.endDate, filters);
       const total = aprobados + rechazados + expirados;
       const currentRate = total > 0 ? (aprobados / total) * 100 : 0;
 
-      const prevAprobados = await this.countPagosByEstado('approved', dateRanges.previousStartDate, dateRanges.previousEndDate);
-      const prevRechazados = await this.countPagosByEstado('rejected', dateRanges.previousStartDate, dateRanges.previousEndDate);
-      const prevExpirados = await this.countPagosByEstado('expired', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevAprobados = await this.countPagosByEstado('approved', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
+      const prevRechazados = await this.countPagosByEstado('rejected', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
+      const prevExpirados = await this.countPagosByEstado('expired', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
       const prevTotal = prevAprobados + prevRechazados + prevExpirados;
       const previousRate = prevTotal > 0 ? (prevAprobados / prevTotal) * 100 : 0;
 
@@ -115,9 +154,9 @@ export class PagosMetricsController extends BaseMetricsCalculator {
         this.roundPercentage(currentRate),
         this.roundPercentage(previousRate),
         async (start: Date, end: Date) => {
-          const aprobadosInt = await this.countPagosByEstado('approved', start, end);
-          const rechazadosInt = await this.countPagosByEstado('rejected', start, end);
-          const expiradosInt = await this.countPagosByEstado('expired', start, end);
+          const aprobadosInt = await this.countPagosByEstado('approved', start, end, filters);
+          const rechazadosInt = await this.countPagosByEstado('rejected', start, end, filters);
+          const expiradosInt = await this.countPagosByEstado('expired', start, end, filters);
           const totalInt = aprobadosInt + rechazadosInt + expiradosInt;
           return totalInt > 0 ? (aprobadosInt / totalInt) * 100 : 0;
         },
@@ -218,18 +257,20 @@ export class PagosMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/pagos/ingreso-ticket
    * 10. Ingreso bruto y ticket medio (ARS)
+   * Segmentar por: Rubro, zona, método
    */
   public async getIngresoTicket(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
-      const ingresoBruto = await this.sumMontoPagosAprobados(dateRanges.startDate, dateRanges.endDate);
-      const cantidadPagos = await this.countPagosByEstado('approved', dateRanges.startDate, dateRanges.endDate);
+      const ingresoBruto = await this.sumMontoPagosAprobados(dateRanges.startDate, dateRanges.endDate, filters);
+      const cantidadPagos = await this.countPagosByEstado('approved', dateRanges.startDate, dateRanges.endDate, filters);
       const ticketMedio = cantidadPagos > 0 ? ingresoBruto / cantidadPagos : 0;
 
-      const prevIngresoBruto = await this.sumMontoPagosAprobados(dateRanges.previousStartDate, dateRanges.previousEndDate);
-      const prevCantidadPagos = await this.countPagosByEstado('approved', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevIngresoBruto = await this.sumMontoPagosAprobados(dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
+      const prevCantidadPagos = await this.countPagosByEstado('approved', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
       const prevTicketMedio = prevCantidadPagos > 0 ? prevIngresoBruto / prevCantidadPagos : 0;
 
       // Calcular métricas usando el método estándar
@@ -247,15 +288,15 @@ export class PagosMetricsController extends BaseMetricsCalculator {
       const ingresoBrutoChartData = await this.calculateHistoricalData(
         periodType,
         dateRanges,
-        async (start: Date, end: Date) => this.sumMontoPagosAprobados(start, end)
+        async (start: Date, end: Date) => this.sumMontoPagosAprobados(start, end, filters)
       );
 
       const ticketMedioChartData = await this.calculateHistoricalData(
         periodType,
         dateRanges,
         async (start: Date, end: Date) => {
-          const ingresoInt = await this.sumMontoPagosAprobados(start, end);
-          const cantidadInt = await this.countPagosByEstado('approved', start, end);
+          const ingresoInt = await this.sumMontoPagosAprobados(start, end, filters);
+          const cantidadInt = await this.countPagosByEstado('approved', start, end, filters);
           return cantidadInt > 0 ? ingresoInt / cantidadInt : 0;
         }
       );

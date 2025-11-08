@@ -37,6 +37,11 @@ const controller = new UsuariosMetricsController();
  *         schema:
  *           type: string
  *           format: date
+ *       - in: query
+ *         name: zona
+ *         schema:
+ *           type: string
+ *         description: Filtrar por zona (opcional)
  *     responses:
  *       200:
  *         description: Nuevos clientes registrados
@@ -77,6 +82,11 @@ router.get('/nuevos-clientes', controller.getNuevosClientes.bind(controller));
  *         schema:
  *           type: string
  *           format: date
+ *       - in: query
+ *         name: zona
+ *         schema:
+ *           type: string
+ *         description: Filtrar por zona (opcional)
  *     responses:
  *       200:
  *         description: Nuevos prestadores registrados
@@ -117,6 +127,11 @@ router.get('/nuevos-prestadores', controller.getNuevosPrestadoresUsuarios.bind(c
  *         schema:
  *           type: string
  *           format: date
+ *       - in: query
+ *         name: zona
+ *         schema:
+ *           type: string
+ *         description: Filtrar por zona (opcional)
  *     responses:
  *       200:
  *         description: Nuevos administradores registrados

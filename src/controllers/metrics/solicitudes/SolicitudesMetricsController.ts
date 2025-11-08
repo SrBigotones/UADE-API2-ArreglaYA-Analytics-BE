@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { logger } from '../../../config/logger';
 import { DateRangeService } from '../../../services/DateRangeService';
 import { BaseMetricsCalculator } from '../../../services/BaseMetricsCalculator';
-import { PeriodType, HeatmapResponse, HeatmapPoint } from '../../../types';
+import { PeriodType, HeatmapResponse, HeatmapPoint, SegmentationFilters } from '../../../types';
 import { AppDataSource } from '../../../config/database';
 import { Solicitud } from '../../../models/Solicitud';
 
@@ -41,6 +41,37 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
     }
 
     return periodType;
+  }
+
+  /**
+   * Parsea los parámetros de segmentación del request
+   */
+  private parseSegmentationParams(req: Request): SegmentationFilters | undefined {
+    const { rubro, zona, tipoSolicitud } = req.query;
+    
+    if (!rubro && !zona && !tipoSolicitud) {
+      return undefined;
+    }
+
+    const filters: SegmentationFilters = {};
+    
+    if (rubro) {
+      // Puede ser string (nombre) o number (id)
+      filters.rubro = isNaN(Number(rubro)) ? rubro as string : Number(rubro);
+    }
+    
+    if (zona) {
+      filters.zona = zona as string;
+    }
+    
+    if (tipoSolicitud) {
+      if (tipoSolicitud !== 'abierta' && tipoSolicitud !== 'dirigida') {
+        throw new Error('tipoSolicitud debe ser "abierta" o "dirigida"');
+      }
+      filters.tipoSolicitud = tipoSolicitud as 'abierta' | 'dirigida';
+    }
+
+    return Object.keys(filters).length > 0 ? filters : undefined;
   }
 
   /**
@@ -91,21 +122,23 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/solicitudes/volumen
    * 1. Volumen de demanda (N° de solicitudes creadas)
+   * Segmentar por: Rubro, zona
    */
   public async getVolumenDemanda(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
-      const currentValue = await this.countSolicitudesByEstado('creada', dateRanges.startDate, dateRanges.endDate);
-      const previousValue = await this.countSolicitudesByEstado('creada', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const currentValue = await this.countSolicitudesByEstado('creada', dateRanges.startDate, dateRanges.endDate, filters);
+      const previousValue = await this.countSolicitudesByEstado('creada', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
         currentValue,
         previousValue,
-        async (start: Date, end: Date) => this.countSolicitudesByEstado('creada', start, end),
+        async (start: Date, end: Date) => this.countSolicitudesByEstado('creada', start, end, filters),
         'porcentaje'
       );
       
@@ -118,19 +151,21 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/solicitudes/tasa-cancelacion
    * 2. Tasa de cancelación de solicitudes (%)
+   * Segmentar por: Rubro, zona
    */
   public async getTasaCancelacionSolicitudes(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
-      const creadas = await this.countSolicitudesByEstado('creada', dateRanges.startDate, dateRanges.endDate);
-      const canceladas = await this.countSolicitudesByEstado('cancelada', dateRanges.startDate, dateRanges.endDate);
+      const creadas = await this.countSolicitudesByEstado('creada', dateRanges.startDate, dateRanges.endDate, filters);
+      const canceladas = await this.countSolicitudesByEstado('cancelada', dateRanges.startDate, dateRanges.endDate, filters);
 
       const currentRate = creadas > 0 ? (canceladas / creadas) * 100 : 0;
 
-      const prevCreadas = await this.countSolicitudesByEstado('creada', dateRanges.previousStartDate, dateRanges.previousEndDate);
-      const prevCanceladas = await this.countSolicitudesByEstado('cancelada', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevCreadas = await this.countSolicitudesByEstado('creada', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
+      const prevCanceladas = await this.countSolicitudesByEstado('cancelada', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
       const previousRate = prevCreadas > 0 ? (prevCanceladas / prevCreadas) * 100 : 0;
 
       const metric = await this.calculateMetricWithChart(
@@ -139,8 +174,8 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
         this.roundPercentage(currentRate),
         this.roundPercentage(previousRate),
         async (start: Date, end: Date) => {
-          const creadasInt = await this.countSolicitudesByEstado('creada', start, end);
-          const canceladasInt = await this.countSolicitudesByEstado('cancelada', start, end);
+          const creadasInt = await this.countSolicitudesByEstado('creada', start, end, filters);
+          const canceladasInt = await this.countSolicitudesByEstado('cancelada', start, end, filters);
           return creadasInt > 0 ? (canceladasInt / creadasInt) * 100 : 0;
         },
         'absoluto'
@@ -155,21 +190,23 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/solicitudes/tiempo-primera-cotizacion
    * 3. Tiempo a primera cotización (horas)
+   * Segmentar por: Rubro, tipo de solicitud (abierta/dirigida)
    */
   public async getTiempoPrimeraCotizacion(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
-      const currentAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.startDate, dateRanges.endDate);
-      const previousAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const currentAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.startDate, dateRanges.endDate, filters);
+      const previousAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
         currentAvg,
         previousAvg,
-        async (start: Date, end: Date) => this.calculateAverageTimeToFirstQuote(start, end),
+        async (start: Date, end: Date) => this.calculateAverageTimeToFirstQuote(start, end, filters),
         'absoluto'
       );
       
