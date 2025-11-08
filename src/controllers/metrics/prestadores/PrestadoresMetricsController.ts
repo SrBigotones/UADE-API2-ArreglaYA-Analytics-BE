@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { logger } from '../../../config/logger';
 import { DateRangeService } from '../../../services/DateRangeService';
 import { BaseMetricsCalculator } from '../../../services/BaseMetricsCalculator';
-import { PeriodType, PieMetricResponse, ProviderZonesResponse, ProviderZoneData, SegmentationFilters } from '../../../types';
+import { PeriodType, PieMetricResponse, ProviderZonesResponse, ProviderZoneData } from '../../../types';
 import { AppDataSource } from '../../../config/database';
 import { Prestador } from '../../../models/Prestador';
 import { Cotizacion } from '../../../models/Cotizacion';
@@ -45,29 +45,6 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
     }
 
     return periodType;
-  }
-
-  /**
-   * Parsea los parámetros de segmentación del request
-   */
-  private parseSegmentationParams(req: Request): SegmentationFilters | undefined {
-    const { rubro, zona } = req.query;
-    
-    if (!rubro && !zona) {
-      return undefined;
-    }
-
-    const filters: SegmentationFilters = {};
-    
-    if (rubro) {
-      filters.rubro = isNaN(Number(rubro)) ? rubro as string : Number(rubro);
-    }
-    
-    if (zona) {
-      filters.zona = zona as string;
-    }
-
-    return Object.keys(filters).length > 0 ? filters : undefined;
   }
 
   /**
@@ -118,23 +95,21 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/prestadores/nuevos-registrados
    * 1. Nuevos prestadores registrados
-   * Segmentar por: Zona, rubro
    */
   public async getNuevosPrestadoresRegistrados(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
-      const filters = this.parseSegmentationParams(req);
 
-      const currentValue = await this.countPrestadoresByEstado('activo', dateRanges.startDate, dateRanges.endDate, filters);
-      const previousValue = await this.countPrestadoresByEstado('activo', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
+      const currentValue = await this.countPrestadoresByEstado('activo', dateRanges.startDate, dateRanges.endDate);
+      const previousValue = await this.countPrestadoresByEstado('activo', dateRanges.previousStartDate, dateRanges.previousEndDate);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
         currentValue,
         previousValue,
-        async (start: Date, end: Date) => this.countPrestadoresByEstado('activo', start, end, filters),
+        async (start: Date, end: Date) => this.countPrestadoresByEstado('activo', start, end),
         'porcentaje'
       );
       

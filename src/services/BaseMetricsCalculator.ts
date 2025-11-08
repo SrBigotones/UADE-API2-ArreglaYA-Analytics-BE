@@ -8,7 +8,7 @@ import { Habilidad } from '../models/Habilidad';
 import { Zona } from '../models/Zona';
 import { Prestador } from '../models/Prestador';
 import { Rubro } from '../models/Rubro';
-import { CardMetricResponse, PieMetricResponse, DateRangeFilter, PeriodType, SegmentationFilters } from '../types';
+import { CardMetricResponse, PieMetricResponse, DateRangeFilter, PeriodType } from '../types';
 import { logger } from '../config/logger';
 import { DateRangeService } from './DateRangeService';
 
@@ -223,87 +223,36 @@ export class BaseMetricsCalculator {
       .getCount();
   }
 
-  protected async countUsuariosByRol(rol: string, startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+  protected async countUsuariosByRol(rol: string, startDate: Date, endDate: Date): Promise<number> {
     const repo = AppDataSource.getRepository(Usuario);
-    const query = repo
+    const result = await repo
       .createQueryBuilder('usuario')
       .where('usuario.rol = :rol', { rol })
       .andWhere('usuario.timestamp >= :startDate', { startDate })
-      .andWhere('usuario.timestamp <= :endDate', { endDate });
-    
-    if (filters?.zona) {
-      query.andWhere('usuario.ubicacion = :zona', { zona: filters.zona });
-    }
-    
-    return await query.getCount();
+      .andWhere('usuario.timestamp <= :endDate', { endDate })
+      .getCount();
+    return result;
   }
 
   // ========== MÉTODOS PARA SOLICITUDES ==========
   
-  protected async countSolicitudes(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+  protected async countSolicitudes(startDate: Date, endDate: Date): Promise<number> {
     const repo = AppDataSource.getRepository(Solicitud);
-    const query = repo
+    return await repo
       .createQueryBuilder('solicitud')
       .where('solicitud.timestamp >= :startDate', { startDate })
-      .andWhere('solicitud.timestamp <= :endDate', { endDate });
-    
-    this.applySolicitudFilters(query, filters);
-    
-    return await query.getCount();
+      .andWhere('solicitud.timestamp <= :endDate', { endDate })
+      .getCount();
   }
 
-  protected async countSolicitudesByEstado(estado: string, startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+  protected async countSolicitudesByEstado(estado: string, startDate: Date, endDate: Date): Promise<number> {
     const repo = AppDataSource.getRepository(Solicitud);
-    const query = repo
+    return await repo
       .createQueryBuilder('solicitud')
       .where('solicitud.estado = :estado', { estado })
       .andWhere('solicitud.timestamp >= :startDate', { startDate })
-      .andWhere('solicitud.timestamp <= :endDate', { endDate });
-    
-    this.applySolicitudFilters(query, filters);
-    
-    return await query.getCount();
-  }
-  
-  /**
-   * Aplica filtros de segmentación a queries de solicitudes
-   */
-  protected applySolicitudFilters(query: any, filters?: SegmentationFilters): void {
-    if (!filters) return;
-    
-    if (filters.zona) {
-      query.andWhere('solicitud.zona = :zona', { zona: filters.zona });
-    }
-    
-    // Para rubro, necesitamos hacer join con prestadores y habilidades/rubros
-    if (filters.rubro) {
-      // Join con prestador a través de id_prestador
-      query.leftJoin(Prestador, 'prestador', 'prestador.id_prestador = solicitud.id_prestador');
-      // Join con habilidades del prestador
-      query.leftJoin(Habilidad, 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true');
-      // Join con rubros
-      query.leftJoin(Rubro, 'rubro', 'rubro.id_rubro = habilidad.id_habilidad OR rubro.nombre_rubro = habilidad.nombre_habilidad');
-      
-      // Filtrar por rubro (puede ser ID o nombre)
-      if (typeof filters.rubro === 'number') {
-        query.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
-      } else {
-        query.andWhere('(rubro.nombre_rubro = :rubroNombre OR habilidad.nombre_habilidad = :rubroNombre)', { 
-          rubroNombre: filters.rubro 
-        });
-      }
-    }
-    
-    // Para tipo de solicitud (abierta/dirigida)
-    // Abierta: id_prestador es NULL al crearse
-    // Dirigida: id_prestador NO es NULL al crearse
-    if (filters.tipoSolicitud) {
-      if (filters.tipoSolicitud === 'abierta') {
-        query.andWhere('solicitud.id_prestador IS NULL');
-      } else if (filters.tipoSolicitud === 'dirigida') {
-        query.andWhere('solicitud.id_prestador IS NOT NULL');
-      }
-    }
+      .andWhere('solicitud.timestamp <= :endDate', { endDate })
+      .getCount();
   }
 
   protected async getSolicitudes(startDate: Date, endDate: Date) {
@@ -326,59 +275,14 @@ export class BaseMetricsCalculator {
       .getCount();
   }
 
-  protected async countCotizacionesByEstado(estado: string, startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+  protected async countCotizacionesByEstado(estado: string, startDate: Date, endDate: Date): Promise<number> {
     const repo = AppDataSource.getRepository(Cotizacion);
-    const query = repo
+    return await repo
       .createQueryBuilder('cotizacion')
       .where('cotizacion.estado = :estado', { estado })
       .andWhere('cotizacion.timestamp >= :startDate', { startDate })
-      .andWhere('cotizacion.timestamp <= :endDate', { endDate });
-    
-    this.applyCotizacionFilters(query, filters);
-    
-    return await query.getCount();
-  }
-  
-  /**
-   * Aplica filtros de segmentación a queries de cotizaciones
-   */
-  protected applyCotizacionFilters(query: any, filters?: SegmentationFilters): void {
-    if (!filters) return;
-    
-    // Para zona y rubro, necesitamos join con solicitudes
-    if (filters.zona || filters.rubro) {
-      query.leftJoin(Solicitud, 'solicitud', 'solicitud.id_solicitud = cotizacion.id_solicitud');
-      
-      if (filters.zona) {
-        query.andWhere('solicitud.zona = :zona', { zona: filters.zona });
-      }
-      
-      if (filters.rubro) {
-        query.leftJoin(Prestador, 'prestador', 'prestador.id_prestador = solicitud.id_prestador');
-        query.leftJoin(Habilidad, 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true');
-        query.leftJoin(Rubro, 'rubro', 'rubro.id_rubro = habilidad.id_habilidad OR rubro.nombre_rubro = habilidad.nombre_habilidad');
-        
-        if (typeof filters.rubro === 'number') {
-          query.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
-        } else {
-          query.andWhere('(rubro.nombre_rubro = :rubroNombre OR habilidad.nombre_habilidad = :rubroNombre)', { 
-            rubroNombre: filters.rubro 
-          });
-        }
-      }
-    }
-    
-    if (filters.tipoSolicitud) {
-      if (!query.expressionMap.joinAttributes.find((j: any) => j.alias.name === 'solicitud')) {
-        query.leftJoin(Solicitud, 'solicitud', 'solicitud.id_solicitud = cotizacion.id_solicitud');
-      }
-      
-      if (filters.tipoSolicitud === 'abierta') {
-        query.andWhere('solicitud.id_prestador IS NULL');
-      } else if (filters.tipoSolicitud === 'dirigida') {
-        query.andWhere('solicitud.id_prestador IS NOT NULL');
-      }
-    }
+      .andWhere('cotizacion.timestamp <= :endDate', { endDate })
+      .getCount();
   }
 
   protected async getCotizaciones(startDate: Date, endDate: Date) {
@@ -400,73 +304,23 @@ export class BaseMetricsCalculator {
 
   // ========== MÉTODOS PARA PAGOS ==========
   
-  protected async countPagos(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+  protected async countPagos(startDate: Date, endDate: Date): Promise<number> {
     const repo = AppDataSource.getRepository(Pago);
-    const query = repo
+    return await repo
       .createQueryBuilder('pago')
       .where('pago.timestamp_creado >= :startDate', { startDate })
-      .andWhere('pago.timestamp_creado <= :endDate', { endDate });
-    
-    this.applyPagoFilters(query, filters);
-    
-    return await query.getCount();
+      .andWhere('pago.timestamp_creado <= :endDate', { endDate })
+      .getCount();
   }
 
-  protected async countPagosByEstado(estado: string, startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+  protected async countPagosByEstado(estado: string, startDate: Date, endDate: Date): Promise<number> {
     const repo = AppDataSource.getRepository(Pago);
-    const query = repo
+    return await repo
       .createQueryBuilder('pago')
       .where('pago.estado = :estado', { estado })
       .andWhere('pago.timestamp_creado >= :startDate', { startDate })
-      .andWhere('pago.timestamp_creado <= :endDate', { endDate });
-    
-    this.applyPagoFilters(query, filters);
-    
-    return await query.getCount();
-  }
-  
-  /**
-   * Aplica filtros de segmentación a queries de pagos
-   */
-  protected applyPagoFilters(query: any, filters?: SegmentationFilters): void {
-    if (!filters) return;
-    
-    if (filters.metodo) {
-      query.andWhere('pago.metodo = :metodo', { metodo: filters.metodo });
-    }
-    
-    if (filters.monto) {
-      if (filters.monto.min !== undefined) {
-        query.andWhere('pago.monto_total >= :minMonto', { minMonto: filters.monto.min });
-      }
-      if (filters.monto.max !== undefined) {
-        query.andWhere('pago.monto_total <= :maxMonto', { maxMonto: filters.monto.max });
-      }
-    }
-    
-    // Para zona y rubro, necesitamos join con solicitudes
-    if (filters.zona || filters.rubro) {
-      query.leftJoin(Solicitud, 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud');
-      
-      if (filters.zona) {
-        query.andWhere('solicitud.zona = :zona', { zona: filters.zona });
-      }
-      
-      // Para rubro, necesitamos join con prestadores y habilidades
-      if (filters.rubro) {
-        query.leftJoin(Prestador, 'prestador', 'prestador.id_prestador = solicitud.id_prestador');
-        query.leftJoin(Habilidad, 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true');
-        query.leftJoin(Rubro, 'rubro', 'rubro.id_rubro = habilidad.id_habilidad OR rubro.nombre_rubro = habilidad.nombre_habilidad');
-        
-        if (typeof filters.rubro === 'number') {
-          query.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
-        } else {
-          query.andWhere('(rubro.nombre_rubro = :rubroNombre OR habilidad.nombre_habilidad = :rubroNombre)', { 
-            rubroNombre: filters.rubro 
-          });
-        }
-      }
-    }
+      .andWhere('pago.timestamp_creado <= :endDate', { endDate })
+      .getCount();
   }
 
   protected async getPagos(startDate: Date, endDate: Date) {
@@ -488,18 +342,15 @@ export class BaseMetricsCalculator {
       .getMany();
   }
 
-  protected async sumMontoPagosAprobados(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+  protected async sumMontoPagosAprobados(startDate: Date, endDate: Date): Promise<number> {
     const repo = AppDataSource.getRepository(Pago);
-    const query = repo
+    const result = await repo
       .createQueryBuilder('pago')
       .select('COALESCE(SUM(pago.monto_total), 0)', 'total')
       .where('pago.estado = :estado', { estado: 'approved' })
       .andWhere('pago.timestamp_creado >= :startDate', { startDate })
-      .andWhere('pago.timestamp_creado <= :endDate', { endDate });
-    
-    this.applyPagoFilters(query, filters);
-    
-    const result = await query.getRawOne();
+      .andWhere('pago.timestamp_creado <= :endDate', { endDate })
+      .getRawOne();
     return parseFloat(result?.total || '0');
   }
 
@@ -518,18 +369,15 @@ export class BaseMetricsCalculator {
 
   // ========== MÉTODOS PARA CÁLCULOS DE TIEMPO ==========
   
-  protected async calculateAverageTimeToFirstQuote(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+  protected async calculateAverageTimeToFirstQuote(startDate: Date, endDate: Date): Promise<number> {
     const solicitudesRepo = AppDataSource.getRepository(Solicitud);
     const cotizacionesRepo = AppDataSource.getRepository(Cotizacion);
     
-    const query = solicitudesRepo
+    const solicitudes = await solicitudesRepo
       .createQueryBuilder('solicitud')
       .where('solicitud.timestamp >= :startDate', { startDate })
-      .andWhere('solicitud.timestamp <= :endDate', { endDate });
-    
-    this.applySolicitudFilters(query, filters);
-    
-    const solicitudes = await query.getMany();
+      .andWhere('solicitud.timestamp <= :endDate', { endDate })
+      .getMany();
 
     const tiempos: number[] = [];
 
@@ -607,44 +455,14 @@ export class BaseMetricsCalculator {
 
   // ========== MÉTODOS PARA PRESTADORES ==========
   
-  protected async countPrestadoresByEstado(estado: string, startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+  protected async countPrestadoresByEstado(estado: string, startDate: Date, endDate: Date): Promise<number> {
     const repo = AppDataSource.getRepository(Prestador);
-    const query = repo
+    return await repo
       .createQueryBuilder('prestador')
       .where('prestador.estado = :estado', { estado })
       .andWhere('prestador.timestamp >= :startDate', { startDate })
-      .andWhere('prestador.timestamp <= :endDate', { endDate });
-    
-    this.applyPrestadorFilters(query, filters);
-    
-    return await query.getCount();
-  }
-  
-  /**
-   * Aplica filtros de segmentación a queries de prestadores
-   */
-  protected applyPrestadorFilters(query: any, filters?: SegmentationFilters): void {
-    if (!filters) return;
-    
-    // Para zona, necesitamos join con usuarios
-    if (filters.zona) {
-      query.leftJoin(Usuario, 'usuario', 'usuario.id_usuario = prestador.id_prestador');
-      query.andWhere('usuario.ubicacion = :zona', { zona: filters.zona });
-    }
-    
-    // Para rubro, necesitamos join con habilidades
-    if (filters.rubro) {
-      query.leftJoin(Habilidad, 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true');
-      query.leftJoin(Rubro, 'rubro', 'rubro.id_rubro = habilidad.id_habilidad OR rubro.nombre_rubro = habilidad.nombre_habilidad');
-      
-      if (typeof filters.rubro === 'number') {
-        query.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
-      } else {
-        query.andWhere('(rubro.nombre_rubro = :rubroNombre OR habilidad.nombre_habilidad = :rubroNombre)', { 
-          rubroNombre: filters.rubro 
-        });
-      }
-    }
+      .andWhere('prestador.timestamp <= :endDate', { endDate })
+      .getCount();
   }
 
   protected async countPrestadoresActivos(): Promise<number> {

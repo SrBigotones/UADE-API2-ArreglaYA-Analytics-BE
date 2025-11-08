@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { logger } from '../../../config/logger';
 import { DateRangeService } from '../../../services/DateRangeService';
 import { BaseMetricsCalculator } from '../../../services/BaseMetricsCalculator';
-import { PeriodType, SegmentationFilters } from '../../../types';
+import { PeriodType } from '../../../types';
 import { AppDataSource } from '../../../config/database';
 import { Cotizacion } from '../../../models/Cotizacion';
 
@@ -41,36 +41,6 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
     }
 
     return periodType;
-  }
-
-  /**
-   * Parsea los parámetros de segmentación del request
-   */
-  private parseSegmentationParams(req: Request): SegmentationFilters | undefined {
-    const { rubro, zona, tipoSolicitud } = req.query;
-    
-    if (!rubro && !zona && !tipoSolicitud) {
-      return undefined;
-    }
-
-    const filters: SegmentationFilters = {};
-    
-    if (rubro) {
-      filters.rubro = isNaN(Number(rubro)) ? rubro as string : Number(rubro);
-    }
-    
-    if (zona) {
-      filters.zona = zona as string;
-    }
-    
-    if (tipoSolicitud) {
-      if (tipoSolicitud !== 'abierta' && tipoSolicitud !== 'dirigida') {
-        throw new Error('tipoSolicitud debe ser "abierta" o "dirigida"');
-      }
-      filters.tipoSolicitud = tipoSolicitud as 'abierta' | 'dirigida';
-    }
-
-    return Object.keys(filters).length > 0 ? filters : undefined;
   }
 
   /**
@@ -121,21 +91,19 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/cotizaciones/conversion-aceptada
    * 4. Conversión a cotización aceptada (%)
-   * Segmentar por: Rubro, zona
    */
   public async getConversionCotizacionAceptada(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
-      const filters = this.parseSegmentationParams(req);
 
-      const aceptadas = await this.countCotizacionesByEstado('aceptada', dateRanges.startDate, dateRanges.endDate, filters);
-      const rechazadas = await this.countCotizacionesByEstado('rechazada', dateRanges.startDate, dateRanges.endDate, filters);
+      const aceptadas = await this.countCotizacionesByEstado('aceptada', dateRanges.startDate, dateRanges.endDate);
+      const rechazadas = await this.countCotizacionesByEstado('rechazada', dateRanges.startDate, dateRanges.endDate);
       const total = aceptadas + rechazadas;
       const currentRate = total > 0 ? (aceptadas / total) * 100 : 0;
 
-      const prevAceptadas = await this.countCotizacionesByEstado('aceptada', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
-      const prevRechazadas = await this.countCotizacionesByEstado('rechazada', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
+      const prevAceptadas = await this.countCotizacionesByEstado('aceptada', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevRechazadas = await this.countCotizacionesByEstado('rechazada', dateRanges.previousStartDate, dateRanges.previousEndDate);
       const prevTotal = prevAceptadas + prevRechazadas;
       const previousRate = prevTotal > 0 ? (prevAceptadas / prevTotal) * 100 : 0;
 
@@ -145,8 +113,8 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
         this.roundPercentage(currentRate),
         this.roundPercentage(previousRate),
         async (start: Date, end: Date) => {
-          const aceptadasInt = await this.countCotizacionesByEstado('aceptada', start, end, filters);
-          const rechazadasInt = await this.countCotizacionesByEstado('rechazada', start, end, filters);
+          const aceptadasInt = await this.countCotizacionesByEstado('aceptada', start, end);
+          const rechazadasInt = await this.countCotizacionesByEstado('rechazada', start, end);
           const totalInt = aceptadasInt + rechazadasInt;
           return totalInt > 0 ? (aceptadasInt / totalInt) * 100 : 0;
         },

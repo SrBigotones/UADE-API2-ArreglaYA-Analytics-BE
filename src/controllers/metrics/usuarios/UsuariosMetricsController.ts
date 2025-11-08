@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { logger } from '../../../config/logger';
 import { DateRangeService } from '../../../services/DateRangeService';
 import { BaseMetricsCalculator } from '../../../services/BaseMetricsCalculator';
-import { PeriodType, PieMetricResponse, SegmentationFilters } from '../../../types';
+import { PeriodType, PieMetricResponse } from '../../../types';
 import { AppDataSource } from '../../../config/database';
 import { Usuario } from '../../../models/Usuario';
 
@@ -41,19 +41,6 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
     }
 
     return periodType;
-  }
-
-  /**
-   * Parsea los parámetros de segmentación del request
-   */
-  private parseSegmentationParams(req: Request): SegmentationFilters | undefined {
-    const { zona } = req.query;
-    
-    if (!zona) {
-      return undefined;
-    }
-
-    return { zona: zona as string };
   }
 
   /**
@@ -104,23 +91,21 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/usuarios/nuevos-clientes
    * 11. Nuevos clientes registrados
-   * Segmentar por: zona
    */
   public async getNuevosClientes(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
-      const filters = this.parseSegmentationParams(req);
 
-      const currentValue = await this.countUsuariosByRol('customer', dateRanges.startDate, dateRanges.endDate, filters);
-      const previousValue = await this.countUsuariosByRol('customer', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
+      const currentValue = await this.countUsuariosByRol('customer', dateRanges.startDate, dateRanges.endDate);
+      const previousValue = await this.countUsuariosByRol('customer', dateRanges.previousStartDate, dateRanges.previousEndDate);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
         currentValue,
         previousValue,
-        async (start: Date, end: Date) => this.countUsuariosByRol('customer', start, end, filters),
+        async (start: Date, end: Date) => this.countUsuariosByRol('customer', start, end),
         'porcentaje'
       );
       
@@ -133,23 +118,21 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/usuarios/nuevos-prestadores
    * 11. Nuevos prestadores registrados
-   * Segmentar por: zona
    */
   public async getNuevosPrestadoresUsuarios(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
-      const filters = this.parseSegmentationParams(req);
 
-      const currentValue = await this.countUsuariosByRol('prestador', dateRanges.startDate, dateRanges.endDate, filters);
-      const previousValue = await this.countUsuariosByRol('prestador', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
+      const currentValue = await this.countUsuariosByRol('prestador', dateRanges.startDate, dateRanges.endDate);
+      const previousValue = await this.countUsuariosByRol('prestador', dateRanges.previousStartDate, dateRanges.previousEndDate);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
         currentValue,
         previousValue,
-        async (start: Date, end: Date) => this.countUsuariosByRol('prestador', start, end, filters),
+        async (start: Date, end: Date) => this.countUsuariosByRol('prestador', start, end),
         'porcentaje'
       );
       
@@ -162,23 +145,21 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/usuarios/nuevos-administradores
    * 11. Nuevos administradores registrados
-   * Segmentar por: zona
    */
   public async getNuevosAdministradores(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
-      const filters = this.parseSegmentationParams(req);
 
-      const currentValue = await this.countUsuariosByRol('admin', dateRanges.startDate, dateRanges.endDate, filters);
-      const previousValue = await this.countUsuariosByRol('admin', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
+      const currentValue = await this.countUsuariosByRol('admin', dateRanges.startDate, dateRanges.endDate);
+      const previousValue = await this.countUsuariosByRol('admin', dateRanges.previousStartDate, dateRanges.previousEndDate);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
         currentValue,
         previousValue,
-        async (start: Date, end: Date) => this.countUsuariosByRol('admin', start, end, filters),
+        async (start: Date, end: Date) => this.countUsuariosByRol('admin', start, end),
         'porcentaje'
       );
       
