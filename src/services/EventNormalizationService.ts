@@ -137,14 +137,17 @@ export class EventNormalizationService {
 
     logger.info(`💾 Saving usuario | id: ${idUsuario} | rol: ${rol} | estado: ${estado}`);
 
-    // Usar upsert para insertar o actualizar
-    await usuarioRepo.save({
-      id_usuario: idUsuario,
-      rol: rol,
-      estado: estado,
-      timestamp: event.timestamp,
-      ubicacion: ubicacion || null,
-    } as Usuario);
+    // Usar upsert para insertar o actualizar basado en id_usuario (unique constraint)
+    await usuarioRepo.upsert(
+      {
+        id_usuario: idUsuario,
+        rol: rol,
+        estado: estado,
+        timestamp: event.timestamp,
+        ubicacion: ubicacion || null,
+      },
+      ['id_usuario'] // Conflict target: unique constraint en id_usuario
+    );
 
     logger.info(`✅ Usuario ${idUsuario} saved to DB`);
   }
@@ -312,15 +315,18 @@ export class EventNormalizationService {
 
     logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado}`);
 
-    await solicitudRepo.save({
-      id_solicitud: idSolicitud,
-      id_usuario: idUsuario,
-      id_prestador: idPrestador || null,
-      estado: estado,
-      zona: zona || null,
-      timestamp: event.timestamp,
-      es_critica: esCritica || false,
-    } as Solicitud);
+    await solicitudRepo.upsert(
+      {
+        id_solicitud: idSolicitud,
+        id_usuario: idUsuario,
+        id_prestador: idPrestador || null,
+        estado: estado,
+        zona: zona || null,
+        timestamp: event.timestamp,
+        es_critica: esCritica || false,
+      },
+      ['id_solicitud'] // Conflict target: unique constraint en id_solicitud
+    );
 
     logger.info(`✅ Solicitud ${idSolicitud} saved`);
   }
@@ -355,7 +361,9 @@ export class EventNormalizationService {
             continue;
           }
 
-          await cotizacionRepo.save({
+          // Las cotizaciones del batch no tienen id_cotizacion hasta que son emitidas realmente
+          // Por ahora insertamos sin upsert (pueden ser duplicados)
+          await cotizacionRepo.insert({
             id_cotizacion: idCotizacion,
             id_solicitud: idSolicitud,
             id_usuario: idUsuario || null,
@@ -363,7 +371,7 @@ export class EventNormalizationService {
             estado: 'emitida',
             monto: null,
             timestamp: event.timestamp,
-          } as Cotizacion);
+          });
 
           logger.debug(`Saved cotizacion ${idCotizacion} from batch`);
         }
@@ -410,17 +418,33 @@ export class EventNormalizationService {
 
     logger.info(`💾 Saving cotizacion | id: ${idCotizacion} | solicitud: ${idSolicitud} | estado: ${estado}`);
 
-    await cotizacionRepo.save({
-      id_cotizacion: idCotizacion,
-      id_solicitud: idSolicitud,
-      id_usuario: idUsuario || null,
-      id_prestador: idPrestador,
-      estado: estado,
-      monto: monto || null,
-      timestamp: event.timestamp,
-    } as Cotizacion);
+    // Las cotizaciones individuales tienen id_cotizacion, usamos upsert solo si existe
+    if (idCotizacion) {
+      await cotizacionRepo.upsert(
+        {
+          id_cotizacion: idCotizacion,
+          id_solicitud: idSolicitud,
+          id_usuario: idUsuario || null,
+          id_prestador: idPrestador,
+          estado: estado,
+          monto: monto || null,
+          timestamp: event.timestamp,
+        },
+        ['id_cotizacion'] // Solo actualizar si ya existe esa cotizacion
+      );
+    } else {
+      // Sin id_cotizacion, solo insert
+      await cotizacionRepo.insert({
+        id_solicitud: idSolicitud,
+        id_usuario: idUsuario || null,
+        id_prestador: idPrestador,
+        estado: estado,
+        monto: monto || null,
+        timestamp: event.timestamp,
+      });
+    }
 
-    logger.info(`✅ Cotizacion ${idCotizacion} saved`);
+    logger.info(`✅ Cotizacion ${idCotizacion || 'sin id'} saved`);
   }
 
   /**
@@ -489,34 +513,46 @@ export class EventNormalizationService {
     const existingPago = await pagoRepo.findOne({ where: { id_pago: idPago } });
 
     if (existingPago) {
-      // Actualizar pago existente
+      // Actualizar pago existente usando upsert
       logger.info(`🔄 Updating pago | id: ${idPago} | estado: ${estado}`);
-      await pagoRepo.save({
-        ...existingPago,
-        estado: estado,
-        metodo: metodo || existingPago.metodo,
-        timestamp_actual: event.timestamp,
-        captured_at: capturedAt || existingPago.captured_at,
-        refund_id: refundId || existingPago.refund_id,
-      });
+      await pagoRepo.upsert(
+        {
+          id_pago: idPago,
+          id_usuario: idUsuario,
+          id_prestador: idPrestador || existingPago.id_prestador,
+          id_solicitud: idSolicitud || existingPago.id_solicitud,
+          monto_total: montoTotal || existingPago.monto_total,
+          moneda: moneda,
+          metodo: metodo || existingPago.metodo,
+          estado: estado,
+          timestamp_creado: existingPago.timestamp_creado,
+          timestamp_actual: event.timestamp,
+          captured_at: capturedAt || existingPago.captured_at,
+          refund_id: refundId || existingPago.refund_id,
+        },
+        ['id_pago']
+      );
       logger.info(`✅ Pago ${idPago} updated`);
     } else {
       // Crear nuevo pago
       logger.info(`💾 Creating pago | id: ${idPago} | usuario: ${idUsuario} | estado: ${estado}`);
-      await pagoRepo.save({
-        id_pago: idPago,
-        id_usuario: idUsuario,
-        id_prestador: idPrestador || null,
-        id_solicitud: idSolicitud || null,
-        monto_total: montoTotal,
-        moneda: moneda,
-        metodo: metodo || null,
-        estado: estado,
-        timestamp_creado: timestampCreado,
-        timestamp_actual: event.timestamp,
-        captured_at: capturedAt,
-        refund_id: refundId,
-      } as Pago);
+      await pagoRepo.upsert(
+        {
+          id_pago: idPago,
+          id_usuario: idUsuario,
+          id_prestador: idPrestador || null,
+          id_solicitud: idSolicitud || null,
+          monto_total: montoTotal,
+          moneda: moneda,
+          metodo: metodo || null,
+          estado: estado,
+          timestamp_creado: timestampCreado,
+          timestamp_actual: event.timestamp,
+          captured_at: capturedAt,
+          refund_id: refundId,
+        },
+        ['id_pago']
+      );
       logger.info(`✅ Pago ${idPago} created`);
     }
   }

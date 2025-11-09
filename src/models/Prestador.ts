@@ -1,12 +1,16 @@
-import { Entity, PrimaryColumn, Column, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity('prestadores')
+@Index(['id_prestador'], { unique: true })
 @Index(['estado'])
 @Index(['timestamp'])
 @Index(['perfil_completo'])
 @Index(['estado', 'perfil_completo'])
 export class Prestador {
-  @PrimaryColumn({ type: 'bigint', name: 'id_prestador' })
+  @PrimaryGeneratedColumn('increment')
+  id: number;
+
+  @Column({ type: 'bigint', name: 'id_prestador', nullable: false })
   id_prestador: number;
 
   @Column({ type: 'varchar', length: 100, nullable: true })
