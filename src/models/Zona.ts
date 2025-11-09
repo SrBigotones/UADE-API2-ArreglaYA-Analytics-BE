@@ -14,6 +14,12 @@ export class Zona {
   @Column({ type: 'varchar', length: 100, nullable: false, name: 'nombre_zona' })
   nombre_zona: string;
 
+  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true, name: 'latitud' })
+  latitud: number | null;
+
+  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true, name: 'longitud' })
+  longitud: number | null;
+
   @Column({ type: 'boolean', nullable: false, default: true })
   activa: boolean;
 

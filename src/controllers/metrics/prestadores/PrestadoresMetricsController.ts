@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { logger } from '../../../config/logger';
 import { DateRangeService } from '../../../services/DateRangeService';
 import { BaseMetricsCalculator } from '../../../services/BaseMetricsCalculator';
-import { PeriodType, PieMetricResponse, ProviderZonesResponse, ProviderZoneData } from '../../../types';
+import { PeriodType, PieMetricResponse, ProviderZonesResponse, ProviderZoneData, SegmentationFilters } from '../../../types';
 import { AppDataSource } from '../../../config/database';
 import { Prestador } from '../../../models/Prestador';
 import { Cotizacion } from '../../../models/Cotizacion';
@@ -45,6 +45,26 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
     }
 
     return periodType;
+  }
+
+  /**
+   * Parsea y valida los parámetros de segmentación
+   * Nota: Win Rate NO acepta filtros de segmentación (es general)
+   */
+  protected parseSegmentationParams(req: Request): SegmentationFilters | undefined {
+    const { rubro, zona } = req.query;
+    const filters: SegmentationFilters = {};
+
+    if (rubro) {
+      const rubroValue = typeof rubro === 'string' && !isNaN(Number(rubro)) ? Number(rubro) : rubro;
+      filters.rubro = rubroValue as string | number;
+    }
+
+    if (zona) {
+      filters.zona = zona as string;
+    }
+
+    return Object.keys(filters).length > 0 ? filters : undefined;
   }
 
   /**
@@ -100,16 +120,17 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
-      const currentValue = await this.countPrestadoresByEstado('activo', dateRanges.startDate, dateRanges.endDate);
-      const previousValue = await this.countPrestadoresByEstado('activo', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const currentValue = await this.countPrestadoresByEstado('activo', dateRanges.startDate, dateRanges.endDate, filters);
+      const previousValue = await this.countPrestadoresByEstado('activo', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
         currentValue,
         previousValue,
-        async (start: Date, end: Date) => this.countPrestadoresByEstado('activo', start, end),
+        async (start: Date, end: Date) => this.countPrestadoresByEstado('activo', start, end, filters),
         'porcentaje'
       );
       
@@ -161,47 +182,38 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/prestadores/win-rate-rubro
    * 5. Win Rate por rubro (%)
-   * Nota: Calcula el Win Rate global ya que no hay relación directa entre cotizaciones y rubros en el modelo actual
+   * Calcula el Win Rate: de las cotizaciones emitidas en el período, cuántas fueron aceptadas
+   * Nota: Actualmente calcula el Win Rate global. Para calcular por rubro se necesitaría join con prestadores->habilidades->rubros
    */
   public async getWinRatePorRubro(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
 
-      // Calcular Win Rate global (todas las cotizaciones)
       const cotizacionesRepo = AppDataSource.getRepository(Cotizacion);
       
-      const emitidas = await cotizacionesRepo
+      // Obtener todas las cotizaciones creadas (emitidas) en el período actual
+      // Todas las cotizaciones se crean como 'emitida', luego pueden cambiar a 'aceptada', 'rechazada' o 'expirada'
+      const cotizacionesEmitidas = await cotizacionesRepo
         .createQueryBuilder('cotizacion')
-        .where('cotizacion.estado = :estado', { estado: 'emitida' })
-        .andWhere('cotizacion.timestamp >= :startDate', { startDate: dateRanges.startDate })
+        .where('cotizacion.timestamp >= :startDate', { startDate: dateRanges.startDate })
         .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.endDate })
-        .getCount();
+        .getMany();
 
-      const aceptadas = await cotizacionesRepo
-        .createQueryBuilder('cotizacion')
-        .where('cotizacion.estado = :estado', { estado: 'aceptada' })
-        .andWhere('cotizacion.timestamp >= :startDate', { startDate: dateRanges.startDate })
-        .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.endDate })
-        .getCount();
-
+      // De las emitidas en el período, contar cuántas fueron aceptadas (estado actual = 'aceptada')
+      const aceptadas = cotizacionesEmitidas.filter(c => c.estado === 'aceptada').length;
+      const emitidas = cotizacionesEmitidas.length;
       const currentRate = emitidas > 0 ? (aceptadas / emitidas) * 100 : 0;
 
       // Calcular para período anterior
-      const prevEmitidas = await cotizacionesRepo
+      const prevCotizacionesEmitidas = await cotizacionesRepo
         .createQueryBuilder('cotizacion')
-        .where('cotizacion.estado = :estado', { estado: 'emitida' })
-        .andWhere('cotizacion.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
+        .where('cotizacion.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
         .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
-        .getCount();
+        .getMany();
 
-      const prevAceptadas = await cotizacionesRepo
-        .createQueryBuilder('cotizacion')
-        .where('cotizacion.estado = :estado', { estado: 'aceptada' })
-        .andWhere('cotizacion.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
-        .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
-        .getCount();
-
+      const prevAceptadas = prevCotizacionesEmitidas.filter(c => c.estado === 'aceptada').length;
+      const prevEmitidas = prevCotizacionesEmitidas.length;
       const previousRate = prevEmitidas > 0 ? (prevAceptadas / prevEmitidas) * 100 : 0;
 
       const metric = await this.calculateMetricWithChart(
@@ -210,23 +222,18 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
         this.roundPercentage(currentRate),
         this.roundPercentage(previousRate),
         async (start: Date, end: Date) => {
+          // Para cada intervalo histórico, calcular win rate de la misma forma
           const emitidasInt = await cotizacionesRepo
             .createQueryBuilder('cotizacion')
-            .where('cotizacion.estado = :estado', { estado: 'emitida' })
-            .andWhere('cotizacion.timestamp >= :startDate', { startDate: start })
+            .where('cotizacion.timestamp >= :startDate', { startDate: start })
             .andWhere('cotizacion.timestamp <= :endDate', { endDate: end })
-            .getCount();
+            .getMany();
           
-          const aceptadasInt = await cotizacionesRepo
-            .createQueryBuilder('cotizacion')
-            .where('cotizacion.estado = :estado', { estado: 'aceptada' })
-            .andWhere('cotizacion.timestamp >= :startDate', { startDate: start })
-            .andWhere('cotizacion.timestamp <= :endDate', { endDate: end })
-            .getCount();
+          const aceptadasInt = emitidasInt.filter(c => c.estado === 'aceptada').length;
           
-          return emitidasInt > 0 ? (aceptadasInt / emitidasInt) * 100 : 0;
+          return emitidasInt.length > 0 ? (aceptadasInt / emitidasInt.length) * 100 : 0;
         },
-        'absoluto'
+        'porcentaje'
       );
       
       res.status(200).json({ success: true, data: metric });
@@ -243,16 +250,19 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
       // Contar solicitudes agrupadas por habilidad (que representa el tipo de servicio)
       const habilidadesRepo = AppDataSource.getRepository(Habilidad);
       const solicitudesRepo = AppDataSource.getRepository(Solicitud);
 
-      const solicitudes = await solicitudesRepo
+      const qb = solicitudesRepo
         .createQueryBuilder('solicitud')
         .where('solicitud.timestamp >= :startDate', { startDate: dateRanges.startDate })
-        .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate })
-        .getMany();
+        .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate });
+      
+      this.applySolicitudFilters(qb, filters);
+      const solicitudes = await qb.getMany();
 
       // Agrupar por habilidad asociada (necesitaríamos relación entre solicitud y habilidad)
       // Por ahora agrupar por nombre de habilidad si está disponible en las solicitudes
@@ -263,13 +273,15 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
       const habilidades = await habilidadesRepo.find();
       
       for (const habilidad of habilidades) {
-        const count = await solicitudesRepo
+        const countQb = solicitudesRepo
           .createQueryBuilder('solicitud')
           .innerJoin('habilidades', 'hab', 'hab.id_usuario = solicitud.id_prestador')
           .where('hab.id_habilidad = :idHabilidad', { idHabilidad: habilidad.id_habilidad })
           .andWhere('solicitud.timestamp >= :startDate', { startDate: dateRanges.startDate })
-          .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate })
-          .getCount();
+          .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate });
+        
+        this.applySolicitudFilters(countQb, filters);
+        const count = await countQb.getCount();
         
         if (count > 0) {
           distribution[habilidad.nombre_habilidad] = count;

@@ -153,7 +153,6 @@ export class AuthService {
    * Solo retorna usuarios ADMIN para cumplir con la política de acceso
    */
   private getMockUserData(email: string): LoginResponse {
-    // Para bypass mode, siempre retornar admin
     const userInfo = {
       id: '1',
       email: email,
