@@ -171,7 +171,7 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
 
   /**
    * GET /api/metrica/usuarios/tasa-roles-activos
-   * 12. Tasa de roles activos (%)
+   * 12. Tasa de roles inactivos (%)
    */
   public async getTasaRolesActivos(req: Request, res: Response): Promise<void> {
     try {
@@ -186,14 +186,14 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
         .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.endDate })
         .getCount();
 
-      const activos = await repo
+      const inactivos = await repo
         .createQueryBuilder('usuario')
-        .where('usuario.estado = :estado', { estado: 'activo' })
+        .where('usuario.estado != :estado', { estado: 'activo' })
         .andWhere('usuario.timestamp >= :startDate', { startDate: dateRanges.startDate })
         .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.endDate })
         .getCount();
 
-      const currentRate = total > 0 ? (activos / total) * 100 : 0;
+      const currentRate = total > 0 ? (inactivos / total) * 100 : 0;
 
       const prevTotal = await repo
         .createQueryBuilder('usuario')
@@ -201,14 +201,14 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
         .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
         .getCount();
 
-      const prevActivos = await repo
+      const prevInactivos = await repo
         .createQueryBuilder('usuario')
-        .where('usuario.estado = :estado', { estado: 'activo' })
+        .where('usuario.estado != :estado', { estado: 'activo' })
         .andWhere('usuario.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
         .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
         .getCount();
 
-      const previousRate = prevTotal > 0 ? (prevActivos / prevTotal) * 100 : 0;
+      const previousRate = prevTotal > 0 ? (prevInactivos / prevTotal) * 100 : 0;
 
       // También devolver distribución por rol
       const porRol = await repo
@@ -227,7 +227,7 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
       });
 
       // Calcular métrica usando el método estándar
-      const tasaActivosMetric = this.calculateCardMetric(
+      const tasaInactivosMetric = this.calculateCardMetric(
         this.roundPercentage(currentRate),
         this.roundPercentage(previousRate),
         'absoluto'
@@ -236,12 +236,69 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
       res.status(200).json({
         success: true,
         data: {
-          tasaActivos: tasaActivosMetric,
+          tasaInactivos: tasaInactivosMetric,
           distribucionPorRol: distribution
         }
       });
     } catch (error) {
       await this.handleError(res, error, 'getTasaRolesActivos');
+    }
+  }
+
+  /**
+   * GET /api/metrica/usuarios/distribucion-por-rol
+   * Distribución por rol histórico (sin periodo)
+   */
+  public async getDistribucionPorRol(req: Request, res: Response): Promise<void> {
+    try {
+      const repo = AppDataSource.getRepository(Usuario);
+      
+      // Obtener distribución por rol sin filtro de periodo (histórico)
+      const porRol = await repo
+        .createQueryBuilder('usuario')
+        .select('usuario.rol', 'rol')
+        .addSelect('COUNT(*)', 'total')
+        .groupBy('usuario.rol')
+        .getRawMany();
+
+      const distribution: PieMetricResponse = {};
+      porRol.forEach(row => {
+        distribution[row.rol] = parseInt(row.total);
+      });
+
+      res.status(200).json({
+        success: true,
+        data: distribution
+      });
+    } catch (error) {
+      await this.handleError(res, error, 'getDistribucionPorRol');
+    }
+  }
+
+  /**
+   * GET /api/metrica/usuarios/totales
+   * Usuarios totales (histórico, sin periodo)
+   */
+  public async getUsuariosTotales(req: Request, res: Response): Promise<void> {
+    try {
+      const repo = AppDataSource.getRepository(Usuario);
+      
+      // Contar todos los usuarios sin filtro de periodo
+      const total = await repo
+        .createQueryBuilder('usuario')
+        .getCount();
+
+      res.status(200).json({
+        success: true,
+        data: {
+          value: total,
+          change: 0,
+          changeType: 'absoluto' as const,
+          changeStatus: 'neutro' as const
+        }
+      });
+    } catch (error) {
+      await this.handleError(res, error, 'getUsuariosTotales');
     }
   }
 
