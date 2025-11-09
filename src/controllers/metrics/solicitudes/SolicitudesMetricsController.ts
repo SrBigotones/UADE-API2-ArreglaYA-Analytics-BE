@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { logger } from '../../../config/logger';
 import { DateRangeService } from '../../../services/DateRangeService';
 import { BaseMetricsCalculator } from '../../../services/BaseMetricsCalculator';
-import { PeriodType, HeatmapResponse, HeatmapPoint } from '../../../types';
+import { PeriodType, HeatmapResponse, HeatmapPoint, SegmentationFilters } from '../../../types';
 import { AppDataSource } from '../../../config/database';
 import { Solicitud } from '../../../models/Solicitud';
 
@@ -41,6 +41,34 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
     }
 
     return periodType;
+  }
+
+  /**
+   * Parsea y valida los parámetros de segmentación
+   */
+  protected parseSegmentationParams(req: Request): SegmentationFilters | undefined {
+    const { rubro, zona, tipoSolicitud } = req.query;
+    const filters: SegmentationFilters = {};
+
+    if (rubro) {
+      // Puede ser número o string
+      const rubroValue = typeof rubro === 'string' && !isNaN(Number(rubro)) ? Number(rubro) : rubro;
+      filters.rubro = rubroValue as string | number;
+    }
+
+    if (zona) {
+      filters.zona = zona as string;
+    }
+
+    if (tipoSolicitud) {
+      if (tipoSolicitud !== 'abierta' && tipoSolicitud !== 'dirigida') {
+        throw new Error('tipoSolicitud debe ser "abierta" o "dirigida"');
+      }
+      filters.tipoSolicitud = tipoSolicitud as 'abierta' | 'dirigida';
+    }
+
+    // Si no hay filtros, retornar undefined
+    return Object.keys(filters).length > 0 ? filters : undefined;
   }
 
   /**
@@ -96,16 +124,17 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
-      const currentValue = await this.countSolicitudesByEstado('creada', dateRanges.startDate, dateRanges.endDate);
-      const previousValue = await this.countSolicitudesByEstado('creada', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const currentValue = await this.countSolicitudesByEstado('creada', dateRanges.startDate, dateRanges.endDate, filters);
+      const previousValue = await this.countSolicitudesByEstado('creada', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
         currentValue,
         previousValue,
-        async (start: Date, end: Date) => this.countSolicitudesByEstado('creada', start, end),
+        async (start: Date, end: Date) => this.countSolicitudesByEstado('creada', start, end, filters),
         'porcentaje'
       );
       
@@ -123,14 +152,15 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
-      const creadas = await this.countSolicitudesByEstado('creada', dateRanges.startDate, dateRanges.endDate);
-      const canceladas = await this.countSolicitudesByEstado('cancelada', dateRanges.startDate, dateRanges.endDate);
+      const creadas = await this.countSolicitudesByEstado('creada', dateRanges.startDate, dateRanges.endDate, filters);
+      const canceladas = await this.countSolicitudesByEstado('cancelada', dateRanges.startDate, dateRanges.endDate, filters);
 
       const currentRate = creadas > 0 ? (canceladas / creadas) * 100 : 0;
 
-      const prevCreadas = await this.countSolicitudesByEstado('creada', dateRanges.previousStartDate, dateRanges.previousEndDate);
-      const prevCanceladas = await this.countSolicitudesByEstado('cancelada', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevCreadas = await this.countSolicitudesByEstado('creada', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
+      const prevCanceladas = await this.countSolicitudesByEstado('cancelada', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
       const previousRate = prevCreadas > 0 ? (prevCanceladas / prevCreadas) * 100 : 0;
 
       const metric = await this.calculateMetricWithChart(
@@ -139,8 +169,8 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
         this.roundPercentage(currentRate),
         this.roundPercentage(previousRate),
         async (start: Date, end: Date) => {
-          const creadasInt = await this.countSolicitudesByEstado('creada', start, end);
-          const canceladasInt = await this.countSolicitudesByEstado('cancelada', start, end);
+          const creadasInt = await this.countSolicitudesByEstado('creada', start, end, filters);
+          const canceladasInt = await this.countSolicitudesByEstado('cancelada', start, end, filters);
           return creadasInt > 0 ? (canceladasInt / creadasInt) * 100 : 0;
         },
         'absoluto'
@@ -160,16 +190,17 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
-      const currentAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.startDate, dateRanges.endDate);
-      const previousAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const currentAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.startDate, dateRanges.endDate, filters);
+      const previousAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
         currentAvg,
         previousAvg,
-        async (start: Date, end: Date) => this.calculateAverageTimeToFirstQuote(start, end),
+        async (start: Date, end: Date) => this.calculateAverageTimeToFirstQuote(start, end, filters),
         'absoluto'
       );
       
@@ -187,24 +218,46 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
-      const solicitudesPorZona = await this.countSolicitudesPorZona(dateRanges.startDate, dateRanges.endDate);
-      
-      // Por ahora retornamos datos por zona (las coordenadas se pueden mapear después)
-      const points: HeatmapPoint[] = [];
-      
-      // Si hay coordenadas en las solicitudes, usarlas; si no, usar zonas
-      const solicitudes = await AppDataSource.getRepository(Solicitud)
+      const repo = AppDataSource.getRepository(Solicitud);
+      const qb = repo
         .createQueryBuilder('solicitud')
+        .select('solicitud.zona', 'zona')
+        .addSelect('COUNT(*)', 'count')
         .where('solicitud.timestamp >= :startDate', { startDate: dateRanges.startDate })
         .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate })
-        .getMany();
+        .andWhere('solicitud.zona IS NOT NULL')
+        .groupBy('solicitud.zona');
+      
+      this.applySolicitudFilters(qb, filters);
+      const result = await qb.getRawMany();
 
-      // Agrupar por zona y crear puntos (requeriría mapeo de zonas a coordenadas)
-      // Por ahora retornar estructura básica
+      // Obtener coordenadas de las zonas desde la base de datos
+      const zonaCoordenadas = await this.getZonasCoordenadas();
+
+      // Coordenadas por defecto de Buenos Aires (centro) para zonas sin coordenadas en BD
+      const defaultCoords = { lat: -34.6037, lon: -58.3816 };
+
+      const points: HeatmapPoint[] = [];
+      
+      result.forEach(row => {
+        const zona = row.zona;
+        const count = parseInt(row.count);
+        
+        // Obtener coordenadas de la zona desde BD o usar coordenadas por defecto
+        const coords = zonaCoordenadas[zona] || defaultCoords;
+        
+        points.push({
+          lat: coords.lat,
+          lon: coords.lon,
+          intensity: count
+        });
+      });
+
       const response: HeatmapResponse = {
         data: points,
-        totalPoints: solicitudes.length,
+        totalPoints: points.length,
         period: {
           startDate: dateRanges.startDate.toISOString().split('T')[0],
           endDate: dateRanges.endDate.toISOString().split('T')[0]
@@ -232,7 +285,7 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
         .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate })
         .getMany();
 
-      // Agrupar por zona (ya que no tenemos coordenadas)
+      // Agrupar por zona
       const zonasMap = new Map<string, number>();
       solicitudes.forEach(s => {
         if (s.zona) {
@@ -240,13 +293,17 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
         }
       });
 
+      // Obtener coordenadas de las zonas desde la base de datos
+      const zonaCoordenadas = await this.getZonasCoordenadas();
+      const defaultCoords = { lat: -34.6037, lon: -58.3816 }; // Buenos Aires centro por defecto
+
       const heatmapPoints: HeatmapPoint[] = [];
-      // Nota: Sin coordenadas, retornamos puntos ficticios basados en zonas
       zonasMap.forEach((count, zona) => {
-        // Coordenadas aproximadas por zona (deberían venir de una tabla de zonas)
+        // Obtener coordenadas de la zona desde BD o usar coordenadas por defecto
+        const coords = zonaCoordenadas[zona] || defaultCoords;
         heatmapPoints.push({
-          lat: -34.6037, // Buenos Aires por defecto
-          lon: -58.3816,
+          lat: coords.lat,
+          lon: coords.lon,
           intensity: count
         });
       });

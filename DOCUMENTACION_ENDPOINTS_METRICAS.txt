@@ -1,0 +1,860 @@
+================================================================================
+DOCUMENTACION DE ENDPOINTS DE METRICAS - ARREGLAYA ANALYTICS
+================================================================================
+
+Este documento describe todos los endpoints de metricas disponibles, sus parametros,
+filtros de segmentacion y formato de respuesta.
+
+================================================================================
+CATALOGO DE SERVICIOS Y PRESTADORES
+================================================================================
+
+1. MAPA DE CALOR DE PEDIDOS
+   URL: GET /api/metrica/solicitudes/mapa-calor
+   
+   Parametros requeridos:
+   - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+   - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   
+   Filtros de segmentacion (opcionales):
+   - rubro (string | number): Filtra por rubro/categoria de servicio
+   - zona (string): Filtra por zona geografica
+   - tipoSolicitud (string): 'abierta' | 'dirigida'
+     * 'abierta': Solicitud sin prestador asignado al crearse
+     * 'dirigida': Solicitud con prestador asignado al crearse
+   
+   Descripcion:
+   Retorna un mapa de calor con las coordenadas geograficas de las solicitudes agrupadas por zona.
+   Las coordenadas (latitud y longitud) se obtienen desde la base de datos (tabla 'zonas').
+   Si una zona no tiene coordenadas en la BD, se usa un punto por defecto (centro de Buenos Aires).
+   
+   Ejemplo de consulta:
+   GET /api/metrica/solicitudes/mapa-calor?period=ultimos_30_dias&rubro=Plomeria&zona=Palermo
+   
+   Respuesta:
+   {
+     "success": true,
+     "data": {
+       "data": [
+         {
+           "lat": number,        // Latitud de la zona (desde BD)
+           "lon": number,        // Longitud de la zona (desde BD)
+           "intensity": number   // Cantidad de solicitudes en esa zona
+         }
+       ],
+       "totalPoints": number,
+       "period": {
+         "startDate": "YYYY-MM-DD",
+         "endDate": "YYYY-MM-DD"
+       }
+     }
+   }
+
+--------------------------------------------------------------------------------
+
+2. DISTRIBUCION DE SERVICIOS
+   URL: GET /api/metrica/prestadores/servicios/distribucion
+   
+   Parametros requeridos:
+   - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+   - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   
+   Filtros de segmentacion (opcionales):
+   - rubro (string | number): Filtra por rubro/categoria de servicio
+   - zona (string): Filtra por zona geografica
+   - tipoSolicitud (string): 'abierta' | 'dirigida'
+   
+   Ejemplo de consulta:
+   GET /api/metrica/prestadores/servicios/distribucion?period=ultimos_30_dias&zona=Palermo
+   
+   Respuesta:
+   {
+     "success": true,
+     "data": {
+       "Plomeria": number,
+       "Electricidad": number,
+       "Carpinteria": number,
+       ...
+     }
+   }
+   (Objeto donde las claves son nombres de servicios/habilidades y los valores son conteos)
+
+--------------------------------------------------------------------------------
+
+3. WIN RATE
+   URL: GET /api/metrica/prestadores/win-rate-rubro
+   
+   Parametros requeridos:
+   - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+   - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   
+   Filtros de segmentacion:
+   - NINGUNO. El Win Rate es una metrica general y NO acepta filtros de segmentacion.
+   
+   Descripcion del calculo:
+   El Win Rate calcula el porcentaje de cotizaciones aceptadas sobre el total de cotizaciones
+   emitidas en el periodo. Especificamente:
+   - Obtiene todas las cotizaciones creadas (emitidas) en el periodo
+   - De esas, cuenta cuantas tienen estado 'aceptada' actualmente
+   - Win Rate = (Cotizaciones Aceptadas / Total Cotizaciones Emitidas) * 100
+   
+   NOTA: Actualmente calcula el Win Rate global. Para calcular por rubro se necesitaria
+   hacer join con prestadores->habilidades->rubros (funcionalidad futura).
+   
+   Ejemplo de consulta:
+   GET /api/metrica/prestadores/win-rate-rubro?period=ultimos_30_dias
+   
+   Respuesta:
+   {
+     "success": true,
+     "data": {
+       "value": number,  // Porcentaje de cotizaciones aceptadas (0-100)
+       "change": number,  // Cambio porcentual respecto al periodo anterior
+       "changeType": "porcentaje",
+       "changeStatus": "positivo" | "negativo" | "neutro",
+       "chartData": [
+         {
+           "date": "YYYY-MM-DD",
+           "value": number
+         }
+       ]
+     }
+   }
+
+================================================================================
+APP DE BUSQUEDA Y SOLICITUDES
+================================================================================
+
+4. SOLICITUDES CREADAS (Volumen de demanda)
+   URL: GET /api/metrica/solicitudes/volumen
+   
+   Parametros requeridos:
+   - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+   - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   
+   Filtros de segmentacion (opcionales):
+   - rubro (string | number): Filtra por rubro/categoria de servicio
+   - zona (string): Filtra por zona geografica
+   - tipoSolicitud (string): 'abierta' | 'dirigida'
+   
+   Ejemplo de consulta:
+   GET /api/metrica/solicitudes/volumen?period=ultimos_7_dias&rubro=Plomeria&zona=Palermo
+   
+   Respuesta:
+   {
+     "success": true,
+     "data": {
+       "value": number,  // Cantidad de solicitudes creadas
+       "change": number,  // Cambio porcentual respecto al periodo anterior
+       "changeType": "porcentaje",
+       "changeStatus": "positivo" | "negativo" | "neutro",
+       "chartData": [
+         {
+           "date": "YYYY-MM-DD",
+           "value": number
+         }
+       ]
+     }
+   }
+
+--------------------------------------------------------------------------------
+
+5. TASA DE CANCELACION DE SOLICITUDES
+   URL: GET /api/metrica/solicitudes/tasa-cancelacion
+   
+   Parametros requeridos:
+   - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+   - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   
+   Filtros de segmentacion (opcionales):
+   - rubro (string | number): Filtra por rubro/categoria de servicio
+   - zona (string): Filtra por zona geografica
+   - tipoSolicitud (string): 'abierta' | 'dirigida'
+   
+   Ejemplo de consulta:
+   GET /api/metrica/solicitudes/tasa-cancelacion?period=ultimos_30_dias&zona=Palermo
+   
+   Respuesta:
+   {
+     "success": true,
+     "data": {
+       "value": number,  // Porcentaje de solicitudes canceladas
+       "change": number,  // Cambio absoluto respecto al periodo anterior
+       "changeType": "absoluto",
+       "changeStatus": "positivo" | "negativo" | "neutro",
+       "chartData": [
+         {
+           "date": "YYYY-MM-DD",
+           "value": number
+         }
+       ]
+     }
+   }
+
+--------------------------------------------------------------------------------
+
+6. TIEMPO A PRIMERA COTIZACION
+   URL: GET /api/metrica/solicitudes/tiempo-primera-cotizacion
+   
+   Parametros requeridos:
+   - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+   - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   
+   Filtros de segmentacion (opcionales):
+   - rubro (string | number): Filtra por rubro/categoria de servicio
+   - zona (string): Filtra por zona geografica
+   - tipoSolicitud (string): 'abierta' | 'dirigida'
+   
+   Ejemplo de consulta:
+   GET /api/metrica/solicitudes/tiempo-primera-cotizacion?period=ultimos_30_dias&rubro=Electricidad
+   
+   Respuesta:
+   {
+     "success": true,
+     "data": {
+       "value": number,  // Tiempo promedio en horas
+       "change": number,  // Cambio absoluto respecto al periodo anterior
+       "changeType": "absoluto",
+       "changeStatus": "positivo" | "negativo" | "neutro",
+       "chartData": [
+         {
+           "date": "YYYY-MM-DD",
+           "value": number
+         }
+       ]
+     }
+   }
+
+--------------------------------------------------------------------------------
+
+7. CONVERSION A COTIZACION ACEPTADA
+    URL: GET /api/metrica/matching/cotizaciones/conversion-aceptada
+   
+   Parametros requeridos:
+   - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+   - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   
+   Filtros de segmentacion (opcionales):
+   - rubro (string | number): Filtra por rubro/categoria de servicio
+   - zona (string): Filtra por zona geografica
+   - tipoSolicitud (string): 'abierta' | 'dirigida'
+   
+   Ejemplo de consulta:
+   GET /api/metrica/matching/cotizaciones/conversion-aceptada?period=ultimos_30_dias&rubro=Plomeria
+   
+   Respuesta:
+   {
+     "success": true,
+     "data": {
+       "value": number,  // Porcentaje de cotizaciones aceptadas
+       "change": number,  // Cambio absoluto respecto al periodo anterior
+       "changeType": "absoluto",
+       "changeStatus": "positivo" | "negativo" | "neutro",
+       "chartData": [
+         {
+           "date": "YYYY-MM-DD",
+           "value": number
+         }
+       ]
+     }
+   }
+
+================================================================================
+PAGOS Y FACTURACION
+================================================================================
+
+8. DISTRIBUCION DE EVENTOS DE PAGO
+   URL: GET /api/metrica/pagos/distribucion-eventos
+   
+   Parametros requeridos:
+   - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+   - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   
+   Filtros de segmentacion (opcionales):
+   - rubro (string | number): Filtra por rubro/categoria de servicio
+   - zona (string): Filtra por zona geografica
+   - metodo (string): Filtra por metodo de pago (ej: 'tarjeta', 'transferencia', etc.)
+   - minMonto (number): Monto minimo del pago
+   - maxMonto (number): Monto maximo del pago
+   
+   Ejemplo de consulta:
+   GET /api/metrica/pagos/distribucion-eventos?period=ultimos_30_dias&metodo=tarjeta&minMonto=1000
+   
+   Respuesta:
+   {
+     "success": true,
+     "data": {
+       "APROBADO": number,
+       "RECHAZADO": number,
+       "EXPIRADO": number,
+       "PENDIENTE": number
+     }
+   }
+
+--------------------------------------------------------------------------------
+
+9. TASA DE EXITO DE PAGOS
+   URL: GET /api/metrica/pagos/tasa-exito
+   
+   Parametros requeridos:
+   - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+   - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+   
+   Filtros de segmentacion (opcionales):
+   - rubro (string | number): Filtra por rubro/categoria de servicio
+   - zona (string): Filtra por zona geografica
+   - metodo (string): Filtra por metodo de pago
+   - minMonto (number): Monto minimo del pago
+   - maxMonto (number): Monto maximo del pago
+   
+   Ejemplo de consulta:
+   GET /api/metrica/pagos/tasa-exito?period=ultimos_7_dias&metodo=tarjeta&rubro=Plomeria
+   
+   Respuesta:
+   {
+     "success": true,
+     "data": {
+       "value": number,  // Porcentaje de pagos aprobados
+       "change": number,  // Cambio absoluto respecto al periodo anterior
+       "changeType": "absoluto",
+       "changeStatus": "positivo" | "negativo" | "neutro",
+       "chartData": [
+         {
+           "date": "YYYY-MM-DD",
+           "value": number
+         }
+       ]
+     }
+   }
+
+--------------------------------------------------------------------------------
+
+10. TIEMPO DE PROCESAMIENTO DE PAGOS
+    URL: GET /api/metrica/pagos/tiempo-procesamiento
+    
+    Parametros requeridos:
+    - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+    - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    
+    Filtros de segmentacion (opcionales):
+    - rubro (string | number): Filtra por rubro/categoria de servicio
+    - zona (string): Filtra por zona geografica
+    - metodo (string): Filtra por metodo de pago
+    - minMonto (number): Monto minimo del pago
+    - maxMonto (number): Monto maximo del pago
+    
+    Ejemplo de consulta:
+    GET /api/metrica/pagos/tiempo-procesamiento?period=ultimos_30_dias&metodo=transferencia
+    
+    Respuesta:
+    {
+      "success": true,
+      "data": {
+        "value": number,  // Tiempo promedio en minutos
+        "change": number,  // Cambio absoluto respecto al periodo anterior
+        "changeType": "absoluto",
+        "changeStatus": "positivo" | "negativo" | "neutro",
+        "chartData": [
+          {
+            "date": "YYYY-MM-DD",
+            "value": number
+          }
+        ]
+      }
+    }
+
+--------------------------------------------------------------------------------
+
+11. DISTRIBUCION METODOS DE PAGO
+    URL: GET /api/metrica/pagos/distribucion-metodos
+    
+    Parametros requeridos:
+    - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+    - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    
+    Filtros de segmentacion (opcionales):
+    - rubro (string | number): Filtra por rubro/categoria de servicio
+    - zona (string): Filtra por zona geografica
+    - metodo (string): Filtra por metodo de pago (si se especifica, solo muestra ese metodo)
+    - minMonto (number): Monto minimo del pago
+    - maxMonto (number): Monto maximo del pago
+    
+    Ejemplo de consulta:
+    GET /api/metrica/pagos/distribucion-metodos?period=ultimos_30_dias&zona=Palermo
+    
+    Respuesta:
+    {
+      "success": true,
+      "data": {
+        "tarjeta": number,
+        "transferencia": number,
+        "efectivo": number,
+        ...
+      }
+    }
+    (Objeto donde las claves son metodos de pago y los valores son conteos)
+
+--------------------------------------------------------------------------------
+
+12. INGRESO BRUTO Y TICKET MEDIO
+    URL: GET /api/metrica/pagos/ingreso-ticket
+    
+    Parametros requeridos:
+    - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+    - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    
+    Filtros de segmentacion (opcionales):
+    - rubro (string | number): Filtra por rubro/categoria de servicio
+    - zona (string): Filtra por zona geografica
+    - metodo (string): Filtra por metodo de pago
+    - minMonto (number): Monto minimo del pago
+    - maxMonto (number): Monto maximo del pago
+    
+    Ejemplo de consulta:
+    GET /api/metrica/pagos/ingreso-ticket?period=ultimos_30_dias&rubro=Plomeria&minMonto=5000
+    
+    Respuesta:
+    {
+      "success": true,
+      "data": {
+        "ingresoBruto": {
+          "value": number,  // Ingreso bruto en ARS
+          "change": number,
+          "changeType": "absoluto",
+          "changeStatus": "positivo" | "negativo" | "neutro",
+          "chartData": [...]
+        },
+        "ticketMedio": {
+          "value": number,  // Ticket medio en ARS
+          "change": number,
+          "changeType": "absoluto",
+          "changeStatus": "positivo" | "negativo" | "neutro",
+          "chartData": [...]
+        }
+      }
+    }
+
+================================================================================
+USUARIOS & ROLES
+================================================================================
+
+13. DISTRIBUCION POR ROL
+    URL: GET /api/metrica/usuarios/distribucion-por-rol
+    
+    Parametros requeridos:
+    - NINGUNO. Este endpoint es historico y no requiere parametros de periodo.
+    
+    Filtros de segmentacion:
+    - NINGUNO. Este endpoint devuelve la distribucion historica completa.
+    
+    Ejemplo de consulta:
+    GET /api/metrica/usuarios/distribucion-por-rol
+    
+    Respuesta:
+    {
+      "success": true,
+      "data": {
+        "customer": number,
+        "prestador": number,
+        "admin": number,
+        ...
+      }
+    }
+    (Objeto donde las claves son roles y los valores son conteos totales)
+
+--------------------------------------------------------------------------------
+
+14. NUEVOS USUARIOS REGISTRADOS (PRESTADORES)
+    URL: GET /api/metrica/usuarios/nuevos-prestadores
+    
+    Parametros requeridos:
+    - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+    - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    
+    Filtros de segmentacion:
+    - NINGUNO. Este endpoint no acepta filtros de segmentacion.
+    
+   Ejemplo de consulta:
+   GET /api/metrica/usuarios/nuevos-prestadores?period=ultimos_30_dias
+    
+    Respuesta:
+    {
+      "success": true,
+      "data": {
+        "value": number,  // Cantidad de nuevos usuarios
+        "change": number,  // Cambio porcentual respecto al periodo anterior
+        "changeType": "porcentaje",
+        "changeStatus": "positivo" | "negativo" | "neutro",
+        "chartData": [
+          {
+            "date": "YYYY-MM-DD",
+            "value": number
+          }
+        ]
+      }
+    }
+
+--------------------------------------------------------------------------------
+
+15. NUEVOS CLIENTES
+    URL: GET /api/metrica/usuarios/nuevos-clientes
+    
+    Parametros requeridos:
+    - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+    - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    
+    Filtros de segmentacion:
+    - NINGUNO. Este endpoint no acepta filtros de segmentacion.
+    
+    Ejemplo de consulta:
+    GET /api/metrica/usuarios/nuevos-clientes?period=ultimos_7_dias
+    
+    Respuesta:
+    {
+      "success": true,
+      "data": {
+        "value": number,  // Cantidad de nuevos clientes
+        "change": number,  // Cambio porcentual respecto al periodo anterior
+        "changeType": "porcentaje",
+        "changeStatus": "positivo" | "negativo" | "neutro",
+        "chartData": [
+          {
+            "date": "YYYY-MM-DD",
+            "value": number
+          }
+        ]
+      }
+    }
+
+--------------------------------------------------------------------------------
+
+16. NUEVOS PRESTADORES
+    URL: GET /api/metrica/prestadores/nuevos-registrados
+    
+    Parametros requeridos:
+    - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+    - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    
+    Filtros de segmentacion (opcionales):
+    - rubro (string | number): Filtra por rubro/categoria de servicio
+    - zona (string): Filtra por zona geografica
+    
+    Ejemplo de consulta:
+    GET /api/metrica/prestadores/nuevos-registrados?period=ultimos_30_dias&rubro=Plomeria
+    
+    Respuesta:
+    {
+      "success": true,
+      "data": {
+        "value": number,  // Cantidad de nuevos prestadores
+        "change": number,  // Cambio porcentual respecto al periodo anterior
+        "changeType": "porcentaje",
+        "changeStatus": "positivo" | "negativo" | "neutro",
+        "chartData": [
+          {
+            "date": "YYYY-MM-DD",
+            "value": number
+          }
+        ]
+      }
+    }
+
+--------------------------------------------------------------------------------
+
+17. TASA DE USUARIOS INACTIVOS
+    URL: GET /api/metrica/usuarios/tasa-roles-activos
+    NOTA: A pesar del nombre del endpoint, devuelve la tasa de usuarios INACTIVOS.
+    
+    Parametros requeridos:
+    - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+    - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    
+    Filtros de segmentacion:
+    - NINGUNO. Este endpoint no acepta filtros de segmentacion.
+    
+    Ejemplo de consulta:
+    GET /api/metrica/usuarios/tasa-roles-activos?period=ultimos_30_dias
+    
+    Respuesta:
+    {
+      "success": true,
+      "data": {
+        "tasaInactivos": {
+          "value": number,  // Porcentaje de usuarios inactivos
+          "change": number,  // Cambio absoluto respecto al periodo anterior
+          "changeType": "absoluto",
+          "changeStatus": "positivo" | "negativo" | "neutro",
+          "chartData": [...]
+        },
+        "distribucionPorRol": {
+          "cliente": number,
+          "prestador": number,
+          ...
+        }
+      }
+    }
+
+--------------------------------------------------------------------------------
+
+18. TOTAL DE USUARIOS
+    URL: GET /api/metrica/usuarios/totales
+    
+    Parametros requeridos:
+    - NINGUNO. Este endpoint es historico y no requiere parametros de periodo.
+    
+    Filtros de segmentacion:
+    - NINGUNO. Este endpoint devuelve el total historico completo.
+    
+    Ejemplo de consulta:
+    GET /api/metrica/usuarios/totales
+    
+    Respuesta:
+    {
+      "success": true,
+      "data": {
+        "value": number,  // Total de usuarios en el sistema
+        "change": 0,
+        "changeType": "absoluto",
+        "changeStatus": "neutro"
+      }
+    }
+
+================================================================================
+MATCHING Y AGENDA
+================================================================================
+
+19. TIEMPO PROMEDIO DE MATCHING
+    URL: GET /api/metrica/matching/tiempo-promedio
+    
+    Parametros requeridos:
+    - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+    - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    
+    Filtros de segmentacion (opcionales):
+    - rubro (string | number): Filtra por rubro/categoria de servicio
+    - zona (string): Filtra por zona geografica
+    - tipoSolicitud (string): 'abierta' | 'dirigida'
+    
+    Ejemplo de consulta:
+    GET /api/metrica/matching/tiempo-promedio?period=ultimos_30_dias&rubro=Electricidad
+    
+    Respuesta:
+    {
+      "success": true,
+      "data": {
+        "value": number,  // Tiempo promedio en horas/minutos
+        "change": number,  // Cambio absoluto respecto al periodo anterior
+        "changeType": "absoluto",
+        "changeStatus": "positivo" | "negativo" | "neutro",
+        "chartData": [
+          {
+            "date": "YYYY-MM-DD",
+            "value": number
+          }
+        ]
+      }
+    }
+
+--------------------------------------------------------------------------------
+
+20. COTIZACIONES PENDIENTES
+    URL: GET /api/metrica/matching/cotizaciones/pendientes
+    
+    Parametros requeridos:
+    - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+    - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    
+    Filtros de segmentacion (opcionales):
+    - rubro (string | number): Filtra por rubro/categoria de servicio
+    - zona (string): Filtra por zona geografica
+    - tipoSolicitud (string): 'abierta' | 'dirigida'
+    
+   Ejemplo de consulta:
+   GET /api/metrica/matching/cotizaciones/pendientes?period=ultimos_7_dias&zona=Palermo
+    
+    Respuesta:
+    {
+      "success": true,
+      "data": {
+        "value": number,  // Cantidad de cotizaciones pendientes
+        "change": number,  // Cambio porcentual respecto al periodo anterior
+        "changeType": "porcentaje",
+        "changeStatus": "positivo" | "negativo" | "neutro",
+        "chartData": [
+          {
+            "date": "YYYY-MM-DD",
+            "value": number
+          }
+        ]
+      }
+    }
+
+--------------------------------------------------------------------------------
+
+21. TIEMPO DE RESPUESTA DEL PRESTADOR
+    URL: GET /api/metrica/matching/prestadores/tiempo-respuesta
+    
+    Parametros requeridos:
+    - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+    - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    
+    Filtros de segmentacion (opcionales):
+    - rubro (string | number): Filtra por rubro/categoria de servicio
+    - zona (string): Filtra por zona geografica
+    - tipoSolicitud (string): 'abierta' | 'dirigida'
+    
+   Ejemplo de consulta:
+   GET /api/metrica/matching/prestadores/tiempo-respuesta?period=ultimos_30_dias&rubro=Plomeria
+    
+    Respuesta:
+    {
+      "success": true,
+      "data": {
+        "value": number,  // Tiempo promedio en horas
+        "change": number,  // Cambio absoluto respecto al periodo anterior
+        "changeType": "absoluto",
+        "changeStatus": "positivo" | "negativo" | "neutro",
+        "chartData": [
+          {
+            "date": "YYYY-MM-DD",
+            "value": number
+          }
+        ]
+      }
+    }
+
+--------------------------------------------------------------------------------
+
+22. TASA DE COTIZACIONES EXPIRADAS
+    URL: GET /api/metrica/matching/cotizaciones/tasa-expiracion
+    
+    Parametros requeridos:
+    - period (string, requerido): hoy | ultimos_7_dias | ultimos_30_dias | ultimo_ano | personalizado
+    - startDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    - endDate (string, opcional): YYYY-MM-DD (requerido si period=personalizado)
+    
+    Filtros de segmentacion (opcionales):
+    - rubro (string | number): Filtra por rubro/categoria de servicio
+    - zona (string): Filtra por zona geografica
+    - tipoSolicitud (string): 'abierta' | 'dirigida'
+    
+   Ejemplo de consulta:
+   GET /api/metrica/matching/cotizaciones/tasa-expiracion?period=ultimos_30_dias&zona=Palermo
+    
+    Respuesta:
+    {
+      "success": true,
+      "data": {
+        "value": number,  // Porcentaje de cotizaciones expiradas
+        "change": number,  // Cambio absoluto respecto al periodo anterior
+        "changeType": "absoluto",
+        "changeStatus": "positivo" | "negativo" | "neutro",
+        "chartData": [
+          {
+            "date": "YYYY-MM-DD",
+            "value": number
+          }
+        ]
+      }
+    }
+
+================================================================================
+RESUMEN DE FILTROS DE SEGMENTACION
+================================================================================
+
+Los filtros de segmentacion disponibles son:
+
+1. rubro (string | number)
+   - Filtra por rubro/categoria de servicio
+   - Puede ser un ID numerico o nombre de rubro
+   - Disponible en: solicitudes, pagos, cotizaciones, prestadores
+
+2. zona (string)
+   - Filtra por zona geografica
+   - Disponible en: solicitudes, pagos, cotizaciones, prestadores
+
+3. tipoSolicitud (string)
+   - Valores: 'abierta' | 'dirigida'
+   - 'abierta': Solicitud sin prestador asignado al crearse
+   - 'dirigida': Solicitud con prestador asignado al crearse
+   - Disponible en: solicitudes, cotizaciones, matching
+
+4. metodo (string)
+   - Filtra por metodo de pago
+   - Ejemplos: 'tarjeta', 'transferencia', 'efectivo'
+   - Disponible solo en: pagos
+
+5. minMonto (number)
+   - Monto minimo del pago en ARS
+   - Disponible solo en: pagos
+
+6. maxMonto (number)
+   - Monto maximo del pago en ARS
+   - Disponible solo en: pagos
+
+NOTAS IMPORTANTES:
+- Los filtros son OPCIONALES y se pueden combinar
+- Si no se especifican filtros, el endpoint devuelve datos sin filtrar
+- El Win Rate NO acepta filtros de segmentacion (es una metrica general)
+  * Calcula: (Cotizaciones Aceptadas / Cotizaciones Emitidas en el periodo) * 100
+  * Actualmente es global, no por rubro (funcionalidad futura)
+- Los endpoints de usuarios (nuevos registrados, nuevos clientes) NO aceptan filtros
+- Los endpoints historicos (distribucion por rol, totales) NO requieren periodo ni filtros
+- Las coordenadas del mapa de calor se obtienen desde la tabla 'zonas' en la base de datos
+  * Si una zona no tiene coordenadas, se usa un punto por defecto (centro de Buenos Aires)
+
+================================================================================
+FORMATO DE RESPUESTA ESTANDAR
+================================================================================
+
+La mayoria de los endpoints devuelven metricas con el siguiente formato:
+
+{
+  "success": true,
+  "data": {
+    "value": number,           // Valor principal de la metrica
+    "change": number,          // Cambio respecto al periodo anterior
+    "changeType": "porcentaje" | "absoluto",  // Tipo de cambio
+    "changeStatus": "positivo" | "negativo" | "neutro",  // Direccion del cambio
+    "chartData": [             // Datos historicos para graficos
+      {
+        "date": "YYYY-MM-DD",
+        "value": number
+      }
+    ]
+  }
+}
+
+Los endpoints de distribucion (pie charts) devuelven:
+{
+  "success": true,
+  "data": {
+    "categoria1": number,
+    "categoria2": number,
+    ...
+  }
+}
+
+================================================================================
+FIN DEL DOCUMENTO
+================================================================================
+

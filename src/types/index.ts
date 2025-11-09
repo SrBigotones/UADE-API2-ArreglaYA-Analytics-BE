@@ -134,3 +134,13 @@ export interface ProviderZonesResponse {
     endDate: string;
   };
 }
+
+// Filtros de segmentación para métricas
+export interface SegmentationFilters {
+  rubro?: string | number;
+  zona?: string;
+  metodo?: string;
+  tipoSolicitud?: 'abierta' | 'dirigida';
+  minMonto?: number;
+  maxMonto?: number;
+}
