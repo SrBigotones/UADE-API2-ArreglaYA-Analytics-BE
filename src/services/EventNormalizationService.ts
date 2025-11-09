@@ -23,9 +23,12 @@ export class EventNormalizationService {
     try {
       const evento = event.evento.toLowerCase();
       
+      logger.info(`🔄 NORMALIZATION | eventId: ${event.id} | squad: ${event.squad} | evento: ${event.evento}`);
+      
       // Mapeo de eventos a funciones de normalización
       // También manejar eventos en español
       if (evento.includes('user') || evento.includes('usuario')) {
+        logger.info(`👤 Processing USER event`);
         await this.processUserEvent(event);
       } else if (evento.includes('prestador') && (evento.includes('alta') || evento.includes('baja') || evento.includes('modificacion'))) {
         await this.processPrestadorEvent(event);
@@ -52,7 +55,11 @@ export class EventNormalizationService {
         evento.includes('refund') || evento.includes('reembolso')
       ) {
         await this.processPaymentEvent(event);
+      } else {
+        logger.warn(`⚠️ No handler for evento: ${evento}`);
       }
+      
+      logger.info(`✅ NORMALIZATION DONE | eventId: ${event.id}`);
     } catch (error) {
       logger.error(`Error normalizing event ${event.id}:`, error);
       // No lanzamos el error para no interrumpir el flujo principal
@@ -68,10 +75,30 @@ export class EventNormalizationService {
     const cuerpo = event.cuerpo;
     const usuarioRepo = AppDataSource.getRepository(Usuario);
 
+    logger.debug(`👤 USER event | eventId: ${event.id}`);
+
+    // IMPORTANTE: Los datos pueden estar en cuerpo.payload (Core Hub) o directamente en cuerpo (webhook directo)
+    const payload = cuerpo.payload || cuerpo;
+    
+    logger.debug(`📦 Payload keys: ${Object.keys(payload).join(', ')}`);
+
     // Extraer ID de usuario (puede estar en diferentes campos)
-    const idUsuario = this.extractBigInt(cuerpo.userId || cuerpo.id_usuario || cuerpo.id || cuerpo.user_id);
+    const idUsuario = this.extractBigInt(
+      payload.userId || 
+      payload.id_usuario || 
+      payload.id || 
+      payload.user_id ||
+      cuerpo.userId || 
+      cuerpo.id_usuario || 
+      cuerpo.id || 
+      cuerpo.user_id
+    );
+    
+    logger.info(`🔍 userId extracted: ${idUsuario}`);
+    
     if (!idUsuario) {
-      logger.warn(`No se pudo extraer id_usuario del evento ${event.id}`);
+      logger.warn(`❌ No userId found in event ${event.id}`);
+      logger.debug(`Available payload: ${JSON.stringify(payload, null, 2).substring(0, 300)}`);
       return;
     }
 
@@ -87,13 +114,28 @@ export class EventNormalizationService {
       estado = 'activo';
     }
 
-    // Extraer rol
-    const rol = cuerpo.role || cuerpo.rol || cuerpo.tipo_usuario || 'unknown';
+    // Extraer rol (buscar en payload primero, luego en cuerpo)
+    const rol = payload.role || payload.rol || payload.tipo_usuario || 
+                cuerpo.role || cuerpo.rol || cuerpo.tipo_usuario || 'unknown';
 
     // Extraer ubicación (solo para prestadores)
-    const ubicacion = (rol === 'prestador' || rol === 'provider') 
-      ? (cuerpo.location || cuerpo.ubicacion || cuerpo.city || cuerpo.provincia)
-      : null;
+    // Buscar en addresses array primero (estructura Core Hub)
+    let ubicacion = null;
+    if (rol.toUpperCase() === 'PRESTADOR' || rol === 'provider') {
+      if (payload.addresses && Array.isArray(payload.addresses) && payload.addresses.length > 0) {
+        // Tomar la primera dirección
+        const firstAddress = payload.addresses[0];
+        ubicacion = firstAddress.city || firstAddress.state;
+      } else if (payload.address && Array.isArray(payload.address) && payload.address.length > 0) {
+        const firstAddress = payload.address[0];
+        ubicacion = firstAddress.city || firstAddress.state;
+      } else {
+        ubicacion = payload.location || payload.ubicacion || payload.city || payload.provincia ||
+                    cuerpo.location || cuerpo.ubicacion || cuerpo.city || cuerpo.provincia;
+      }
+    }
+
+    logger.info(`💾 Saving usuario | id: ${idUsuario} | rol: ${rol} | estado: ${estado}`);
 
     // Usar upsert para insertar o actualizar
     await usuarioRepo.save({
@@ -104,7 +146,7 @@ export class EventNormalizationService {
       ubicacion: ubicacion || null,
     } as Usuario);
 
-    logger.debug(`Normalized user event ${event.id} -> usuario ${idUsuario}`);
+    logger.info(`✅ Usuario ${idUsuario} saved to DB`);
   }
 
   /**
