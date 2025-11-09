@@ -8,6 +8,10 @@ import { Usuario } from '../../../models/Usuario';
 
 export class UsuariosMetricsController extends BaseMetricsCalculator {
   
+  ROL_CLIENTE = 'CLIENTE'
+  ROL_PRESTADOR = 'PRESTADOR'
+  ROL_ADMIN = 'ADMINISTRADOR'
+
   /**
    * Valida y parsea los parámetros de período de tiempo
    */
@@ -97,15 +101,15 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
 
-      const currentValue = await this.countUsuariosByRol('customer', dateRanges.startDate, dateRanges.endDate);
-      const previousValue = await this.countUsuariosByRol('customer', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const currentValue = await this.countUsuariosByRol(this.ROL_CLIENTE, dateRanges.startDate, dateRanges.endDate);
+      const previousValue = await this.countUsuariosByRol(this.ROL_CLIENTE, dateRanges.previousStartDate, dateRanges.previousEndDate);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
         currentValue,
         previousValue,
-        async (start: Date, end: Date) => this.countUsuariosByRol('customer', start, end),
+        async (start: Date, end: Date) => this.countUsuariosByRol(this.ROL_CLIENTE, start, end),
         'porcentaje'
       );
       
@@ -124,15 +128,15 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
 
-      const currentValue = await this.countUsuariosByRol('prestador', dateRanges.startDate, dateRanges.endDate);
-      const previousValue = await this.countUsuariosByRol('prestador', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const currentValue = await this.countUsuariosByRol(this.ROL_PRESTADOR, dateRanges.startDate, dateRanges.endDate);
+      const previousValue = await this.countUsuariosByRol(this.ROL_PRESTADOR, dateRanges.previousStartDate, dateRanges.previousEndDate);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
         currentValue,
         previousValue,
-        async (start: Date, end: Date) => this.countUsuariosByRol('prestador', start, end),
+        async (start: Date, end: Date) => this.countUsuariosByRol(this.ROL_PRESTADOR, start, end),
         'porcentaje'
       );
       
@@ -151,15 +155,15 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
 
-      const currentValue = await this.countUsuariosByRol('admin', dateRanges.startDate, dateRanges.endDate);
-      const previousValue = await this.countUsuariosByRol('admin', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const currentValue = await this.countUsuariosByRol(this.ROL_ADMIN, dateRanges.startDate, dateRanges.endDate);
+      const previousValue = await this.countUsuariosByRol(this.ROL_ADMIN, dateRanges.previousStartDate, dateRanges.previousEndDate);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
         currentValue,
         previousValue,
-        async (start: Date, end: Date) => this.countUsuariosByRol('admin', start, end),
+        async (start: Date, end: Date) => this.countUsuariosByRol(this.ROL_ADMIN, start, end),
         'porcentaje'
       );
       
@@ -317,8 +321,8 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
 
-      const currentValue = await this.countUsuariosByRol('prestador', dateRanges.startDate, dateRanges.endDate);
-      const previousValue = await this.countUsuariosByRol('prestador', dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const currentValue = await this.countUsuariosByRol(this.ROL_PRESTADOR, dateRanges.startDate, dateRanges.endDate);
+      const previousValue = await this.countUsuariosByRol(this.ROL_PRESTADOR, dateRanges.previousStartDate, dateRanges.previousEndDate);
 
       const metric = this.calculateCardMetric(currentValue, previousValue, 'porcentaje');
       res.status(200).json({ success: true, data: metric });
