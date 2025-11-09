@@ -1,9 +1,13 @@
-import { Entity, PrimaryColumn, Column, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity('rubros')
+@Index(['id_rubro'], { unique: true })
 @Index(['nombre_rubro'])
 export class Rubro {
-  @PrimaryColumn({ type: 'bigint', name: 'id_rubro' })
+  @PrimaryGeneratedColumn('increment')
+  id: number;
+
+  @Column({ type: 'bigint', name: 'id_rubro', nullable: false })
   id_rubro: number;
 
   @Column({ type: 'varchar', length: 100, nullable: false, name: 'nombre_rubro' })

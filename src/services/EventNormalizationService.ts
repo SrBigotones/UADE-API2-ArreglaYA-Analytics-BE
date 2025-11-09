@@ -596,14 +596,17 @@ export class EventNormalizationService {
 
     logger.info(`💾 Saving prestador | id: ${idPrestador} | estado: ${estado}`);
 
-    await prestadorRepo.save({
-      id_prestador: idPrestador,
-      nombre: nombre,
-      apellido: apellido,
-      estado: estado,
-      timestamp: event.timestamp,
-      perfil_completo: perfilCompleto,
-    } as Prestador);
+    await prestadorRepo.upsert(
+      {
+        id_prestador: idPrestador,
+        nombre: nombre,
+        apellido: apellido,
+        estado: estado,
+        timestamp: event.timestamp,
+        perfil_completo: perfilCompleto,
+      },
+      ['id_prestador'] // Conflict target: unique constraint en id_prestador
+    );
 
     logger.info(`✅ Prestador ${idPrestador} saved`);
   }
