@@ -261,19 +261,25 @@ export class EventNormalizationService {
    */
   private async processRequestEvent(event: Event): Promise<void> {
     const cuerpo = event.cuerpo;
+    const payload = this.extractPayload(cuerpo);
     const solicitudRepo = AppDataSource.getRepository(Solicitud);
 
     const evento = event.evento.toLowerCase();
 
     const idSolicitud = this.extractBigInt(
-      cuerpo.requestId || cuerpo.solicitudId || cuerpo.id_solicitud || 
-      cuerpo.orderId || cuerpo.pedidoId || cuerpo.id
+      payload.requestId || payload.solicitudId || payload.id_solicitud || payload.solicitud_id ||
+      payload.orderId || payload.pedidoId || payload.id
     );
-    const idUsuario = this.extractBigInt(cuerpo.userId || cuerpo.id_usuario || cuerpo.clienteId);
-    const idPrestador = this.extractBigInt(cuerpo.providerId || cuerpo.prestadorId || cuerpo.id_prestador);
+    const idUsuario = this.extractBigInt(
+      payload.userId || payload.id_usuario || payload.usuario_id || payload.clienteId
+    );
+    const idPrestador = this.extractBigInt(
+      payload.providerId || payload.prestadorId || payload.prestador_id || payload.id_prestador
+    );
 
     if (!idSolicitud || !idUsuario) {
       logger.warn(`No se pudo extraer datos de solicitud del evento ${event.id}`);
+      logger.debug(`Payload: ${JSON.stringify(payload, null, 2).substring(0, 300)}`);
       return;
     }
 
@@ -285,10 +291,26 @@ export class EventNormalizationService {
       estado = 'aceptada';
     } else if (evento.includes('rechazada') || evento.includes('reject')) {
       estado = 'rechazada';
+    } else if (evento.includes('creada') || evento.includes('created')) {
+      estado = 'creada';
+    } else if (evento.includes('solicitado')) {
+      estado = 'creada'; // 'solicitado' es equivalente a 'creada'
     }
 
-    const zona = cuerpo.zona || cuerpo.location || cuerpo.ciudad || cuerpo.provincia;
-    const esCritica = cuerpo.urgency === 'high' || cuerpo.es_critica === true || cuerpo.critica === true;
+    // Extraer zona de diferentes estructuras posibles
+    let zona = null;
+    if (payload.direccion) {
+      zona = payload.direccion.ciudad || payload.direccion.provincia;
+    } else {
+      zona = payload.zona || payload.location || payload.ciudad || payload.provincia;
+    }
+
+    const esCritica = payload.urgency === 'high' || 
+                      payload.es_critica === true || 
+                      payload.critica === true ||
+                      payload.es_urgente === true;
+
+    logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado}`);
 
     await solicitudRepo.save({
       id_solicitud: idSolicitud,
@@ -300,35 +322,77 @@ export class EventNormalizationService {
       es_critica: esCritica || false,
     } as Solicitud);
 
-    logger.debug(`Normalized request event ${event.id} -> solicitud ${idSolicitud}`);
+    logger.info(`✅ Solicitud ${idSolicitud} saved`);
   }
 
   /**
    * Procesa eventos de cotizaciones
    * Eventos: cotizacion.emitida, cotizacion.aceptada, cotizacion.rechazada, cotizacion.expirada
+   * También: matching.cotizacion.emitida (eventos batch del servicio de matching)
    */
   private async processQuoteEvent(event: Event): Promise<void> {
     const cuerpo = event.cuerpo;
+    const payload = this.extractPayload(cuerpo);
     const cotizacionRepo = AppDataSource.getRepository(Cotizacion);
 
     const evento = event.evento.toLowerCase();
 
+    // Caso especial: matching.emitida viene con array de solicitudes con top3 de cotizaciones
+    if (evento.includes('emitida') && payload.solicitudes && Array.isArray(payload.solicitudes)) {
+      logger.info(`📊 Processing BATCH cotizaciones | count: ${payload.solicitudes.length}`);
+      
+      for (const solicitud of payload.solicitudes) {
+        if (!solicitud.top3 || !Array.isArray(solicitud.top3)) continue;
+        
+        for (const cotizacion of solicitud.top3) {
+          const idCotizacion = this.extractBigInt(cotizacion.cotizacionId);
+          const idSolicitud = this.extractBigInt(cotizacion.solicitudId);
+          const idPrestador = this.extractBigInt(cotizacion.prestadorId);
+          const idUsuario = this.extractBigInt(solicitud.usuarioId); // Del padre
+
+          // Si no hay cotizacionId, es solo una invitación, skip
+          if (!idCotizacion || !idSolicitud || !idPrestador) {
+            continue;
+          }
+
+          await cotizacionRepo.save({
+            id_cotizacion: idCotizacion,
+            id_solicitud: idSolicitud,
+            id_usuario: idUsuario || null,
+            id_prestador: idPrestador,
+            estado: 'emitida',
+            monto: null,
+            timestamp: event.timestamp,
+          } as Cotizacion);
+
+          logger.debug(`Saved cotizacion ${idCotizacion} from batch`);
+        }
+      }
+      logger.info(`✅ Batch cotizaciones processed`);
+      return;
+    }
+
+    // Caso normal: cotizacion individual
     const idCotizacion = this.extractBigInt(
-      cuerpo.quoteId || cuerpo.cotizacionId || cuerpo.id_cotizacion || cuerpo.id
+      payload.quoteId || payload.cotizacionId || payload.id_cotizacion || payload.id
     );
     const idSolicitud = this.extractBigInt(
-      cuerpo.requestId || cuerpo.solicitudId || cuerpo.id_solicitud || cuerpo.orderId
+      payload.requestId || payload.solicitudId || payload.id_solicitud || payload.orderId
     );
-    const idUsuario = this.extractBigInt(cuerpo.userId || cuerpo.id_usuario || cuerpo.clienteId);
-    const idPrestador = this.extractBigInt(cuerpo.providerId || cuerpo.prestadorId || cuerpo.id_prestador);
+    const idUsuario = this.extractBigInt(
+      payload.userId || payload.id_usuario || payload.clienteId
+    );
+    const idPrestador = this.extractBigInt(
+      payload.providerId || payload.prestadorId || payload.id_prestador
+    );
 
-    if (!idCotizacion || !idSolicitud || !idUsuario || !idPrestador) {
+    if (!idCotizacion || !idSolicitud || !idPrestador) {
       logger.warn(`No se pudo extraer datos de cotizacion del evento ${event.id}`);
+      logger.debug(`Payload: ${JSON.stringify(payload, null, 2).substring(0, 300)}`);
       return;
     }
 
     // Determinar estado basado en el evento
-    // Manejar eventos en español: "Cotización Emitida", "Cotización Aceptada", etc.
     let estado = 'emitida';
     if (evento.includes('aceptada') || evento.includes('accept')) {
       estado = 'aceptada';
@@ -340,19 +404,23 @@ export class EventNormalizationService {
       estado = 'emitida';
     }
 
-    const monto = this.extractDecimal(cuerpo.amount || cuerpo.monto || cuerpo.price || cuerpo.precio);
+    const monto = this.extractDecimal(
+      payload.amount || payload.monto || payload.price || payload.precio
+    );
+
+    logger.info(`💾 Saving cotizacion | id: ${idCotizacion} | solicitud: ${idSolicitud} | estado: ${estado}`);
 
     await cotizacionRepo.save({
       id_cotizacion: idCotizacion,
       id_solicitud: idSolicitud,
-      id_usuario: idUsuario,
+      id_usuario: idUsuario || null,
       id_prestador: idPrestador,
       estado: estado,
-      monto: monto,
+      monto: monto || null,
       timestamp: event.timestamp,
     } as Cotizacion);
 
-    logger.debug(`Normalized quote event ${event.id} -> cotizacion ${idCotizacion}`);
+    logger.info(`✅ Cotizacion ${idCotizacion} saved`);
   }
 
   /**
@@ -362,51 +430,59 @@ export class EventNormalizationService {
    */
   private async processPaymentEvent(event: Event): Promise<void> {
     const cuerpo = event.cuerpo;
+    const payload = this.extractPayload(cuerpo);
     const pagoRepo = AppDataSource.getRepository(Pago);
 
     const evento = event.evento.toLowerCase();
 
     const idPago = this.extractBigInt(
-      cuerpo.paymentId || cuerpo.pagoId || cuerpo.id_pago || cuerpo.id
+      payload.paymentId || payload.pagoId || payload.id_pago || payload.id
     );
-    const idUsuario = this.extractBigInt(cuerpo.userId || cuerpo.id_usuario || cuerpo.clienteId);
-    const idPrestador = this.extractBigInt(cuerpo.providerId || cuerpo.prestadorId || cuerpo.id_prestador);
+    const idUsuario = this.extractBigInt(
+      payload.userId || payload.id_usuario || payload.clienteId
+    );
+    const idPrestador = this.extractBigInt(
+      payload.providerId || payload.prestadorId || payload.id_prestador
+    );
     const idSolicitud = this.extractBigInt(
-      cuerpo.requestId || cuerpo.solicitudId || cuerpo.id_solicitud || cuerpo.orderId
+      payload.requestId || payload.solicitudId || payload.id_solicitud || payload.orderId
     );
 
     if (!idPago || !idUsuario) {
       logger.warn(`No se pudo extraer datos de pago del evento ${event.id}`);
+      logger.debug(`Payload: ${JSON.stringify(payload, null, 2).substring(0, 300)}`);
       return;
     }
 
-    // Determinar estado basado en el evento
-    let estado = 'pending';
-    if (evento.includes('approved') || evento.includes('aprobado')) {
+    // Determinar estado basado en el evento y el campo status del payload
+    let estado = payload.status || 'pending';
+    
+    // Mapear estados del payload a nuestros estados
+    if (payload.status === 'PENDING_PAYMENT') {
+      estado = 'pending';
+    } else if (payload.status === 'APPROVED' || evento.includes('approved')) {
       estado = 'approved';
-    } else if (evento.includes('rejected') || evento.includes('rechazado')) {
+    } else if (payload.status === 'REJECTED' || evento.includes('rejected')) {
       estado = 'rejected';
-    } else if (evento.includes('expired') || evento.includes('expirado')) {
+    } else if (payload.status === 'EXPIRED' || evento.includes('expired')) {
       estado = 'expired';
     } else if (evento.includes('refund') || evento.includes('reembolso')) {
       estado = 'refunded';
     }
 
     const montoTotal = this.extractDecimal(
-      cuerpo.amount || cuerpo.monto || cuerpo.monto_total || cuerpo.total || 0
+      payload.amount || payload.monto || payload.monto_total || payload.total || 0
     );
-    const moneda = cuerpo.currency || cuerpo.moneda || 'ARS';
-    const metodo = cuerpo.method || cuerpo.metodo || cuerpo.paymentMethod;
+    const moneda = payload.currency || payload.moneda || 'ARS';
+    const metodo = payload.method || payload.metodo || payload.paymentMethod;
 
-    // Para payment.created, usar timestamp del evento como timestamp_creado
-    // Para otros eventos, buscar el pago existente y actualizar timestamp_actual
     const timestampCreado = evento.includes('created') 
       ? event.timestamp 
-      : event.timestamp; // En otros casos, se actualizará desde el registro existente
+      : event.timestamp;
 
     const capturedAt = estado === 'approved' ? event.timestamp : null;
     const refundId = estado === 'refunded' 
-      ? this.extractBigInt(cuerpo.refundId || cuerpo.id_reembolso)
+      ? this.extractBigInt(payload.refundId || payload.id_reembolso)
       : null;
 
     // Buscar pago existente
@@ -414,6 +490,7 @@ export class EventNormalizationService {
 
     if (existingPago) {
       // Actualizar pago existente
+      logger.info(`🔄 Updating pago | id: ${idPago} | estado: ${estado}`);
       await pagoRepo.save({
         ...existingPago,
         estado: estado,
@@ -422,27 +499,26 @@ export class EventNormalizationService {
         captured_at: capturedAt || existingPago.captured_at,
         refund_id: refundId || existingPago.refund_id,
       });
+      logger.info(`✅ Pago ${idPago} updated`);
     } else {
-      // Crear nuevo pago (solo para payment.created)
-      if (evento.includes('created')) {
-        await pagoRepo.save({
-          id_pago: idPago,
-          id_usuario: idUsuario,
-          id_prestador: idPrestador || null,
-          id_solicitud: idSolicitud || null,
-          monto_total: montoTotal,
-          moneda: moneda,
-          metodo: metodo || null,
-          estado: estado,
-          timestamp_creado: timestampCreado,
-          timestamp_actual: event.timestamp,
-          captured_at: capturedAt,
-          refund_id: refundId,
-        } as Pago);
-      }
+      // Crear nuevo pago
+      logger.info(`💾 Creating pago | id: ${idPago} | usuario: ${idUsuario} | estado: ${estado}`);
+      await pagoRepo.save({
+        id_pago: idPago,
+        id_usuario: idUsuario,
+        id_prestador: idPrestador || null,
+        id_solicitud: idSolicitud || null,
+        monto_total: montoTotal,
+        moneda: moneda,
+        metodo: metodo || null,
+        estado: estado,
+        timestamp_creado: timestampCreado,
+        timestamp_actual: event.timestamp,
+        captured_at: capturedAt,
+        refund_id: refundId,
+      } as Pago);
+      logger.info(`✅ Pago ${idPago} created`);
     }
-
-    logger.debug(`Normalized payment event ${event.id} -> pago ${idPago}`);
   }
 
   /**
@@ -451,14 +527,16 @@ export class EventNormalizationService {
    */
   private async processPrestadorEvent(event: Event): Promise<void> {
     const cuerpo = event.cuerpo;
+    const payload = this.extractPayload(cuerpo);
     const prestadorRepo = AppDataSource.getRepository(Prestador);
 
     const idPrestador = this.extractBigInt(
-      cuerpo.prestadorId || cuerpo.id_prestador || cuerpo.providerId || cuerpo.id
+      payload.prestadorId || payload.id_prestador || payload.providerId || payload.userId || payload.id
     );
 
     if (!idPrestador) {
       logger.warn(`No se pudo extraer id_prestador del evento ${event.id}`);
+      logger.debug(`Payload: ${JSON.stringify(payload, null, 2).substring(0, 300)}`);
       return;
     }
 
@@ -471,17 +549,17 @@ export class EventNormalizationService {
     }
 
     // Extraer nombre y apellido
-    const nombre = cuerpo.nombre || cuerpo.name || cuerpo.firstName || null;
-    const apellido = cuerpo.apellido || cuerpo.lastName || null;
+    const nombre = payload.nombre || payload.name || payload.firstName || null;
+    const apellido = payload.apellido || payload.lastName || null;
 
     // Determinar si el perfil está completo
-    // Se considera completo si tiene: nombre, apellido, y otros campos importantes
     const perfilCompleto = !!(nombre && apellido && 
-      (cuerpo.foto || cuerpo.photo) && 
-      (cuerpo.zonas || cuerpo.zones) && 
-      (cuerpo.habilidades || cuerpo.skills));
+      (payload.foto || payload.photo) && 
+      (payload.zonas || payload.zones) && 
+      (payload.habilidades || payload.skills));
 
-    // Usar upsert para insertar o actualizar
+    logger.info(`💾 Saving prestador | id: ${idPrestador} | estado: ${estado}`);
+
     await prestadorRepo.save({
       id_prestador: idPrestador,
       nombre: nombre,
@@ -491,7 +569,7 @@ export class EventNormalizationService {
       perfil_completo: perfilCompleto,
     } as Prestador);
 
-    logger.debug(`Normalized prestador event ${event.id} -> prestador ${idPrestador}`);
+    logger.info(`✅ Prestador ${idPrestador} saved`);
   }
 
   /**
@@ -500,36 +578,39 @@ export class EventNormalizationService {
    */
   private async processRubroEvent(event: Event): Promise<void> {
     const cuerpo = event.cuerpo;
+    const payload = this.extractPayload(cuerpo);
     const rubroRepo = AppDataSource.getRepository(Rubro);
 
     const idRubro = this.extractBigInt(
-      cuerpo.rubroId || cuerpo.id_rubro || cuerpo.id
+      payload.rubroId || payload.id_rubro || payload.id
     );
 
     if (!idRubro) {
       logger.warn(`No se pudo extraer id_rubro del evento ${event.id}`);
+      logger.debug(`Payload: ${JSON.stringify(payload, null, 2).substring(0, 300)}`);
       return;
     }
 
     const evento = event.evento.toLowerCase();
 
-    // Si es baja, eliminar el registro (o marcarlo como inactivo si no queremos eliminar)
+    // Si es baja, eliminar el registro
     if (evento.includes('baja')) {
       await rubroRepo.delete({ id_rubro: idRubro });
-      logger.debug(`Deleted rubro ${idRubro} from event ${event.id}`);
+      logger.info(`🗑️ Deleted rubro ${idRubro}`);
       return;
     }
 
     // Extraer nombre del rubro
-    const nombreRubro = cuerpo.nombre || cuerpo.name || cuerpo.nombre_rubro || cuerpo.rubro || 'unknown';
+    const nombreRubro = payload.nombre || payload.name || payload.nombre_rubro || payload.rubro || 'unknown';
 
-    // Usar upsert para insertar o actualizar
+    logger.info(`💾 Saving rubro | id: ${idRubro} | nombre: ${nombreRubro}`);
+
     await rubroRepo.save({
       id_rubro: idRubro,
       nombre_rubro: nombreRubro,
     } as Rubro);
 
-    logger.debug(`Normalized rubro event ${event.id} -> rubro ${idRubro}`);
+    logger.info(`✅ Rubro ${idRubro} saved`);
   }
 
   /**
@@ -550,6 +631,21 @@ export class EventNormalizationService {
     }
 
     return null;
+  }
+
+  /**
+   * Extrae el payload real del evento
+   * Los eventos de Core Hub tienen estructura: { messageId, timestamp, payload: {...}, destination, routingKey }
+   * Los eventos directos tienen los datos directamente en cuerpo
+   */
+  private extractPayload(cuerpo: any): any {
+    // Si tiene payload, usarlo (Core Hub)
+    if (cuerpo.payload && typeof cuerpo.payload === 'object') {
+      return cuerpo.payload;
+    }
+    
+    // Si no, usar el cuerpo directamente (webhook directo)
+    return cuerpo;
   }
 
   /**

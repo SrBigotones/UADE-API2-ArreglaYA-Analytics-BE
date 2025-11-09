@@ -311,9 +311,8 @@ export class WebhookController {
         timestamp,
         payload,
         destination,
-        routingKey,
-        // Preserve original Core Hub structure
-        originalEvent: coreHubEvent
+        routingKey
+        // Removed originalEvent to avoid duplication and save storage
       },
       timestamp: timestamp ? new Date(timestamp) : new Date()
     };
