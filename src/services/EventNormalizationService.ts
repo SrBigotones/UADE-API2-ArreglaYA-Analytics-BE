@@ -499,32 +499,45 @@ export class EventNormalizationService {
     }
 
     // Determinar estado basado en el evento y el campo status del payload
-    let estado = payload.status || 'pending';
+    // Para eventos status_updated, el estado está en newStatus
+    const statusField = payload.newStatus || payload.status || 'PENDING_PAYMENT';
+    let estado = 'pending';
     
     // Mapear estados del payload a nuestros estados
-    if (payload.status === 'PENDING_PAYMENT') {
+    if (statusField === 'PENDING_PAYMENT' || statusField === 'pending') {
       estado = 'pending';
-    } else if (payload.status === 'APPROVED' || evento.includes('approved')) {
+    } else if (statusField === 'APPROVED' || statusField === 'approved' || evento.includes('approved')) {
       estado = 'approved';
-    } else if (payload.status === 'REJECTED' || evento.includes('rejected')) {
+    } else if (statusField === 'REJECTED' || statusField === 'rejected' || evento.includes('rejected')) {
       estado = 'rejected';
-    } else if (payload.status === 'EXPIRED' || evento.includes('expired')) {
+    } else if (statusField === 'EXPIRED' || statusField === 'expired' || evento.includes('expired')) {
       estado = 'expired';
-    } else if (evento.includes('refund') || evento.includes('reembolso')) {
+    } else if (statusField === 'REFUNDED' || statusField === 'refunded' || evento.includes('refund') || evento.includes('reembolso')) {
       estado = 'refunded';
     }
 
     const montoTotal = this.extractDecimal(
-      payload.amount || payload.monto || payload.monto_total || payload.total || 0
+      payload.amountTotal || payload.amount || payload.monto || payload.monto_total || payload.total || 0
     );
     const moneda = payload.currency || payload.moneda || 'ARS';
-    const metodo = payload.method || payload.metodo || payload.paymentMethod;
+    const metodo = payload.method || payload.metodo || payload.paymentMethod || payload.metodoPago;
 
     const timestampCreado = evento.includes('created') 
       ? event.timestamp 
       : event.timestamp;
 
-    const capturedAt = estado === 'approved' ? event.timestamp : null;
+    // Para captured_at, usar updatedAt si existe (eventos status_updated), sino usar event.timestamp
+    let capturedAt = null;
+    if (estado === 'approved') {
+      if (payload.updatedAt && Array.isArray(payload.updatedAt)) {
+        // updatedAt viene como array [year, month, day, hour, minute, second, nanosecond]
+        const [year, month, day, hour, minute, second] = payload.updatedAt;
+        capturedAt = new Date(year, month - 1, day, hour, minute, second);
+      } else {
+        capturedAt = event.timestamp;
+      }
+    }
+
     const refundId = estado === 'refunded' 
       ? this.extractBigInt(payload.refundId || payload.id_reembolso)
       : null;
