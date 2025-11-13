@@ -295,8 +295,10 @@ export class EventNormalizationService {
     );
 
     if (!idSolicitud || !idUsuario) {
-      logger.warn(`No se pudo extraer datos de solicitud del evento ${event.id}`);
-      logger.debug(`Payload: ${JSON.stringify(payload, null, 2).substring(0, 300)}`);
+      logger.warn(`❌ No se pudo extraer datos de solicitud del evento ${event.id}`);
+      logger.warn(`   squad: ${event.squad} | topico: ${event.topico} | evento: ${event.evento}`);
+      logger.warn(`   idSolicitud: ${idSolicitud} | idUsuario: ${idUsuario}`);
+      logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
       return;
     }
 
@@ -409,8 +411,10 @@ export class EventNormalizationService {
     );
 
     if (!idCotizacion || !idSolicitud || !idPrestador) {
-      logger.warn(`No se pudo extraer datos de cotizacion del evento ${event.id}`);
-      logger.debug(`Payload: ${JSON.stringify(payload, null, 2).substring(0, 300)}`);
+      logger.warn(`❌ No se pudo extraer datos de cotizacion del evento ${event.id}`);
+      logger.warn(`   squad: ${event.squad} | topico: ${event.topico} | evento: ${event.evento}`);
+      logger.warn(`   idCotizacion: ${idCotizacion} | idSolicitud: ${idSolicitud} | idPrestador: ${idPrestador}`);
+      logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
       return;
     }
 
@@ -487,8 +491,10 @@ export class EventNormalizationService {
     );
 
     if (!idPago || !idUsuario) {
-      logger.warn(`No se pudo extraer datos de pago del evento ${event.id}`);
-      logger.debug(`Payload: ${JSON.stringify(payload, null, 2).substring(0, 300)}`);
+      logger.warn(`❌ No se pudo extraer datos de pago del evento ${event.id}`);
+      logger.warn(`   squad: ${event.squad} | topico: ${event.topico} | evento: ${event.evento}`);
+      logger.warn(`   idPago: ${idPago} | idUsuario: ${idUsuario}`);
+      logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
       return;
     }
 
@@ -585,8 +591,9 @@ export class EventNormalizationService {
     );
 
     if (!idPrestador) {
-      logger.warn(`No se pudo extraer id_prestador del evento ${event.id}`);
-      logger.debug(`Payload: ${JSON.stringify(payload, null, 2).substring(0, 300)}`);
+      logger.warn(`❌ No se pudo extraer id_prestador del evento ${event.id}`);
+      logger.warn(`   squad: ${event.squad} | topico: ${event.topico} | evento: ${event.evento}`);
+      logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
       return;
     }
 
@@ -639,8 +646,9 @@ export class EventNormalizationService {
     );
 
     if (!idRubro) {
-      logger.warn(`No se pudo extraer id_rubro del evento ${event.id}`);
-      logger.debug(`Payload: ${JSON.stringify(payload, null, 2).substring(0, 300)}`);
+      logger.warn(`❌ No se pudo extraer id_rubro del evento ${event.id}`);
+      logger.warn(`   squad: ${event.squad} | topico: ${event.topico} | evento: ${event.evento}`);
+      logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
       return;
     }
 

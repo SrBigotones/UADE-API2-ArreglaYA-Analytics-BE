@@ -133,10 +133,11 @@ export class AdminController {
         eventType,     // 'user', 'payment', 'solicitud', etc.
         squad,         // Filtrar por squad específico
         limit = 100,   // Cantidad máxima de eventos a reprocesar
-        markAsUnprocessed = false  // Si true, solo marca como no procesados (para que el worker los procese)
+        markAsUnprocessed = false,  // Si true, solo marca como no procesados (para que el worker los procese)
+        processedOnly = false  // Si true, solo reprocesa eventos ya procesados. Si false, reprocesa los NO procesados
       } = req.body;
 
-      logger.info(`Iniciando reprocesamiento de eventos | type: ${eventType} | squad: ${squad} | limit: ${limit}`);
+      logger.info(`Iniciando reprocesamiento de eventos | type: ${eventType} | squad: ${squad} | limit: ${limit} | processedOnly: ${processedOnly}`);
 
       const eventRepository = AppDataSource.getRepository(Event);
       const queryBuilder = eventRepository.createQueryBuilder('event');
@@ -151,8 +152,14 @@ export class AdminController {
         queryBuilder.andWhere('event.squad = :squad', { squad });
       }
 
-      // Solo eventos que ya están marcados como procesados
-      queryBuilder.andWhere('event.processed = :processed', { processed: true });
+      // Filtrar por estado de procesamiento
+      if (processedOnly) {
+        // Solo eventos que ya están marcados como procesados
+        queryBuilder.andWhere('event.processed = :processed', { processed: true });
+      } else {
+        // Solo eventos que NO están procesados (los que fallaron)
+        queryBuilder.andWhere('event.processed = :processed', { processed: false });
+      }
       
       queryBuilder
         .orderBy('event.timestamp', 'DESC')
@@ -200,6 +207,9 @@ export class AdminController {
           errorCount++;
           errors.push({
             eventId: event.id,
+            squad: event.squad,
+            topico: event.topico,
+            evento: event.evento,
             error: error instanceof Error ? error.message : 'Unknown error'
           });
           logger.error(`Error reprocesando evento ${event.id}:`, error);
