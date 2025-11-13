@@ -724,11 +724,21 @@ export class EventNormalizationService {
     
     // Si es string
     if (typeof value === 'string') {
-      // Si contiene letras o guiones bajos, no es un ID numérico válido
-      if (/[a-zA-Z_]/.test(value)) {
-        return null;
+      // Intentar extraer solo los dígitos del string
+      // Esto maneja casos como "PREST_001" -> 1, "HAB_005" -> 5, etc.
+      const digitsOnly = value.replace(/\D/g, ''); // Elimina todo excepto dígitos
+      
+      if (digitsOnly.length === 0) {
+        return null; // No hay dígitos
       }
-      const parsed = parseInt(value, 10);
+      
+      const parsed = parseInt(digitsOnly, 10);
+      
+      // Si el string original contenía letras, logear warning
+      if (/[a-zA-Z]/.test(value) && !isNaN(parsed)) {
+        logger.warn(`⚠️ Extracted numeric ID ${parsed} from string "${value}". Consider using numeric IDs.`);
+      }
+      
       return isNaN(parsed) ? null : parsed;
     }
     
