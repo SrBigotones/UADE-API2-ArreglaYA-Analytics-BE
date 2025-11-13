@@ -11,7 +11,7 @@ export class Cotizacion {
   @PrimaryGeneratedColumn('increment')
   id: number;
 
-  @Column({ type: 'bigint', name: 'id_cotizacion', nullable: true })
+  @Column({ type: 'bigint', name: 'id_cotizacion', nullable: true, unique: true })
   id_cotizacion: number | null;
 
   @Column({ type: 'bigint', name: 'id_solicitud', nullable: false })

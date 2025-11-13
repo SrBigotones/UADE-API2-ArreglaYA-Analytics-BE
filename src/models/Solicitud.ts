@@ -15,8 +15,8 @@ export class Solicitud {
   @Column({ type: 'bigint', name: 'id_solicitud', nullable: false })
   id_solicitud: number;
 
-  @Column({ type: 'bigint', name: 'id_usuario', nullable: false })
-  id_usuario: number;
+  @Column({ type: 'bigint', name: 'id_usuario', nullable: true })
+  id_usuario: number | null;
 
   @Column({ type: 'bigint', name: 'id_prestador', nullable: true })
   id_prestador: number | null;
