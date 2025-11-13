@@ -531,7 +531,14 @@ export class EventNormalizationService {
       payload.amountTotal || payload.amount || payload.monto || payload.monto_total || payload.total || 0
     );
     const moneda = payload.currency || payload.moneda || 'ARS';
-    const metodo = payload.method || payload.metodo || payload.paymentMethod || payload.metodoPago;
+    
+    // Para eventos method_selected, el método está en methodType
+    let metodo = null;
+    if (evento.includes('method_selected')) {
+      metodo = payload.methodType || payload.method || payload.metodo;
+    } else {
+      metodo = payload.method || payload.metodo || payload.paymentMethod || payload.metodoPago;
+    }
 
     const timestampCreado = evento.includes('created') 
       ? event.timestamp 
