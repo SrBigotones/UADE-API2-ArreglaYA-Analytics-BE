@@ -22,41 +22,55 @@ export class EventNormalizationService {
   public async normalizeEvent(event: Event): Promise<void> {
     try {
       const evento = event.evento.toLowerCase();
+      const topico = event.topico.toLowerCase();
       
-      logger.info(`🔄 NORMALIZATION | eventId: ${event.id} | squad: ${event.squad} | evento: ${event.evento}`);
+      logger.info(`🔄 NORMALIZATION | eventId: ${event.id} | squad: ${event.squad} | topico: ${topico} | evento: ${evento}`);
       
       // Mapeo de eventos a funciones de normalización
-      // También manejar eventos en español
-      if (evento.includes('user') || evento.includes('usuario')) {
+      // PRIORIDAD: Filtrar por TOPICO primero, luego por EVENTO
+      
+      // 1. Pagos: topico = 'payment'
+      if (topico === 'payment') {
+        logger.info(`💳 Processing PAYMENT event`);
+        await this.processPaymentEvent(event);
+      }
+      // 2. Usuarios: topico = 'user' o evento contiene 'user'/'usuario'
+      else if (topico === 'user' || evento.includes('user') || evento.includes('usuario')) {
         logger.info(`👤 Processing USER event`);
         await this.processUserEvent(event);
-      } else if (evento.includes('prestador') && (evento.includes('alta') || evento.includes('baja') || evento.includes('modificacion'))) {
-        await this.processPrestadorEvent(event);
-      } else if (evento.includes('rubro') && (evento.includes('alta') || evento.includes('baja') || evento.includes('modificacion'))) {
-        await this.processRubroEvent(event);
-      } else if (
-        evento.includes('servicio') || evento.includes('provider') || 
-        evento.includes('habilidad') ||
-        evento.includes('skill') || evento.includes('zona') || evento.includes('zone')
-      ) {
-        await this.processServiceEvent(event);
-      } else if (
-        evento.includes('solicitud') || evento.includes('request') ||
-        evento.includes('pedido') || evento.includes('order')
-      ) {
+      }
+      // 3. Solicitudes: topico = 'solicitud' o evento contiene 'solicitud'/'request'
+      else if (topico === 'solicitud' || evento.includes('solicitud') || evento.includes('request') || evento.includes('pedido') || evento.includes('order')) {
+        logger.info(`📝 Processing SOLICITUD event`);
         await this.processRequestEvent(event);
-      } else if (
-        evento.includes('cotizacion') || evento.includes('quote') ||
-        evento.includes('cotización')
-      ) {
+      }
+      // 4. Cotizaciones: topico = 'cotizacion' o evento contiene 'cotizacion'
+      else if (topico === 'cotizacion' || evento.includes('cotizacion') || evento.includes('quote') || evento.includes('cotización')) {
+        logger.info(`💰 Processing COTIZACION event`);
         await this.processQuoteEvent(event);
-      } else if (
-        evento.includes('payment') || evento.includes('pago') ||
-        evento.includes('refund') || evento.includes('reembolso')
+      }
+      // 5. Prestadores: topico = 'prestador' o eventos de prestador
+      else if (topico === 'prestador' || (evento.includes('prestador') && (evento.includes('alta') || evento.includes('baja') || evento.includes('modificacion')))) {
+        logger.info(`👨‍🔧 Processing PRESTADOR event`);
+        await this.processPrestadorEvent(event);
+      }
+      // 6. Rubros: topico = 'rubro' o eventos de rubro
+      else if (topico === 'rubro' || (evento.includes('rubro') && (evento.includes('alta') || evento.includes('baja') || evento.includes('modificacion')))) {
+        logger.info(`📋 Processing RUBRO event`);
+        await this.processRubroEvent(event);
+      }
+      // 7. Servicios, Habilidades, Zonas
+      else if (
+        topico === 'servicio' || topico === 'habilidad' || topico === 'zona' ||
+        evento.includes('servicio') || evento.includes('provider') || 
+        evento.includes('habilidad') || evento.includes('skill') || 
+        evento.includes('zona') || evento.includes('zone')
       ) {
-        await this.processPaymentEvent(event);
-      } else {
-        logger.warn(`⚠️ No handler for evento: ${evento}`);
+        logger.info(`🛠️ Processing SERVICE/SKILL/ZONE event`);
+        await this.processServiceEvent(event);
+      }
+      else {
+        logger.warn(`⚠️ No handler for topico: ${topico} | evento: ${evento}`);
       }
       
       logger.info(`✅ NORMALIZATION DONE | eventId: ${event.id}`);
@@ -654,12 +668,17 @@ export class EventNormalizationService {
 
   /**
    * Extrae un BigInt de diferentes formatos
+   * Maneja números, strings numéricos, y filtra strings no numéricos (ej: "HAB_002")
    */
   private extractBigInt(value: any): number | null {
     if (value === null || value === undefined) return null;
     
-    // Si es string numérico
+    // Si es string
     if (typeof value === 'string') {
+      // Si contiene letras o guiones bajos, no es un ID numérico válido
+      if (/[a-zA-Z_]/.test(value)) {
+        return null;
+      }
       const parsed = parseInt(value, 10);
       return isNaN(parsed) ? null : parsed;
     }
