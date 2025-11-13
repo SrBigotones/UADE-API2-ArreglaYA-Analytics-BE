@@ -490,8 +490,19 @@ export class EventNormalizationService {
       payload.requestId || payload.solicitudId || payload.id_solicitud || payload.orderId
     );
 
-    if (!idPago || !idUsuario) {
-      logger.warn(`❌ No se pudo extraer datos de pago del evento ${event.id}`);
+    // Para eventos status_updated, solo necesitamos idPago (el userId ya existe en el registro)
+    const isStatusUpdate = evento.includes('status_updated') || evento.includes('update');
+    
+    if (!idPago) {
+      logger.warn(`❌ No se pudo extraer idPago del evento ${event.id}`);
+      logger.warn(`   squad: ${event.squad} | topico: ${event.topico} | evento: ${event.evento}`);
+      logger.warn(`   idPago: ${idPago}`);
+      logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
+      return;
+    }
+
+    if (!isStatusUpdate && !idUsuario) {
+      logger.warn(`❌ No se pudo extraer idUsuario del evento ${event.id}`);
       logger.warn(`   squad: ${event.squad} | topico: ${event.topico} | evento: ${event.evento}`);
       logger.warn(`   idPago: ${idPago} | idUsuario: ${idUsuario}`);
       logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
@@ -547,11 +558,15 @@ export class EventNormalizationService {
 
     if (existingPago) {
       // Actualizar pago existente usando upsert
-      logger.info(`🔄 Updating pago | id: ${idPago} | estado: ${estado}`);
+      logger.info(`🔄 Updating pago | id: ${idPago} | old_estado: ${existingPago.estado} | new_estado: ${estado}`);
+      
+      // Si el pago existente no tiene userId pero el evento sí, actualizarlo
+      const finalUserId = existingPago.id_usuario || idUsuario || null;
+      
       await pagoRepo.upsert(
         {
           id_pago: idPago,
-          id_usuario: idUsuario,
+          id_usuario: finalUserId,
           id_prestador: idPrestador || existingPago.id_prestador,
           id_solicitud: idSolicitud || existingPago.id_solicitud,
           monto_total: montoTotal || existingPago.monto_total,
@@ -565,14 +580,20 @@ export class EventNormalizationService {
         },
         ['id_pago']
       );
-      logger.info(`✅ Pago ${idPago} updated`);
+      logger.info(`✅ Pago ${idPago} updated to estado: ${estado}`);
     } else {
       // Crear nuevo pago
-      logger.info(`💾 Creating pago | id: ${idPago} | usuario: ${idUsuario} | estado: ${estado}`);
+      // Nota: puede no tener userId si es un evento status_updated que llegó antes que created
+      if (!idUsuario) {
+        logger.warn(`⚠️ Creando pago ${idPago} sin userId. Evento: ${event.evento}`);
+        logger.warn(`   El userId se completará cuando llegue el evento 'created'`);
+      }
+      
+      logger.info(`💾 Creating pago | id: ${idPago} | usuario: ${idUsuario || 'NULL'} | estado: ${estado}`);
       await pagoRepo.upsert(
         {
           id_pago: idPago,
-          id_usuario: idUsuario,
+          id_usuario: idUsuario || null,
           id_prestador: idPrestador || null,
           id_solicitud: idSolicitud || null,
           monto_total: montoTotal,

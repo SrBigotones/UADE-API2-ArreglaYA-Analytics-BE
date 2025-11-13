@@ -15,8 +15,8 @@ export class Pago {
   @Column({ type: 'bigint', name: 'id_pago', nullable: false })
   id_pago: number;
 
-  @Column({ type: 'bigint', name: 'id_usuario', nullable: false })
-  id_usuario: number;
+  @Column({ type: 'bigint', name: 'id_usuario', nullable: true })
+  id_usuario: number | null;
 
   @Column({ type: 'bigint', name: 'id_prestador', nullable: true })
   id_prestador: number | null;
