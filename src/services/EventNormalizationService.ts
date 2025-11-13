@@ -39,15 +39,15 @@ export class EventNormalizationService {
         logger.info(`👤 Processing USER event`);
         await this.processUserEvent(event);
       }
-      // 3. Solicitudes: topico = 'solicitud' o evento contiene 'solicitud'/'request'
-      else if (topico === 'solicitud' || evento.includes('solicitud') || evento.includes('request') || evento.includes('pedido') || evento.includes('order')) {
-        logger.info(`📝 Processing SOLICITUD event`);
-        await this.processRequestEvent(event);
-      }
-      // 4. Cotizaciones: topico = 'cotizacion' o evento contiene 'cotizacion'
-      else if (topico === 'cotizacion' || evento.includes('cotizacion') || evento.includes('quote') || evento.includes('cotización')) {
-        logger.info(`💰 Processing COTIZACION event`);
+      // 3. Cotizaciones: topico = 'cotizacion' o eventos especiales con cotizaciones
+      else if (topico === 'cotizacion' || evento.includes('cotizacion') || evento.includes('quote') || evento.includes('cotización') || evento === 'resumen') {
+        logger.info(`� Processing COTIZACION event`);
         await this.processQuoteEvent(event);
+      }
+      // 4. Solicitudes: topico = 'solicitud' o evento contiene 'solicitud'/'request'
+      else if (topico === 'solicitud' || evento.includes('solicitud') || evento.includes('request') || evento.includes('pedido') || evento.includes('order')) {
+        logger.info(`� Processing SOLICITUD event`);
+        await this.processRequestEvent(event);
       }
       // 5. Prestadores: topico = 'prestador' o eventos de prestador
       else if (topico === 'prestador' || (evento.includes('prestador') && (evento.includes('alta') || evento.includes('baja') || evento.includes('modificacion')))) {
@@ -358,6 +358,52 @@ export class EventNormalizationService {
     const cotizacionRepo = AppDataSource.getRepository(Cotizacion);
 
     const evento = event.evento.toLowerCase();
+
+    // Caso especial: solicitud.resumen con cotizaciones reales
+    if (evento.includes('resumen') && payload.solicitud && payload.solicitud.cotizaciones) {
+      logger.info(`📊 Processing RESUMEN cotizaciones | solicitudId: ${payload.solicitud.solicitudId}`);
+      
+      const idSolicitud = this.extractBigInt(payload.solicitud.solicitudId);
+      if (!idSolicitud) {
+        logger.warn(`❌ No solicitudId in resumen event ${event.id}`);
+        return;
+      }
+
+      const cotizaciones = payload.solicitud.cotizaciones;
+      if (!Array.isArray(cotizaciones)) {
+        logger.warn(`❌ cotizaciones is not an array in resumen event ${event.id}`);
+        return;
+      }
+
+      for (const cotizacion of cotizaciones) {
+        const idCotizacion = this.extractBigInt(cotizacion.cotizacionId);
+        const idPrestador = this.extractBigInt(cotizacion.prestadorId);
+        const monto = this.extractDecimal(cotizacion.monto);
+
+        if (!idCotizacion || !idPrestador) {
+          logger.warn(`⚠️ Skipping cotizacion without id or prestador in resumen`);
+          continue;
+        }
+
+        logger.info(`💾 Saving cotizacion from resumen | id: ${idCotizacion} | solicitud: ${idSolicitud} | prestador: ${idPrestador} | monto: ${monto}`);
+
+        await cotizacionRepo.upsert(
+          {
+            id_cotizacion: idCotizacion,
+            id_solicitud: idSolicitud,
+            id_usuario: null, // No viene en el resumen
+            id_prestador: idPrestador,
+            estado: 'emitida',
+            monto: monto || null,
+            timestamp: event.timestamp,
+          },
+          ['id_cotizacion']
+        );
+      }
+
+      logger.info(`✅ Resumen cotizaciones processed | total: ${cotizaciones.length}`);
+      return;
+    }
 
     // Caso especial: matching.emitida viene con array de solicitudes con top3 de cotizaciones
     if (evento.includes('emitida') && payload.solicitudes && Array.isArray(payload.solicitudes)) {
