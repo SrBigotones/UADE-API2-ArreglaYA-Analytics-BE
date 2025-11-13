@@ -717,6 +717,30 @@ export class EventNormalizationService {
     );
 
     logger.info(`✅ Prestador ${idPrestador} saved`);
+
+    // Procesar habilidades del prestador si vienen en el payload
+    if (payload.habilidades && Array.isArray(payload.habilidades)) {
+      const habilidadRepo = AppDataSource.getRepository(Habilidad);
+      logger.info(`🔧 Processing ${payload.habilidades.length} habilidades for prestador ${idPrestador}`);
+      
+      for (const hab of payload.habilidades) {
+        const habId = this.extractBigInt(hab.id || hab.id_habilidad || hab.habilidadId);
+        const habNombre = hab.nombre || hab.name || 'unknown';
+        
+        if (habId) {
+          await habilidadRepo.upsert(
+            {
+              id_usuario: idPrestador,
+              id_habilidad: habId,
+              nombre_habilidad: habNombre,
+              activa: true,
+            },
+            ['id_usuario', 'id_habilidad']
+          );
+          logger.debug(`  ✅ Habilidad ${habId} (${habNombre}) saved for prestador ${idPrestador}`);
+        }
+      }
+    }
   }
 
   /**
