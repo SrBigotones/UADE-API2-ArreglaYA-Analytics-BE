@@ -101,7 +101,7 @@ router.get('/distribucion-metodos', controller.getDistribucionMetodosPago.bind(c
  * /api/metrica/pagos/distribucion-eventos:
  *   get:
  *     summary: Distribución por tipo de evento de pago
- *     description: Retorna la cantidad de pagos agrupados por estado (aprobado, rechazado, expirado, pendiente)
+ *     description: Retorna la cantidad de pagos agrupados por estado (aprobado, rechazado, pendiente)
  *     tags: [Métricas - Pagos]
  *     security:
  *       - bearerAuth: []

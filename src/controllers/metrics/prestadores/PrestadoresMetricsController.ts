@@ -244,7 +244,8 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
 
   /**
    * GET /api/metrica/servicios/distribucion
-   * 7. Distribución de servicios
+   * 7. Distribución de servicios por cantidad de prestadores
+   * Muestra cuántos prestadores ofrecen cada tipo de servicio/habilidad
    */
   public async getDistribucionServicios(req: Request, res: Response): Promise<void> {
     try {
@@ -252,41 +253,37 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
       const filters = this.parseSegmentationParams(req);
 
-      // Contar solicitudes agrupadas por habilidad (que representa el tipo de servicio)
       const habilidadesRepo = AppDataSource.getRepository(Habilidad);
-      const solicitudesRepo = AppDataSource.getRepository(Solicitud);
 
-      const qb = solicitudesRepo
-        .createQueryBuilder('solicitud')
-        .where('solicitud.timestamp >= :startDate', { startDate: dateRanges.startDate })
-        .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate });
+      // Contar PRESTADORES (usuarios) por habilidad - muestra la oferta de servicios
+      const qb = habilidadesRepo
+        .createQueryBuilder('hab')
+        .select('hab.nombre_habilidad', 'habilidad')
+        .addSelect('COUNT(DISTINCT hab.id_usuario)', 'count')
+        .where('hab.activa = true');  // Solo habilidades activas
       
-      this.applySolicitudFilters(qb, filters);
-      const solicitudes = await qb.getMany();
+      // Filtrar prestadores activos en el período seleccionado
+      qb.innerJoin('usuarios', 'u', 'u.id_usuario = hab.id_usuario')
+        .andWhere('u.timestamp <= :endDate', { endDate: dateRanges.endDate });
 
-      // Agrupar por habilidad asociada (necesitaríamos relación entre solicitud y habilidad)
-      // Por ahora agrupar por nombre de habilidad si está disponible en las solicitudes
-      const distribution: PieMetricResponse = {};
-
-      // Si las solicitudes tienen información de habilidad, agrupar por eso
-      // Si no, usar rubros o categorías
-      const habilidades = await habilidadesRepo.find();
-      
-      for (const habilidad of habilidades) {
-        const countQb = solicitudesRepo
-          .createQueryBuilder('solicitud')
-          .innerJoin('habilidades', 'hab', 'hab.id_usuario = solicitud.id_prestador')
-          .where('hab.id_habilidad = :idHabilidad', { idHabilidad: habilidad.id_habilidad })
-          .andWhere('solicitud.timestamp >= :startDate', { startDate: dateRanges.startDate })
-          .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate });
-        
-        this.applySolicitudFilters(countQb, filters);
-        const count = await countQb.getCount();
-        
-        if (count > 0) {
-          distribution[habilidad.nombre_habilidad] = count;
-        }
+      // Aplicar filtros de zona y rubro si existen
+      if (filters && filters.zona) {
+        qb.andWhere('u.ubicacion = :zona', { zona: filters.zona });
       }
+
+      if (filters && filters.rubro) {
+        qb.andWhere('hab.id_rubro = :rubro', { rubro: filters.rubro });
+      }
+
+      qb.groupBy('hab.id_habilidad, hab.nombre_habilidad')
+        .having('COUNT(DISTINCT hab.id_usuario) > 0');
+
+      const results = await qb.getRawMany();
+      
+      const distribution: PieMetricResponse = {};
+      results.forEach(row => {
+        distribution[row.habilidad] = parseInt(row.count);
+      });
 
       res.status(200).json({ success: true, data: distribution });
     } catch (error) {

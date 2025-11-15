@@ -202,6 +202,7 @@ export class EventNormalizationService {
       const idUsuario = this.extractBigInt(cuerpo.userId || cuerpo.id_usuario || cuerpo.providerId || cuerpo.prestadorId);
       const idHabilidad = this.extractBigInt(cuerpo.habilidadId || cuerpo.skillId || cuerpo.id_habilidad || cuerpo.id);
       const nombreHabilidad = cuerpo.nombre || cuerpo.name || cuerpo.habilidad || cuerpo.skill || 'unknown';
+      const idRubro = this.extractBigInt(cuerpo.id_rubro || cuerpo.rubroId || cuerpo.categoryId);
 
       if (idUsuario && idHabilidad) {
         const activa = !evento.includes('baja') && !evento.includes('deactivate');
@@ -210,10 +211,11 @@ export class EventNormalizationService {
           id_usuario: idUsuario,
           id_habilidad: idHabilidad,
           nombre_habilidad: nombreHabilidad,
+          id_rubro: idRubro,
           activa: activa,
         } as Habilidad);
 
-        logger.debug(`Normalized skill event ${event.id} -> habilidad ${idHabilidad} para usuario ${idUsuario}`);
+        logger.debug(`Normalized skill event ${event.id} -> habilidad ${idHabilidad} para usuario ${idUsuario}, rubro ${idRubro}`);
       }
 
       // Si hay múltiples habilidades en un array (prestador.modificacion)
@@ -221,12 +223,14 @@ export class EventNormalizationService {
         for (const hab of cuerpo.habilidades) {
           const habId = this.extractBigInt(hab.id || hab.id_habilidad || hab.habilidadId);
           const habNombre = hab.nombre || hab.name || hab.habilidad || 'unknown';
+          const habIdRubro = this.extractBigInt(hab.id_rubro || hab.rubroId || hab.categoryId);
           
           if (idUsuario && habId) {
             await habilidadRepo.save({
               id_usuario: idUsuario,
               id_habilidad: habId,
               nombre_habilidad: habNombre,
+              id_rubro: habIdRubro,
               activa: true,
             } as Habilidad);
           }
