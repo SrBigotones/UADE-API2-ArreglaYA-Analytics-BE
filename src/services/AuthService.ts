@@ -38,15 +38,17 @@ export class AuthService {
   }
 
   /**
-   * Decodifica el payload de un JWT sin verificar la firma
+   * Decodifica el payload de un JWT (sin verificar la firma)
+   * NOTA: Este método solo se llama DESPUÉS de que el servicio de usuarios validó el token
    * @param token JWT completo
    * @returns Payload decodificado
    */
   private decodeJwtPayload(token: string): any {
     const parts = token.split('.');
     if (parts.length !== 3) {
-      logger.error('JWT formato inválido', { partsCount: parts.length });
-      throw new Error('Token inválido: formato incorrecto');
+      // Si llegamos acá después de que el servicio validó, es un error inesperado
+      logger.error('JWT formato inválido después de validación', { partsCount: parts.length });
+      throw new Error('Error al procesar el token');
     }
     
     try {
@@ -54,10 +56,11 @@ export class AuthService {
       const decoded = JSON.parse(Buffer.from(parts[1], 'base64').toString());
       return decoded;
     } catch (error) {
-      logger.error('Error decodificando JWT', { 
+      // Si llegamos acá después de que el servicio validó, es un error inesperado
+      logger.error('Error decodificando JWT después de validación', { 
         error: error instanceof Error ? error.message : 'Error desconocido' 
       });
-      throw new Error('Token inválido: no se pudo decodificar');
+      throw new Error('Error al procesar el token');
     }
   }
 
@@ -184,11 +187,6 @@ export class AuthService {
    */
   async verifyToken(token: string): Promise<UserInfo> {
     try {
-      logger.info('Verificando token', {
-        tokenLength: token?.length,
-        tokenStart: token?.substring(0, 20)
-      });
-
       // Verificar si el bypass está activado
       const bypassEnabled = await featureFlagService.isEnabled(FEATURE_FLAGS.BYPASS_AUTH_SERVICE);
       
@@ -207,28 +205,39 @@ export class AuthService {
         };
       }
 
-      // Decodificar el JWT para obtener la información del usuario (sin verificar firma)
-      const payload = this.decodeJwtPayload(token);
-      
-      logger.info('Token decodificado', { 
-        sub: payload.sub,
-        role: payload.role,
-        exp: payload.exp,
-        allKeys: Object.keys(payload)
-      });
+      // Validar el token contra el servicio de usuarios
+      // El servicio valida: firma, expiración, formato, y revocación
+      const response = await axiosInstance.post(
+        `${this.usersApiBaseUrl}/api/token/validate`,
+        { token },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 10000
+        }
+      );
 
-      // El JWT contiene: role, sub (email), iat, exp
-      // Validar que el token contenga la información mínima necesaria
+      // Si el servicio responde 200, el token es válido
+      if (response.status !== 200) {
+        logger.error('Servicio de usuarios rechazó el token', { 
+          status: response.status 
+        });
+        throw new Error('Token inválido o expirado');
+      }
+
+      // Decodificar el JWT para obtener la información del usuario
+      // Si falla aquí (después de que el servicio validó), es un error 500
+      const payload = this.decodeJwtPayload(token);
+
+      // Validar que el token contenga la información que necesitamos
       if (!payload.sub || !payload.role) {
         logger.error('Token sin campos requeridos', {
           hasSub: !!payload.sub,
           hasRole: !!payload.role,
           payload
         });
+        // Este es un error del token en sí, no de validación
         throw new Error('Token inválido: faltan campos requeridos (sub, role)');
       }
-
-      logger.info('Token válido', { sub: payload.sub, role: payload.role });
 
       return {
         id: payload.sub,
@@ -244,30 +253,34 @@ export class AuthService {
         errorName: error instanceof Error ? error.constructor.name : typeof error
       });
       
-      // Si es un error de axios, manejarlo específicamente
+      // Si es un error de axios del servicio de usuarios
       if (isAxiosError(error)) {
+        // 401: Token inválido, expirado, o firma incorrecta
         if (error.response?.status === 401) {
           throw new Error('Token inválido o expirado');
         }
+        // 403: Token válido pero sin permisos
         if (error.response?.status === 403) {
           throw new Error('Permisos insuficientes');
         }
+        // No se puede conectar al servicio de usuarios
         if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
           throw new Error('Servicio de autenticación no disponible');
         }
+        // Cualquier otro error de axios es problema del servicio (500)
+        throw new Error('Error al comunicarse con el servicio de autenticación');
       }
       
-      // Si ya es un error con mensaje "Token inválido", re-lanzarlo tal cual
+      // Si ya es un error con mensaje "Token inválido", re-lanzarlo (401)
       if (error instanceof Error && error.message.startsWith('Token inválido')) {
         throw error;
       }
       
-      // Si es cualquier otro error, re-lanzarlo (para no ocultar información)
+      // Cualquier otro error es inesperado (500)
       if (error instanceof Error) {
         throw error;
       }
       
-      // Solo si no es un Error, crear uno genérico
       throw new Error('Error inesperado al verificar token');
     }
   }

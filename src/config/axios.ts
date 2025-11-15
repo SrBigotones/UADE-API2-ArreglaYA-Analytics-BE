@@ -10,13 +10,21 @@ const requestInterceptor = (config: InternalAxiosRequestConfig) => {
   const method = config.method?.toUpperCase() || 'UNKNOWN';
   const baseURL = config.baseURL || '';
   const fullUrl = baseURL ? `${baseURL}${url}` : url;
-  const payload = config.data ? JSON.stringify(config.data) : 'N/A';
 
-  logger.info(`🔗 HTTP REQUEST: ${method} ${fullUrl} | Payload: ${payload}`, {
+  // Enmascarar tokens en el payload para el log
+  let dataToLog = config.data;
+  if (config.data && typeof config.data === 'object' && config.data.token) {
+    const token = config.data.token;
+    dataToLog = {
+      ...config.data,
+      token: token ? `${token.substring(0, 20)}...${token.substring(token.length - 10)}` : token
+    };
+  }
+
+  logger.info(`→ HTTP Request: ${method} ${fullUrl}`, {
     method,
     url: fullUrl,
-    headers: config.headers, // Log todos los headers
-    payload: config.data,
+    data: dataToLog,
     params: config.params
   });
   return config;
@@ -26,7 +34,7 @@ const requestInterceptor = (config: InternalAxiosRequestConfig) => {
  * Request error interceptor
  */
 const requestErrorInterceptor = (error: any) => {
-  logger.error('❌ HTTP REQUEST ERROR', { error: error.message });
+  logger.error('→ HTTP Request Error', { error: error.message });
   return Promise.reject(error);
 };
 
@@ -39,17 +47,10 @@ const responseInterceptor = (response: AxiosResponse) => {
   const method = response.config.method?.toUpperCase() || 'UNKNOWN';
   const baseURL = response.config.baseURL || '';
   const fullUrl = baseURL ? `${baseURL}${url}` : url;
-  const responseData = response.data 
-    ? (typeof response.data === 'string' 
-        ? response.data.substring(0, 200) 
-        : JSON.stringify(response.data).substring(0, 200)) 
-    : 'N/A';
 
-  logger.info(`✅ HTTP RESPONSE: ${method} ${fullUrl} - Status: ${response.status} | Data: ${responseData}`, {
+  logger.info(`← HTTP Response: ${method} ${fullUrl} - ${response.status}`, {
     method,
     url: fullUrl,
-    requestHeaders: response.config.headers, // Headers enviados
-    responseHeaders: response.headers,       // Headers recibidos
     status: response.status,
     statusText: response.statusText,
     data: response.data
@@ -66,31 +67,15 @@ const responseErrorInterceptor = (error: AxiosError) => {
   const baseURL = error.config?.baseURL || '';
   const fullUrl = baseURL ? `${baseURL}${url}` : url;
   const status = error.response?.status || 'N/A';
-  const errorData = error.response?.data 
-    ? JSON.stringify(error.response.data).substring(0, 200) 
-    : 'N/A';
-    
-  // Log detallado para errores de TLS/SSL
-  if (error.code === 'ECONNRESET' || error.message.includes('TLS') || error.message.includes('SSL')) {
-    logger.error('SSL/TLS Connection Error Details:', {
-      code: error.code,
-      message: error.message,
-      stack: error.stack,
-      url: fullUrl,
-      protocol: url.startsWith('https') ? 'HTTPS' : 'HTTP',
-      nodeEnv: process.env.NODE_ENV
-    });
-  }
 
-  logger.error(`❌ HTTP RESPONSE ERROR: ${method} ${fullUrl} - Status: ${status} | Error: ${errorData}`, {
+  logger.error(`← HTTP Response Error: ${method} ${fullUrl} - ${status}`, {
     method,
     url: fullUrl,
     status,
-    requestHeaders: error.config?.headers,   // Headers que enviamos
-    responseHeaders: error.response?.headers, // Headers que recibimos
+    statusText: error.response?.statusText,
     errorCode: error.code,
-    message: error.message,
-    errorData: error.response?.data
+    errorMessage: error.message,
+    data: error.response?.data
   });
   return Promise.reject(error);
 };
@@ -143,16 +128,6 @@ export function createAxiosInstance(config?: any): AxiosInstance {
 
   const instance = axios.create(mergedConfig);
   applyLoggingInterceptors(instance);
-  
-  // Log HTTPS configuration
-  logger.info('Creating Axios instance with enhanced HTTPS config:', {
-    rejectUnauthorized: process.env.NODE_ENV === 'production',
-    environment: process.env.NODE_ENV,
-    minVersion: 'TLSv1.2',
-    maxVersion: 'TLSv1.3',
-    timeout: mergedConfig.timeout,
-    keepAlive: true
-  });
 
   return instance;
 }
