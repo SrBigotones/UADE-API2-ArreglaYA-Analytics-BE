@@ -45,11 +45,20 @@ export class AuthService {
   private decodeJwtPayload(token: string): any {
     const parts = token.split('.');
     if (parts.length !== 3) {
-      throw new Error('Token inválido');
+      logger.error('JWT formato inválido', { partsCount: parts.length });
+      throw new Error('Token inválido: formato incorrecto');
     }
     
-    // Decodificar el payload (segunda parte del JWT)
-    return JSON.parse(Buffer.from(parts[1], 'base64').toString());
+    try {
+      // Decodificar el payload (segunda parte del JWT)
+      const decoded = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+      return decoded;
+    } catch (error) {
+      logger.error('Error decodificando JWT', { 
+        error: error instanceof Error ? error.message : 'Error desconocido' 
+      });
+      throw new Error('Token inválido: no se pudo decodificar');
+    }
   }
 
   /**
@@ -175,6 +184,11 @@ export class AuthService {
    */
   async verifyToken(token: string): Promise<UserInfo> {
     try {
+      logger.info('Verificando token', {
+        tokenLength: token?.length,
+        tokenStart: token?.substring(0, 20)
+      });
+
       // Verificar si el bypass está activado
       const bypassEnabled = await featureFlagService.isEnabled(FEATURE_FLAGS.BYPASS_AUTH_SERVICE);
       
@@ -193,26 +207,28 @@ export class AuthService {
         };
       }
 
-      logger.info('Verificando token con servicio de usuarios');
-
-      // Decodificar el JWT para obtener la información del usuario
+      // Decodificar el JWT para obtener la información del usuario (sin verificar firma)
       const payload = this.decodeJwtPayload(token);
       
-      logger.info('JWT decodificado exitosamente', { 
+      logger.info('Token decodificado', { 
+        sub: payload.sub,
         role: payload.role,
-        sub: payload.sub
+        exp: payload.exp,
+        allKeys: Object.keys(payload)
       });
 
       // El JWT contiene: role, sub (email), iat, exp
       // Validar que el token contenga la información mínima necesaria
       if (!payload.sub || !payload.role) {
-        logger.error('Token no contiene información completa', {
+        logger.error('Token sin campos requeridos', {
           hasSub: !!payload.sub,
           hasRole: !!payload.role,
-          payloadKeys: Object.keys(payload)
+          payload
         });
-        throw new Error('Token no contiene información completa del usuario');
+        throw new Error('Token inválido: faltan campos requeridos (sub, role)');
       }
+
+      logger.info('Token válido', { sub: payload.sub, role: payload.role });
 
       return {
         id: payload.sub,
@@ -223,27 +239,36 @@ export class AuthService {
         active: true
       };
     } catch (error) {
+      logger.error('Error al verificar token', { 
+        error: error instanceof Error ? error.message : 'Error desconocido',
+        errorName: error instanceof Error ? error.constructor.name : typeof error
+      });
+      
+      // Si es un error de axios, manejarlo específicamente
       if (isAxiosError(error)) {
         if (error.response?.status === 401) {
-          logger.warn('Token inválido o expirado');
           throw new Error('Token inválido o expirado');
         }
         if (error.response?.status === 403) {
-          logger.warn('Token sin permisos suficientes');
           throw new Error('Permisos insuficientes');
         }
-        
-        // Si no se puede conectar al servicio de usuarios
         if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
-          logger.warn('Servicio de usuarios no disponible para verificación de token');
           throw new Error('Servicio de autenticación no disponible');
         }
       }
       
-      logger.error('Error al verificar token', { 
-        error: error instanceof Error ? error.message : 'Error desconocido'
-      });
-      throw new Error('Error al verificar token');
+      // Si ya es un error con mensaje "Token inválido", re-lanzarlo tal cual
+      if (error instanceof Error && error.message.startsWith('Token inválido')) {
+        throw error;
+      }
+      
+      // Si es cualquier otro error, re-lanzarlo (para no ocultar información)
+      if (error instanceof Error) {
+        throw error;
+      }
+      
+      // Solo si no es un Error, crear uno genérico
+      throw new Error('Error inesperado al verificar token');
     }
   }
 
