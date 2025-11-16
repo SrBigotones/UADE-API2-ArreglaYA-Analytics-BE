@@ -280,9 +280,17 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
 
       const results = await qb.getRawMany();
       
-      const distribution: PieMetricResponse = {};
+      // Construir distribución raw
+      const rawDistribution: Record<string, number> = {};
       results.forEach(row => {
-        distribution[row.habilidad] = parseInt(row.count);
+        rawDistribution[row.habilidad] = parseInt(row.count);
+      });
+
+      // Aplicar estrategia Top N + umbral mínimo para evitar gráficos saturados
+      const distribution = this.processTopNDistribution(rawDistribution, {
+        topN: 12,              // Máximo 12 habilidades visibles
+        minPercentage: 1.5,    // Solo mostrar si representa >= 1.5% del total
+        othersLabel: 'Otros'   // Agrupar el resto en "Otros"
       });
 
       res.status(200).json({ success: true, data: distribution });

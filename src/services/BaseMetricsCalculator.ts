@@ -17,6 +17,63 @@ import { DateRangeService } from './DateRangeService';
  */
 export class BaseMetricsCalculator {
   /**
+   * Procesa distribuciones para gráficos de torta limitando a Top N categorías
+   * Estrategia híbrida: Top N con umbral mínimo de porcentaje
+   * 
+   * @param rawDistribution Objeto con la distribución raw { categoria: count }
+   * @param options Opciones de configuración
+   * @returns Distribución procesada con categorías principales + "Otros"
+   */
+  protected processTopNDistribution(
+    rawDistribution: Record<string, number>,
+    options: {
+      topN?: number;           // Número máximo de categorías a mostrar (default: 12)
+      minPercentage?: number;  // Porcentaje mínimo para mostrar (default: 1.5%)
+      othersLabel?: string;    // Etiqueta para categorías agrupadas (default: "Otros")
+    } = {}
+  ): PieMetricResponse {
+    const { 
+      topN = 10, 
+      minPercentage = 1.5, 
+      othersLabel = 'Otros' 
+    } = options;
+
+    // Convertir a array y ordenar por count descendente
+    const entries = Object.entries(rawDistribution)
+      .map(([key, value]) => ({ key, value }))
+      .sort((a, b) => b.value - a.value);
+
+    // Calcular total
+    const total = entries.reduce((sum, entry) => sum + entry.value, 0);
+
+    // Si no hay datos, retornar vacío
+    if (total === 0) {
+      return {};
+    }
+
+    const result: PieMetricResponse = {};
+    let othersCount = 0;
+
+    entries.forEach((entry, index) => {
+      const percentage = (entry.value / total) * 100;
+      
+      // Mostrar si está en el Top N Y supera el umbral mínimo
+      if (index < topN && percentage >= minPercentage) {
+        result[entry.key] = entry.value;
+      } else {
+        othersCount += entry.value;
+      }
+    });
+
+    // Agregar "Otros" si hay categorías agrupadas
+    if (othersCount > 0) {
+      result[othersLabel] = othersCount;
+    }
+
+    return result;
+  }
+
+  /**
    * Calcula una métrica tipo card con comparación de período anterior
    */
   protected calculateCardMetric(
