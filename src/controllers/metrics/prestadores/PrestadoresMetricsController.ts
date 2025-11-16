@@ -280,14 +280,80 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
 
       const results = await qb.getRawMany();
       
-      const distribution: PieMetricResponse = {};
+      // Construir distribución raw
+      const rawDistribution: Record<string, number> = {};
       results.forEach(row => {
-        distribution[row.habilidad] = parseInt(row.count);
+        rawDistribution[row.habilidad] = parseInt(row.count);
+      });
+
+      // Aplicar estrategia Top N + umbral mínimo para evitar gráficos saturados
+      const distribution = this.processTopNDistribution(rawDistribution, {
+        topN: 12,              // Máximo 12 habilidades visibles
+        minPercentage: 1.5,    // Solo mostrar si representa >= 1.5% del total
+        othersLabel: 'Otros'   // Agrupar el resto en "Otros"
       });
 
       res.status(200).json({ success: true, data: distribution });
     } catch (error) {
       await this.handleError(res, error, 'getDistribucionServicios');
+    }
+  }
+
+  /**
+   * GET /api/metrica/prestadores/servicios/distribucion-por-rubro
+   * 8. Distribución de prestadores por rubro
+   * Muestra cuántos prestadores ofrecen servicios en cada rubro
+   */
+  public async getDistribucionServiciosPorRubro(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
+
+      const habilidadesRepo = AppDataSource.getRepository(Habilidad);
+
+      // Contar PRESTADORES únicos por rubro
+      // Agrupa habilidades → prestadores → rubros
+      const qb = habilidadesRepo
+        .createQueryBuilder('hab')
+        .innerJoin('rubros', 'r', 'r.id_rubro = hab.id_rubro')
+        .select('r.nombre_rubro', 'rubro')
+        .addSelect('COUNT(DISTINCT hab.id_usuario)', 'count')
+        .where('hab.activa = true')
+        .andWhere('hab.id_rubro IS NOT NULL');  // Solo habilidades con rubro asignado
+      
+      // Filtrar prestadores activos en el período seleccionado
+      qb.innerJoin('usuarios', 'u', 'u.id_usuario = hab.id_usuario')
+        .andWhere('u.timestamp <= :endDate', { endDate: dateRanges.endDate });
+
+      // Aplicar filtro de zona si existe
+      if (filters && filters.zona) {
+        qb.andWhere('u.ubicacion = :zona', { zona: filters.zona });
+      }
+
+      // NOTA: No aplicar filtro de rubro aquí, ya que esta métrica ES la distribución por rubros
+
+      qb.groupBy('r.id_rubro, r.nombre_rubro')
+        .having('COUNT(DISTINCT hab.id_usuario) > 0');
+
+      const results = await qb.getRawMany();
+      
+      // Construir distribución raw
+      const rawDistribution: Record<string, number> = {};
+      results.forEach(row => {
+        rawDistribution[row.rubro] = parseInt(row.count);
+      });
+
+      // Aplicar estrategia Top N + umbral mínimo
+      const distribution = this.processTopNDistribution(rawDistribution, {
+        topN: 10,              // Máximo 10 rubros visibles
+        minPercentage: 1.5,    // Solo mostrar si representa >= 1.5% del total
+        othersLabel: 'Otros'
+      });
+
+      res.status(200).json({ success: true, data: distribution });
+    } catch (error) {
+      await this.handleError(res, error, 'getDistribucionServiciosPorRubro');
     }
   }
 
