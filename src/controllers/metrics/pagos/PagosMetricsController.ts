@@ -154,7 +154,8 @@ export class PagosMetricsController extends BaseMetricsCalculator {
           const aprobadosInt = await this.countPagosByEstado('approved', start, end, filters);
           const rechazadosInt = await this.countPagosByEstado('rejected', start, end, filters);
           const totalInt = aprobadosInt + rechazadosInt;
-          return totalInt > 0 ? (aprobadosInt / totalInt) * 100 : 0;
+          const rate = totalInt > 0 ? (aprobadosInt / totalInt) * 100 : 0;
+          return this.roundPercentage(rate);
         },
         'absoluto'
       );
@@ -264,21 +265,21 @@ export class PagosMetricsController extends BaseMetricsCalculator {
 
       const ingresoBruto = await this.sumMontoPagosAprobados(dateRanges.startDate, dateRanges.endDate, filters);
       const cantidadPagos = await this.countPagosByEstado('approved', dateRanges.startDate, dateRanges.endDate, filters);
-      const ticketMedio = cantidadPagos > 0 ? ingresoBruto / cantidadPagos : 0;
+      const ticketMedio = cantidadPagos > 0 ? Math.round((ingresoBruto / cantidadPagos) * 100) / 100 : 0;
 
       const prevIngresoBruto = await this.sumMontoPagosAprobados(dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
       const prevCantidadPagos = await this.countPagosByEstado('approved', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
-      const prevTicketMedio = prevCantidadPagos > 0 ? prevIngresoBruto / prevCantidadPagos : 0;
+      const prevTicketMedio = prevCantidadPagos > 0 ? Math.round((prevIngresoBruto / prevCantidadPagos) * 100) / 100 : 0;
 
       // Calcular métricas usando el método estándar
       const ingresoBrutoMetric = this.calculateCardMetric(
-        this.roundPercentage(ingresoBruto),
-        this.roundPercentage(prevIngresoBruto),
+        ingresoBruto,
+        prevIngresoBruto,
         'absoluto'
       );
       const ticketMedioMetric = this.calculateCardMetric(
-        this.roundPercentage(ticketMedio),
-        this.roundPercentage(prevTicketMedio),
+        ticketMedio,
+        prevTicketMedio,
         'absoluto'
       );
 
@@ -294,7 +295,8 @@ export class PagosMetricsController extends BaseMetricsCalculator {
         async (start: Date, end: Date) => {
           const ingresoInt = await this.sumMontoPagosAprobados(start, end, filters);
           const cantidadInt = await this.countPagosByEstado('approved', start, end, filters);
-          return cantidadInt > 0 ? ingresoInt / cantidadInt : 0;
+          const ticketMedioInt = cantidadInt > 0 ? ingresoInt / cantidadInt : 0;
+          return Math.round(ticketMedioInt * 100) / 100;
         }
       );
 

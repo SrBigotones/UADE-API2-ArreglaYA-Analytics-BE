@@ -171,7 +171,8 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
         async (start: Date, end: Date) => {
           const creadasInt = await this.countSolicitudesByEstado('creada', start, end, filters);
           const canceladasInt = await this.countSolicitudesByEstado('cancelada', start, end, filters);
-          return creadasInt > 0 ? (canceladasInt / creadasInt) * 100 : 0;
+          const rate = creadasInt > 0 ? (canceladasInt / creadasInt) * 100 : 0;
+          return this.roundPercentage(rate);
         },
         'absoluto'
       );

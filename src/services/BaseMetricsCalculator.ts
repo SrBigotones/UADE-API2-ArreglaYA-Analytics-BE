@@ -91,7 +91,8 @@ export class BaseMetricsCalculator {
         change = Math.round(((currentValue - previousValue) / previousValue) * 100);
       }
     } else {
-      change = currentValue - previousValue;
+      // Redondear a 2 decimales para evitar errores de precisión de punto flotante
+      change = Math.round((currentValue - previousValue) * 100) / 100;
     }
 
     changeStatus = change >= 0 ? 'positivo' : 'negativo';
@@ -418,7 +419,9 @@ export class BaseMetricsCalculator {
     
     this.applyPagoFilters(qb, filters);
     const result = await qb.getRawOne();
-    return parseFloat(result?.total || '0');
+    const total = parseFloat(result?.total || '0');
+    // Redondear montos a 2 decimales
+    return Math.round(total * 100) / 100;
   }
 
   protected async calculateAverageProcessingTimePagos(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
@@ -860,10 +863,10 @@ export class BaseMetricsCalculator {
   ): void {
     if (!filters) return;
 
-    // Filtro por zona (a través de usuario)
+    // Filtro por zona (usando tabla zonas - relación many-to-many)
     if (filters.zona) {
-      qb.leftJoin('usuarios', 'usuario', 'usuario.id_usuario = prestador.id_prestador')
-        .andWhere('usuario.ubicacion = :zona', { zona: filters.zona });
+      qb.leftJoin('zonas', 'zona', 'zona.id_usuario = prestador.id_prestador AND zona.activa = true')
+        .andWhere('zona.nombre_zona = :zona', { zona: filters.zona });
     }
 
     // Filtro por rubro (a través de habilidad -> rubro)

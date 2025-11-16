@@ -143,7 +143,8 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
           const aceptadasInt = await this.countCotizacionesByEstado('aceptada', start, end, filters);
           const rechazadasInt = await this.countCotizacionesByEstado('rechazada', start, end, filters);
           const totalInt = aceptadasInt + rechazadasInt;
-          return totalInt > 0 ? (aceptadasInt / totalInt) * 100 : 0;
+          const rate = totalInt > 0 ? (aceptadasInt / totalInt) * 100 : 0;
+          return this.roundPercentage(rate);
         },
         'absoluto'
       );
@@ -267,7 +268,8 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
         async (start: Date, end: Date) => {
           const expiradas = await this.countCotizacionesByEstado('expirada', start, end, filters);
           const todasEmitidas = await this.countCotizaciones(start, end, filters);
-          return todasEmitidas > 0 ? (expiradas / todasEmitidas) * 100 : 0;
+          const rate = todasEmitidas > 0 ? (expiradas / todasEmitidas) * 100 : 0;
+          return this.roundPercentage(rate);
         },
         'absoluto'
       );
