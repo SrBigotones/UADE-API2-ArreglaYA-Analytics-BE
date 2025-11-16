@@ -49,25 +49,30 @@ export class EventNormalizationService {
         logger.info(`� Processing SOLICITUD event`);
         await this.processRequestEvent(event);
       }
-      // 5. Prestadores: topico = 'prestador' o eventos de prestador
+      // 5. Pagos: topico = 'pago' (matching.pago.emitida)
+      else if (topico === 'pago') {
+        logger.info(`💰 Processing PAGO event from matching`);
+        await this.processPaymentEvent(event);
+      }
+      // 6. Pedido con cotización enviada (catalogue.pedido.cotizacion_enviada)
+      else if (topico === 'pedido' && evento.includes('cotizacion')) {
+        logger.info(`📋 Processing PEDIDO-COTIZACION event`);
+        await this.processQuoteEvent(event);
+      }
+      // 7. Prestadores: topico = 'prestador' o eventos de prestador
       else if (topico === 'prestador' || (evento.includes('prestador') && (evento.includes('alta') || evento.includes('baja') || evento.includes('modificacion')))) {
         logger.info(`👨‍🔧 Processing PRESTADOR event`);
         await this.processPrestadorEvent(event);
       }
-      // 6. Rubros: topico = 'rubro' o eventos de rubro
+      // 8. Rubros: topico = 'rubro' o eventos de rubro
       else if (topico === 'rubro' || (evento.includes('rubro') && (evento.includes('alta') || evento.includes('baja') || evento.includes('modificacion')))) {
         logger.info(`📋 Processing RUBRO event`);
         await this.processRubroEvent(event);
       }
-      // 7. Servicios, Habilidades, Zonas
-      else if (
-        topico === 'servicio' || topico === 'habilidad' || topico === 'zona' ||
-        evento.includes('servicio') || evento.includes('provider') || 
-        evento.includes('habilidad') || evento.includes('skill') || 
-        evento.includes('zona') || evento.includes('zone')
-      ) {
-        logger.info(`🛠️ Processing SERVICE/SKILL/ZONE event`);
-        await this.processServiceEvent(event);
+      // 9. Zonas (NO procesamos habilidades como eventos independientes)
+      else if (topico === 'zona' || evento.includes('zona') || evento.includes('zone')) {
+        logger.info(`🗺️ Processing ZONE event`);
+        await this.processZoneEvent(event);
       }
       else {
         logger.warn(`⚠️ No handler for topico: ${topico} | evento: ${evento}`);
@@ -167,112 +172,29 @@ export class EventNormalizationService {
   }
 
   /**
-   * Procesa eventos de servicios
-   * Eventos: prestador.alta, prestador.baja, habilidad.alta, habilidad.baja
+   * Procesa eventos de zonas
+   * Eventos: zona.alta, zona.baja
+   * NOTA: NO procesamos habilidades como eventos independientes, solo cuando vienen en prestador.modificacion/alta
    */
-  private async processServiceEvent(event: Event): Promise<void> {
+  private async processZoneEvent(event: Event): Promise<void> {
     const cuerpo = event.cuerpo;
-    const servicioRepo = AppDataSource.getRepository(Servicio);
-    const habilidadRepo = AppDataSource.getRepository(Habilidad);
+    const payload = this.extractPayload(cuerpo);
     const zonaRepo = AppDataSource.getRepository(Zona);
 
     const evento = event.evento.toLowerCase();
 
-    // Procesar servicios de prestadores
-    if (evento.includes('prestador') || evento.includes('provider')) {
-      const idUsuario = this.extractBigInt(cuerpo.providerId || cuerpo.prestadorId || cuerpo.id_usuario || cuerpo.userId || cuerpo.id);
-      const idServicio = this.extractBigInt(cuerpo.serviceId || cuerpo.servicioId || cuerpo.id_servicio || cuerpo.id);
+    // Procesar zona individual (catalogue.zona.alta/baja)
+    // En estos eventos, NO viene id_usuario porque son eventos de catálogo
+    // Las zonas se asocian a usuarios en prestador.modificacion/alta
+    const idZona = this.extractBigInt(payload.zonaId || payload.zoneId || payload.id_zona || payload.id);
+    const nombreZona = payload.nombre || payload.name || payload.zona || payload.zone || 'unknown';
 
-      if (idUsuario && idServicio) {
-        const activo = !evento.includes('baja') && !evento.includes('deactivate');
-
-        await servicioRepo.save({
-          id_servicio: idServicio,
-          id_usuario: idUsuario,
-          activo: activo,
-          timestamp: event.timestamp,
-        } as Servicio);
-
-        logger.debug(`Normalized service event ${event.id} -> servicio ${idServicio}`);
-      }
-    }
-
-    // Procesar habilidades
-    if (evento.includes('habilidad') || evento.includes('skill')) {
-      const idUsuario = this.extractBigInt(cuerpo.userId || cuerpo.id_usuario || cuerpo.providerId || cuerpo.prestadorId);
-      const idHabilidad = this.extractBigInt(cuerpo.habilidadId || cuerpo.skillId || cuerpo.id_habilidad || cuerpo.id);
-      const nombreHabilidad = cuerpo.nombre || cuerpo.name || cuerpo.habilidad || cuerpo.skill || 'unknown';
-      const idRubro = this.extractBigInt(cuerpo.id_rubro || cuerpo.rubroId || cuerpo.categoryId);
-
-      if (idUsuario && idHabilidad) {
-        const activa = !evento.includes('baja') && !evento.includes('deactivate');
-
-        await habilidadRepo.save({
-          id_usuario: idUsuario,
-          id_habilidad: idHabilidad,
-          nombre_habilidad: nombreHabilidad,
-          id_rubro: idRubro,
-          activa: activa,
-        } as Habilidad);
-
-        logger.debug(`Normalized skill event ${event.id} -> habilidad ${idHabilidad} para usuario ${idUsuario}, rubro ${idRubro}`);
-      }
-
-      // Si hay múltiples habilidades en un array (prestador.modificacion)
-      if (cuerpo.habilidades && Array.isArray(cuerpo.habilidades)) {
-        for (const hab of cuerpo.habilidades) {
-          const habId = this.extractBigInt(hab.id || hab.id_habilidad || hab.habilidadId);
-          const habNombre = hab.nombre || hab.name || hab.habilidad || 'unknown';
-          const habIdRubro = this.extractBigInt(hab.id_rubro || hab.rubroId || hab.categoryId);
-          
-          if (idUsuario && habId) {
-            await habilidadRepo.save({
-              id_usuario: idUsuario,
-              id_habilidad: habId,
-              nombre_habilidad: habNombre,
-              id_rubro: habIdRubro,
-              activa: true,
-            } as Habilidad);
-          }
-        }
-      }
-    }
-
-    // Procesar zonas (similar a habilidades)
-    if (evento.includes('zona') || evento.includes('zone')) {
-      const idUsuario = this.extractBigInt(cuerpo.userId || cuerpo.id_usuario || cuerpo.providerId || cuerpo.prestadorId);
-      const idZona = this.extractBigInt(cuerpo.zonaId || cuerpo.zoneId || cuerpo.id_zona || cuerpo.id);
-      const nombreZona = cuerpo.nombre || cuerpo.name || cuerpo.zona || cuerpo.zone || 'unknown';
-
-      if (idUsuario && idZona) {
-        const activa = !evento.includes('baja') && !evento.includes('deactivate');
-
-        await zonaRepo.save({
-          id_usuario: idUsuario,
-          id_zona: idZona,
-          nombre_zona: nombreZona,
-          activa: activa,
-        } as Zona);
-
-        logger.debug(`Normalized zone event ${event.id} -> zona ${idZona} para usuario ${idUsuario}`);
-      }
-
-      // Si hay múltiples zonas en un array
-      if (cuerpo.zonas && Array.isArray(cuerpo.zonas)) {
-        for (const zon of cuerpo.zonas) {
-          const zonId = this.extractBigInt(zon.id || zon.id_zona || zon.zonaId);
-          const zonNombre = zon.nombre || zon.name || zon.zona || 'unknown';
-          
-          if (idUsuario && zonId) {
-            await zonaRepo.save({
-              id_usuario: idUsuario,
-              id_zona: zonId,
-              nombre_zona: zonNombre,
-              activa: true,
-            } as Zona);
-          }
-        }
-      }
+    if (idZona) {
+      // IGNORADO: Eventos de catálogo de zonas (catalogue.zona.alta/baja)
+      // Similar a habilidades, tenemos las zonas desnormalizadas.
+      // Solo procesamos zonas cuando vienen asociadas a prestadores en prestador.modificacion/alta
+      // La tabla 'zonas' requiere (id_usuario, id_zona) y es una tabla de asociación, no catálogo.
+      logger.debug(`Zona ${idZona} (${nombreZona}) from catalogue - will be associated to users via prestador events`);
     }
   }
 
@@ -323,7 +245,12 @@ export class EventNormalizationService {
     // Extraer zona de diferentes estructuras posibles
     let zona = null;
     if (payload.direccion) {
-      zona = payload.direccion.ciudad || payload.direccion.provincia;
+      // direccion puede ser objeto (con ciudad/provincia) o string
+      if (typeof payload.direccion === 'object') {
+        zona = payload.direccion.ciudad || payload.direccion.provincia;
+      } else if (typeof payload.direccion === 'string') {
+        zona = payload.direccion; // Usar el string directamente
+      }
     } else {
       zona = payload.zona || payload.location || payload.ciudad || payload.provincia;
     }
@@ -448,16 +375,16 @@ export class EventNormalizationService {
 
     // Caso normal: cotizacion individual
     const idCotizacion = this.extractBigInt(
-      payload.quoteId || payload.cotizacionId || payload.id_cotizacion || payload.id
+      payload.quoteId || payload.cotizacionId || payload.cotizacion_id || payload.id_cotizacion || payload.id
     );
     const idSolicitud = this.extractBigInt(
-      payload.requestId || payload.solicitudId || payload.id_solicitud || payload.orderId
+      payload.requestId || payload.solicitudId || payload.solicitud_id || payload.id_solicitud || payload.orderId
     );
     const idUsuario = this.extractBigInt(
-      payload.userId || payload.id_usuario || payload.clienteId
+      payload.userId || payload.id_usuario || payload.usuario_id || payload.clienteId
     );
     const idPrestador = this.extractBigInt(
-      payload.providerId || payload.prestadorId || payload.id_prestador
+      payload.providerId || payload.prestadorId || payload.prestador_id || payload.id_prestador
     );
 
     if (!idCotizacion || !idSolicitud || !idPrestador) {
@@ -481,7 +408,7 @@ export class EventNormalizationService {
     }
 
     const monto = this.extractDecimal(
-      payload.amount || payload.monto || payload.price || payload.precio
+      payload.amount || payload.monto || payload.tarifa || payload.price || payload.precio
     );
 
     logger.info(`💾 Saving cotizacion | id: ${idCotizacion} | solicitud: ${idSolicitud} | estado: ${estado}`);
@@ -527,6 +454,50 @@ export class EventNormalizationService {
 
     const evento = event.evento.toLowerCase();
 
+    // CASO ESPECIAL: matching.pago.emitida tiene estructura diferente con subobjeto "pago"
+    if (evento === 'emitida' && payload.pago) {
+      logger.info(`💰 Processing matching.pago.emitida with pago subobjeto`);
+      const pagoData = payload.pago;
+      
+      const idPago = this.extractBigInt(pagoData.idCorrelacion); // Usar idCorrelacion como ID único
+      const idUsuario = this.extractBigInt(pagoData.idUsuario);
+      const idPrestador = this.extractBigInt(pagoData.idPrestador);
+      const idSolicitud = this.extractBigInt(pagoData.idSolicitud);
+      const montoTotal = this.extractDecimal(pagoData.montoSubtotal);
+      const moneda = pagoData.moneda || 'ARS';
+      const metodo = pagoData.metodoPreferido || null;
+
+      if (!idPago || !idUsuario) {
+        logger.warn(`❌ No se pudo extraer datos de pago.emitida ${event.id}`);
+        logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
+        return;
+      }
+
+      logger.info(`💾 Creating pago from matching | id: ${idPago} | usuario: ${idUsuario} | monto: ${montoTotal}`);
+      
+      await pagoRepo.upsert(
+        {
+          id_pago: idPago,
+          id_usuario: idUsuario,
+          id_prestador: idPrestador || null,
+          id_solicitud: idSolicitud || null,
+          monto_total: montoTotal,
+          moneda: moneda,
+          metodo: metodo,
+          estado: 'pending', // Estado inicial cuando se emite desde matching
+          timestamp_creado: event.timestamp,
+          timestamp_actual: event.timestamp,
+          captured_at: null,
+          refund_id: null,
+        },
+        ['id_pago']
+      );
+      
+      logger.info(`✅ Pago from matching ${idPago} created`);
+      return;
+    }
+
+    // CASOS NORMALES: payments squad
     const idPago = this.extractBigInt(
       payload.paymentId || payload.pagoId || payload.id_pago || payload.id
     );
@@ -730,6 +701,7 @@ export class EventNormalizationService {
       for (const hab of payload.habilidades) {
         const habId = this.extractBigInt(hab.id || hab.id_habilidad || hab.habilidadId);
         const habNombre = hab.nombre || hab.name || 'unknown';
+        const habIdRubro = this.extractBigInt(hab.id_rubro || hab.rubroId || hab.categoryId);
         
         if (habId) {
           await habilidadRepo.upsert(
@@ -737,11 +709,36 @@ export class EventNormalizationService {
               id_usuario: idPrestador,
               id_habilidad: habId,
               nombre_habilidad: habNombre,
+              id_rubro: habIdRubro,
               activa: true,
             },
             ['id_usuario', 'id_habilidad']
           );
-          logger.debug(`  ✅ Habilidad ${habId} (${habNombre}) saved for prestador ${idPrestador}`);
+          logger.debug(`  ✅ Habilidad ${habId} (${habNombre}) with rubro ${habIdRubro} saved for prestador ${idPrestador}`);
+        }
+      }
+    }
+
+    // Procesar zonas del prestador si vienen en el payload
+    if (payload.zonas && Array.isArray(payload.zonas)) {
+      const zonaRepo = AppDataSource.getRepository(Zona);
+      logger.info(`🗺️ Processing ${payload.zonas.length} zonas for prestador ${idPrestador}`);
+      
+      for (const zon of payload.zonas) {
+        const zonId = this.extractBigInt(zon.id || zon.id_zona || zon.zonaId);
+        const zonNombre = zon.nombre || zon.name || 'unknown';
+        
+        if (zonId) {
+          await zonaRepo.upsert(
+            {
+              id_usuario: idPrestador,
+              id_zona: zonId,
+              nombre_zona: zonNombre,
+              activa: true,
+            },
+            ['id_usuario', 'id_zona']
+          );
+          logger.debug(`  ✅ Zona ${zonId} (${zonNombre}) saved for prestador ${idPrestador}`);
         }
       }
     }
