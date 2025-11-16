@@ -22,37 +22,63 @@ export class EventNormalizationService {
   public async normalizeEvent(event: Event): Promise<void> {
     try {
       const evento = event.evento.toLowerCase();
+      const topico = event.topico.toLowerCase();
+      
+      logger.info(`🔄 NORMALIZATION | eventId: ${event.id} | squad: ${event.squad} | topico: ${topico} | evento: ${evento}`);
       
       // Mapeo de eventos a funciones de normalización
-      // También manejar eventos en español
-      if (evento.includes('user') || evento.includes('usuario')) {
-        await this.processUserEvent(event);
-      } else if (evento.includes('prestador') && (evento.includes('alta') || evento.includes('baja') || evento.includes('modificacion'))) {
-        await this.processPrestadorEvent(event);
-      } else if (evento.includes('rubro') && (evento.includes('alta') || evento.includes('baja') || evento.includes('modificacion'))) {
-        await this.processRubroEvent(event);
-      } else if (
-        evento.includes('servicio') || evento.includes('provider') || 
-        evento.includes('habilidad') ||
-        evento.includes('skill') || evento.includes('zona') || evento.includes('zone')
-      ) {
-        await this.processServiceEvent(event);
-      } else if (
-        evento.includes('solicitud') || evento.includes('request') ||
-        evento.includes('pedido') || evento.includes('order')
-      ) {
-        await this.processRequestEvent(event);
-      } else if (
-        evento.includes('cotizacion') || evento.includes('quote') ||
-        evento.includes('cotización')
-      ) {
-        await this.processQuoteEvent(event);
-      } else if (
-        evento.includes('payment') || evento.includes('pago') ||
-        evento.includes('refund') || evento.includes('reembolso')
-      ) {
+      // PRIORIDAD: Filtrar por TOPICO primero, luego por EVENTO
+      
+      // 1. Pagos: topico = 'payment'
+      if (topico === 'payment') {
+        logger.info(`💳 Processing PAYMENT event`);
         await this.processPaymentEvent(event);
       }
+      // 2. Usuarios: topico = 'user' o evento contiene 'user'/'usuario'
+      else if (topico === 'user' || evento.includes('user') || evento.includes('usuario')) {
+        logger.info(`👤 Processing USER event`);
+        await this.processUserEvent(event);
+      }
+      // 3. Cotizaciones: topico = 'cotizacion' o eventos especiales con cotizaciones
+      else if (topico === 'cotizacion' || evento.includes('cotizacion') || evento.includes('quote') || evento.includes('cotización') || evento === 'resumen') {
+        logger.info(`� Processing COTIZACION event`);
+        await this.processQuoteEvent(event);
+      }
+      // 4. Solicitudes: topico = 'solicitud' o evento contiene 'solicitud'/'request'
+      else if (topico === 'solicitud' || evento.includes('solicitud') || evento.includes('request') || evento.includes('pedido') || evento.includes('order')) {
+        logger.info(`� Processing SOLICITUD event`);
+        await this.processRequestEvent(event);
+      }
+      // 5. Pagos: topico = 'pago' (matching.pago.emitida)
+      else if (topico === 'pago') {
+        logger.info(`💰 Processing PAGO event from matching`);
+        await this.processPaymentEvent(event);
+      }
+      // 6. Pedido con cotización enviada (catalogue.pedido.cotizacion_enviada)
+      else if (topico === 'pedido' && evento.includes('cotizacion')) {
+        logger.info(`📋 Processing PEDIDO-COTIZACION event`);
+        await this.processQuoteEvent(event);
+      }
+      // 7. Prestadores: topico = 'prestador' o eventos de prestador
+      else if (topico === 'prestador' || (evento.includes('prestador') && (evento.includes('alta') || evento.includes('baja') || evento.includes('modificacion')))) {
+        logger.info(`👨‍🔧 Processing PRESTADOR event`);
+        await this.processPrestadorEvent(event);
+      }
+      // 8. Rubros: topico = 'rubro' o eventos de rubro
+      else if (topico === 'rubro' || (evento.includes('rubro') && (evento.includes('alta') || evento.includes('baja') || evento.includes('modificacion')))) {
+        logger.info(`📋 Processing RUBRO event`);
+        await this.processRubroEvent(event);
+      }
+      // 9. Zonas (NO procesamos habilidades como eventos independientes)
+      else if (topico === 'zona' || evento.includes('zona') || evento.includes('zone')) {
+        logger.info(`🗺️ Processing ZONE event`);
+        await this.processZoneEvent(event);
+      }
+      else {
+        logger.warn(`⚠️ No handler for topico: ${topico} | evento: ${evento}`);
+      }
+      
+      logger.info(`✅ NORMALIZATION DONE | eventId: ${event.id}`);
     } catch (error) {
       logger.error(`Error normalizing event ${event.id}:`, error);
       // No lanzamos el error para no interrumpir el flujo principal
@@ -68,10 +94,30 @@ export class EventNormalizationService {
     const cuerpo = event.cuerpo;
     const usuarioRepo = AppDataSource.getRepository(Usuario);
 
+    logger.debug(`👤 USER event | eventId: ${event.id}`);
+
+    // IMPORTANTE: Los datos pueden estar en cuerpo.payload (Core Hub) o directamente en cuerpo (webhook directo)
+    const payload = cuerpo.payload || cuerpo;
+    
+    logger.debug(`📦 Payload keys: ${Object.keys(payload).join(', ')}`);
+
     // Extraer ID de usuario (puede estar en diferentes campos)
-    const idUsuario = this.extractBigInt(cuerpo.userId || cuerpo.id_usuario || cuerpo.id || cuerpo.user_id);
+    const idUsuario = this.extractBigInt(
+      payload.userId || 
+      payload.id_usuario || 
+      payload.id || 
+      payload.user_id ||
+      cuerpo.userId || 
+      cuerpo.id_usuario || 
+      cuerpo.id || 
+      cuerpo.user_id
+    );
+    
+    logger.info(`🔍 userId extracted: ${idUsuario}`);
+    
     if (!idUsuario) {
-      logger.warn(`No se pudo extraer id_usuario del evento ${event.id}`);
+      logger.warn(`❌ No userId found in event ${event.id}`);
+      logger.debug(`Available payload: ${JSON.stringify(payload, null, 2).substring(0, 300)}`);
       return;
     }
 
@@ -87,129 +133,68 @@ export class EventNormalizationService {
       estado = 'activo';
     }
 
-    // Extraer rol
-    const rol = cuerpo.role || cuerpo.rol || cuerpo.tipo_usuario || 'unknown';
+    // Extraer rol (buscar en payload primero, luego en cuerpo)
+    const rol = payload.role || payload.rol || payload.tipo_usuario || 
+                cuerpo.role || cuerpo.rol || cuerpo.tipo_usuario || 'unknown';
 
     // Extraer ubicación (solo para prestadores)
-    const ubicacion = (rol === 'prestador' || rol === 'provider') 
-      ? (cuerpo.location || cuerpo.ubicacion || cuerpo.city || cuerpo.provincia)
-      : null;
+    // Buscar en addresses array primero (estructura Core Hub)
+    let ubicacion = null;
+    if (rol.toUpperCase() === 'PRESTADOR' || rol === 'provider') {
+      if (payload.addresses && Array.isArray(payload.addresses) && payload.addresses.length > 0) {
+        // Tomar la primera dirección
+        const firstAddress = payload.addresses[0];
+        ubicacion = firstAddress.city || firstAddress.state;
+      } else if (payload.address && Array.isArray(payload.address) && payload.address.length > 0) {
+        const firstAddress = payload.address[0];
+        ubicacion = firstAddress.city || firstAddress.state;
+      } else {
+        ubicacion = payload.location || payload.ubicacion || payload.city || payload.provincia ||
+                    cuerpo.location || cuerpo.ubicacion || cuerpo.city || cuerpo.provincia;
+      }
+    }
 
-    // Usar upsert para insertar o actualizar
-    await usuarioRepo.save({
-      id_usuario: idUsuario,
-      rol: rol,
-      estado: estado,
-      timestamp: event.timestamp,
-      ubicacion: ubicacion || null,
-    } as Usuario);
+    logger.info(`💾 Saving usuario | id: ${idUsuario} | rol: ${rol} | estado: ${estado}`);
 
-    logger.debug(`Normalized user event ${event.id} -> usuario ${idUsuario}`);
+    // Usar upsert para insertar o actualizar basado en id_usuario (unique constraint)
+    await usuarioRepo.upsert(
+      {
+        id_usuario: idUsuario,
+        rol: rol,
+        estado: estado,
+        timestamp: event.timestamp,
+        ubicacion: ubicacion || null,
+      },
+      ['id_usuario'] // Conflict target: unique constraint en id_usuario
+    );
+
+    logger.info(`✅ Usuario ${idUsuario} saved to DB`);
   }
 
   /**
-   * Procesa eventos de servicios
-   * Eventos: prestador.alta, prestador.baja, habilidad.alta, habilidad.baja
+   * Procesa eventos de zonas
+   * Eventos: zona.alta, zona.baja
+   * NOTA: NO procesamos habilidades como eventos independientes, solo cuando vienen en prestador.modificacion/alta
    */
-  private async processServiceEvent(event: Event): Promise<void> {
+  private async processZoneEvent(event: Event): Promise<void> {
     const cuerpo = event.cuerpo;
-    const servicioRepo = AppDataSource.getRepository(Servicio);
-    const habilidadRepo = AppDataSource.getRepository(Habilidad);
+    const payload = this.extractPayload(cuerpo);
     const zonaRepo = AppDataSource.getRepository(Zona);
 
     const evento = event.evento.toLowerCase();
 
-    // Procesar servicios de prestadores
-    if (evento.includes('prestador') || evento.includes('provider')) {
-      const idUsuario = this.extractBigInt(cuerpo.providerId || cuerpo.prestadorId || cuerpo.id_usuario || cuerpo.userId || cuerpo.id);
-      const idServicio = this.extractBigInt(cuerpo.serviceId || cuerpo.servicioId || cuerpo.id_servicio || cuerpo.id);
+    // Procesar zona individual (catalogue.zona.alta/baja)
+    // En estos eventos, NO viene id_usuario porque son eventos de catálogo
+    // Las zonas se asocian a usuarios en prestador.modificacion/alta
+    const idZona = this.extractBigInt(payload.zonaId || payload.zoneId || payload.id_zona || payload.id);
+    const nombreZona = payload.nombre || payload.name || payload.zona || payload.zone || 'unknown';
 
-      if (idUsuario && idServicio) {
-        const activo = !evento.includes('baja') && !evento.includes('deactivate');
-
-        await servicioRepo.save({
-          id_servicio: idServicio,
-          id_usuario: idUsuario,
-          activo: activo,
-          timestamp: event.timestamp,
-        } as Servicio);
-
-        logger.debug(`Normalized service event ${event.id} -> servicio ${idServicio}`);
-      }
-    }
-
-    // Procesar habilidades
-    if (evento.includes('habilidad') || evento.includes('skill')) {
-      const idUsuario = this.extractBigInt(cuerpo.userId || cuerpo.id_usuario || cuerpo.providerId || cuerpo.prestadorId);
-      const idHabilidad = this.extractBigInt(cuerpo.habilidadId || cuerpo.skillId || cuerpo.id_habilidad || cuerpo.id);
-      const nombreHabilidad = cuerpo.nombre || cuerpo.name || cuerpo.habilidad || cuerpo.skill || 'unknown';
-
-      if (idUsuario && idHabilidad) {
-        const activa = !evento.includes('baja') && !evento.includes('deactivate');
-
-        await habilidadRepo.save({
-          id_usuario: idUsuario,
-          id_habilidad: idHabilidad,
-          nombre_habilidad: nombreHabilidad,
-          activa: activa,
-        } as Habilidad);
-
-        logger.debug(`Normalized skill event ${event.id} -> habilidad ${idHabilidad} para usuario ${idUsuario}`);
-      }
-
-      // Si hay múltiples habilidades en un array (prestador.modificacion)
-      if (cuerpo.habilidades && Array.isArray(cuerpo.habilidades)) {
-        for (const hab of cuerpo.habilidades) {
-          const habId = this.extractBigInt(hab.id || hab.id_habilidad || hab.habilidadId);
-          const habNombre = hab.nombre || hab.name || hab.habilidad || 'unknown';
-          
-          if (idUsuario && habId) {
-            await habilidadRepo.save({
-              id_usuario: idUsuario,
-              id_habilidad: habId,
-              nombre_habilidad: habNombre,
-              activa: true,
-            } as Habilidad);
-          }
-        }
-      }
-    }
-
-    // Procesar zonas (similar a habilidades)
-    if (evento.includes('zona') || evento.includes('zone')) {
-      const idUsuario = this.extractBigInt(cuerpo.userId || cuerpo.id_usuario || cuerpo.providerId || cuerpo.prestadorId);
-      const idZona = this.extractBigInt(cuerpo.zonaId || cuerpo.zoneId || cuerpo.id_zona || cuerpo.id);
-      const nombreZona = cuerpo.nombre || cuerpo.name || cuerpo.zona || cuerpo.zone || 'unknown';
-
-      if (idUsuario && idZona) {
-        const activa = !evento.includes('baja') && !evento.includes('deactivate');
-
-        await zonaRepo.save({
-          id_usuario: idUsuario,
-          id_zona: idZona,
-          nombre_zona: nombreZona,
-          activa: activa,
-        } as Zona);
-
-        logger.debug(`Normalized zone event ${event.id} -> zona ${idZona} para usuario ${idUsuario}`);
-      }
-
-      // Si hay múltiples zonas en un array
-      if (cuerpo.zonas && Array.isArray(cuerpo.zonas)) {
-        for (const zon of cuerpo.zonas) {
-          const zonId = this.extractBigInt(zon.id || zon.id_zona || zon.zonaId);
-          const zonNombre = zon.nombre || zon.name || zon.zona || 'unknown';
-          
-          if (idUsuario && zonId) {
-            await zonaRepo.save({
-              id_usuario: idUsuario,
-              id_zona: zonId,
-              nombre_zona: zonNombre,
-              activa: true,
-            } as Zona);
-          }
-        }
-      }
+    if (idZona) {
+      // IGNORADO: Eventos de catálogo de zonas (catalogue.zona.alta/baja)
+      // Similar a habilidades, tenemos las zonas desnormalizadas.
+      // Solo procesamos zonas cuando vienen asociadas a prestadores en prestador.modificacion/alta
+      // La tabla 'zonas' requiere (id_usuario, id_zona) y es una tabla de asociación, no catálogo.
+      logger.debug(`Zona ${idZona} (${nombreZona}) from catalogue - will be associated to users via prestador events`);
     }
   }
 
@@ -219,19 +204,27 @@ export class EventNormalizationService {
    */
   private async processRequestEvent(event: Event): Promise<void> {
     const cuerpo = event.cuerpo;
+    const payload = this.extractPayload(cuerpo);
     const solicitudRepo = AppDataSource.getRepository(Solicitud);
 
     const evento = event.evento.toLowerCase();
 
     const idSolicitud = this.extractBigInt(
-      cuerpo.requestId || cuerpo.solicitudId || cuerpo.id_solicitud || 
-      cuerpo.orderId || cuerpo.pedidoId || cuerpo.id
+      payload.requestId || payload.solicitudId || payload.id_solicitud || payload.solicitud_id ||
+      payload.orderId || payload.pedidoId || payload.id
     );
-    const idUsuario = this.extractBigInt(cuerpo.userId || cuerpo.id_usuario || cuerpo.clienteId);
-    const idPrestador = this.extractBigInt(cuerpo.providerId || cuerpo.prestadorId || cuerpo.id_prestador);
+    const idUsuario = this.extractBigInt(
+      payload.userId || payload.id_usuario || payload.usuario_id || payload.clienteId
+    );
+    const idPrestador = this.extractBigInt(
+      payload.providerId || payload.prestadorId || payload.prestador_id || payload.id_prestador
+    );
 
     if (!idSolicitud || !idUsuario) {
-      logger.warn(`No se pudo extraer datos de solicitud del evento ${event.id}`);
+      logger.warn(`❌ No se pudo extraer datos de solicitud del evento ${event.id}`);
+      logger.warn(`   squad: ${event.squad} | topico: ${event.topico} | evento: ${event.evento}`);
+      logger.warn(`   idSolicitud: ${idSolicitud} | idUsuario: ${idUsuario}`);
+      logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
       return;
     }
 
@@ -243,50 +236,166 @@ export class EventNormalizationService {
       estado = 'aceptada';
     } else if (evento.includes('rechazada') || evento.includes('reject')) {
       estado = 'rechazada';
+    } else if (evento.includes('creada') || evento.includes('created')) {
+      estado = 'creada';
+    } else if (evento.includes('solicitado')) {
+      estado = 'creada'; // 'solicitado' es equivalente a 'creada'
     }
 
-    const zona = cuerpo.zona || cuerpo.location || cuerpo.ciudad || cuerpo.provincia;
-    const esCritica = cuerpo.urgency === 'high' || cuerpo.es_critica === true || cuerpo.critica === true;
+    // Extraer zona de diferentes estructuras posibles
+    let zona = null;
+    if (payload.direccion) {
+      // direccion puede ser objeto (con ciudad/provincia) o string
+      if (typeof payload.direccion === 'object') {
+        zona = payload.direccion.ciudad || payload.direccion.provincia;
+      } else if (typeof payload.direccion === 'string') {
+        zona = payload.direccion; // Usar el string directamente
+      }
+    } else {
+      zona = payload.zona || payload.location || payload.ciudad || payload.provincia;
+    }
 
-    await solicitudRepo.save({
-      id_solicitud: idSolicitud,
-      id_usuario: idUsuario,
-      id_prestador: idPrestador || null,
-      estado: estado,
-      zona: zona || null,
-      timestamp: event.timestamp,
-      es_critica: esCritica || false,
-    } as Solicitud);
+    const esCritica = payload.urgency === 'high' || 
+                      payload.es_critica === true || 
+                      payload.critica === true ||
+                      payload.es_urgente === true;
 
-    logger.debug(`Normalized request event ${event.id} -> solicitud ${idSolicitud}`);
+    logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado}`);
+
+    await solicitudRepo.upsert(
+      {
+        id_solicitud: idSolicitud,
+        id_usuario: idUsuario,
+        id_prestador: idPrestador || null,
+        estado: estado,
+        zona: zona || null,
+        timestamp: event.timestamp,
+        es_critica: esCritica || false,
+      },
+      ['id_solicitud'] // Conflict target: unique constraint en id_solicitud
+    );
+
+    logger.info(`✅ Solicitud ${idSolicitud} saved`);
   }
 
   /**
    * Procesa eventos de cotizaciones
    * Eventos: cotizacion.emitida, cotizacion.aceptada, cotizacion.rechazada, cotizacion.expirada
+   * También: matching.cotizacion.emitida (eventos batch del servicio de matching)
    */
   private async processQuoteEvent(event: Event): Promise<void> {
     const cuerpo = event.cuerpo;
+    const payload = this.extractPayload(cuerpo);
     const cotizacionRepo = AppDataSource.getRepository(Cotizacion);
 
     const evento = event.evento.toLowerCase();
 
+    // Caso especial: solicitud.resumen con cotizaciones reales
+    if (evento.includes('resumen') && payload.solicitud && payload.solicitud.cotizaciones) {
+      logger.info(`📊 Processing RESUMEN cotizaciones | solicitudId: ${payload.solicitud.solicitudId}`);
+      
+      const idSolicitud = this.extractBigInt(payload.solicitud.solicitudId);
+      if (!idSolicitud) {
+        logger.warn(`❌ No solicitudId in resumen event ${event.id}`);
+        return;
+      }
+
+      const cotizaciones = payload.solicitud.cotizaciones;
+      if (!Array.isArray(cotizaciones)) {
+        logger.warn(`❌ cotizaciones is not an array in resumen event ${event.id}`);
+        return;
+      }
+
+      for (const cotizacion of cotizaciones) {
+        const idCotizacion = this.extractBigInt(cotizacion.cotizacionId);
+        const idPrestador = this.extractBigInt(cotizacion.prestadorId);
+        const monto = this.extractDecimal(cotizacion.monto);
+
+        if (!idCotizacion || !idPrestador) {
+          logger.warn(`⚠️ Skipping cotizacion without id or prestador in resumen`);
+          continue;
+        }
+
+        logger.info(`💾 Saving cotizacion from resumen | id: ${idCotizacion} | solicitud: ${idSolicitud} | prestador: ${idPrestador} | monto: ${monto}`);
+
+        await cotizacionRepo.upsert(
+          {
+            id_cotizacion: idCotizacion,
+            id_solicitud: idSolicitud,
+            id_usuario: null, // No viene en el resumen
+            id_prestador: idPrestador,
+            estado: 'emitida',
+            monto: monto || null,
+            timestamp: event.timestamp,
+          },
+          ['id_cotizacion']
+        );
+      }
+
+      logger.info(`✅ Resumen cotizaciones processed | total: ${cotizaciones.length}`);
+      return;
+    }
+
+    // Caso especial: matching.emitida viene con array de solicitudes con top3 de cotizaciones
+    if (evento.includes('emitida') && payload.solicitudes && Array.isArray(payload.solicitudes)) {
+      logger.info(`📊 Processing BATCH cotizaciones | count: ${payload.solicitudes.length}`);
+      
+      for (const solicitud of payload.solicitudes) {
+        if (!solicitud.top3 || !Array.isArray(solicitud.top3)) continue;
+        
+        for (const cotizacion of solicitud.top3) {
+          const idCotizacion = this.extractBigInt(cotizacion.cotizacionId);
+          const idSolicitud = this.extractBigInt(cotizacion.solicitudId);
+          const idPrestador = this.extractBigInt(cotizacion.prestadorId);
+          const idUsuario = this.extractBigInt(solicitud.usuarioId); // Del padre
+
+          // Si no hay cotizacionId, es solo una invitación, skip
+          if (!idCotizacion || !idSolicitud || !idPrestador) {
+            continue;
+          }
+
+          // Las cotizaciones del batch no tienen id_cotizacion hasta que son emitidas realmente
+          // Por ahora insertamos sin upsert (pueden ser duplicados)
+          await cotizacionRepo.insert({
+            id_cotizacion: idCotizacion,
+            id_solicitud: idSolicitud,
+            id_usuario: idUsuario || null,
+            id_prestador: idPrestador,
+            estado: 'emitida',
+            monto: null,
+            timestamp: event.timestamp,
+          });
+
+          logger.debug(`Saved cotizacion ${idCotizacion} from batch`);
+        }
+      }
+      logger.info(`✅ Batch cotizaciones processed`);
+      return;
+    }
+
+    // Caso normal: cotizacion individual
     const idCotizacion = this.extractBigInt(
-      cuerpo.quoteId || cuerpo.cotizacionId || cuerpo.id_cotizacion || cuerpo.id
+      payload.quoteId || payload.cotizacionId || payload.cotizacion_id || payload.id_cotizacion || payload.id
     );
     const idSolicitud = this.extractBigInt(
-      cuerpo.requestId || cuerpo.solicitudId || cuerpo.id_solicitud || cuerpo.orderId
+      payload.requestId || payload.solicitudId || payload.solicitud_id || payload.id_solicitud || payload.orderId
     );
-    const idUsuario = this.extractBigInt(cuerpo.userId || cuerpo.id_usuario || cuerpo.clienteId);
-    const idPrestador = this.extractBigInt(cuerpo.providerId || cuerpo.prestadorId || cuerpo.id_prestador);
+    const idUsuario = this.extractBigInt(
+      payload.userId || payload.id_usuario || payload.usuario_id || payload.clienteId
+    );
+    const idPrestador = this.extractBigInt(
+      payload.providerId || payload.prestadorId || payload.prestador_id || payload.id_prestador
+    );
 
-    if (!idCotizacion || !idSolicitud || !idUsuario || !idPrestador) {
-      logger.warn(`No se pudo extraer datos de cotizacion del evento ${event.id}`);
+    if (!idCotizacion || !idSolicitud || !idPrestador) {
+      logger.warn(`❌ No se pudo extraer datos de cotizacion del evento ${event.id}`);
+      logger.warn(`   squad: ${event.squad} | topico: ${event.topico} | evento: ${event.evento}`);
+      logger.warn(`   idCotizacion: ${idCotizacion} | idSolicitud: ${idSolicitud} | idPrestador: ${idPrestador}`);
+      logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
       return;
     }
 
     // Determinar estado basado en el evento
-    // Manejar eventos en español: "Cotización Emitida", "Cotización Aceptada", etc.
     let estado = 'emitida';
     if (evento.includes('aceptada') || evento.includes('accept')) {
       estado = 'aceptada';
@@ -298,19 +407,39 @@ export class EventNormalizationService {
       estado = 'emitida';
     }
 
-    const monto = this.extractDecimal(cuerpo.amount || cuerpo.monto || cuerpo.price || cuerpo.precio);
+    const monto = this.extractDecimal(
+      payload.amount || payload.monto || payload.tarifa || payload.price || payload.precio
+    );
 
-    await cotizacionRepo.save({
-      id_cotizacion: idCotizacion,
-      id_solicitud: idSolicitud,
-      id_usuario: idUsuario,
-      id_prestador: idPrestador,
-      estado: estado,
-      monto: monto,
-      timestamp: event.timestamp,
-    } as Cotizacion);
+    logger.info(`💾 Saving cotizacion | id: ${idCotizacion} | solicitud: ${idSolicitud} | estado: ${estado}`);
 
-    logger.debug(`Normalized quote event ${event.id} -> cotizacion ${idCotizacion}`);
+    // Las cotizaciones individuales tienen id_cotizacion, usamos upsert solo si existe
+    if (idCotizacion) {
+      await cotizacionRepo.upsert(
+        {
+          id_cotizacion: idCotizacion,
+          id_solicitud: idSolicitud,
+          id_usuario: idUsuario || null,
+          id_prestador: idPrestador,
+          estado: estado,
+          monto: monto || null,
+          timestamp: event.timestamp,
+        },
+        ['id_cotizacion'] // Solo actualizar si ya existe esa cotizacion
+      );
+    } else {
+      // Sin id_cotizacion, solo insert
+      await cotizacionRepo.insert({
+        id_solicitud: idSolicitud,
+        id_usuario: idUsuario || null,
+        id_prestador: idPrestador,
+        estado: estado,
+        monto: monto || null,
+        timestamp: event.timestamp,
+      });
+    }
+
+    logger.info(`✅ Cotizacion ${idCotizacion || 'sin id'} saved`);
   }
 
   /**
@@ -320,72 +449,181 @@ export class EventNormalizationService {
    */
   private async processPaymentEvent(event: Event): Promise<void> {
     const cuerpo = event.cuerpo;
+    const payload = this.extractPayload(cuerpo);
     const pagoRepo = AppDataSource.getRepository(Pago);
 
     const evento = event.evento.toLowerCase();
 
-    const idPago = this.extractBigInt(
-      cuerpo.paymentId || cuerpo.pagoId || cuerpo.id_pago || cuerpo.id
-    );
-    const idUsuario = this.extractBigInt(cuerpo.userId || cuerpo.id_usuario || cuerpo.clienteId);
-    const idPrestador = this.extractBigInt(cuerpo.providerId || cuerpo.prestadorId || cuerpo.id_prestador);
-    const idSolicitud = this.extractBigInt(
-      cuerpo.requestId || cuerpo.solicitudId || cuerpo.id_solicitud || cuerpo.orderId
-    );
+    // CASO ESPECIAL: matching.pago.emitida tiene estructura diferente con subobjeto "pago"
+    if (evento === 'emitida' && payload.pago) {
+      logger.info(`💰 Processing matching.pago.emitida with pago subobjeto`);
+      const pagoData = payload.pago;
+      
+      const idPago = this.extractBigInt(pagoData.idCorrelacion); // Usar idCorrelacion como ID único
+      const idUsuario = this.extractBigInt(pagoData.idUsuario);
+      const idPrestador = this.extractBigInt(pagoData.idPrestador);
+      const idSolicitud = this.extractBigInt(pagoData.idSolicitud);
+      const montoTotal = this.extractDecimal(pagoData.montoSubtotal);
+      const moneda = pagoData.moneda || 'ARS';
+      const metodo = pagoData.metodoPreferido || null;
 
-    if (!idPago || !idUsuario) {
-      logger.warn(`No se pudo extraer datos de pago del evento ${event.id}`);
+      if (!idPago || !idUsuario) {
+        logger.warn(`❌ No se pudo extraer datos de pago.emitida ${event.id}`);
+        logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
+        return;
+      }
+
+      logger.info(`💾 Creating pago from matching | id: ${idPago} | usuario: ${idUsuario} | monto: ${montoTotal}`);
+      
+      await pagoRepo.upsert(
+        {
+          id_pago: idPago,
+          id_usuario: idUsuario,
+          id_prestador: idPrestador || null,
+          id_solicitud: idSolicitud || null,
+          monto_total: montoTotal,
+          moneda: moneda,
+          metodo: metodo,
+          estado: 'pending', // Estado inicial cuando se emite desde matching
+          timestamp_creado: event.timestamp,
+          timestamp_actual: event.timestamp,
+          captured_at: null,
+          refund_id: null,
+        },
+        ['id_pago']
+      );
+      
+      logger.info(`✅ Pago from matching ${idPago} created`);
       return;
     }
 
-    // Determinar estado basado en el evento
+    // CASOS NORMALES: payments squad
+    const idPago = this.extractBigInt(
+      payload.paymentId || payload.pagoId || payload.id_pago || payload.id
+    );
+    const idUsuario = this.extractBigInt(
+      payload.userId || payload.id_usuario || payload.clienteId
+    );
+    const idPrestador = this.extractBigInt(
+      payload.providerId || payload.prestadorId || payload.id_prestador
+    );
+    const idSolicitud = this.extractBigInt(
+      payload.requestId || payload.solicitudId || payload.id_solicitud || payload.orderId
+    );
+
+    // Para eventos status_updated, solo necesitamos idPago (el userId ya existe en el registro)
+    const isStatusUpdate = evento.includes('status_updated') || evento.includes('update');
+    
+    if (!idPago) {
+      logger.warn(`❌ No se pudo extraer idPago del evento ${event.id}`);
+      logger.warn(`   squad: ${event.squad} | topico: ${event.topico} | evento: ${event.evento}`);
+      logger.warn(`   idPago: ${idPago}`);
+      logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
+      return;
+    }
+
+    if (!isStatusUpdate && !idUsuario) {
+      logger.warn(`❌ No se pudo extraer idUsuario del evento ${event.id}`);
+      logger.warn(`   squad: ${event.squad} | topico: ${event.topico} | evento: ${event.evento}`);
+      logger.warn(`   idPago: ${idPago} | idUsuario: ${idUsuario}`);
+      logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
+      return;
+    }
+
+    // Determinar estado basado en el evento y el campo status del payload
+    // Para eventos status_updated, el estado está en newStatus
+    const statusField = payload.newStatus || payload.status || 'PENDING_PAYMENT';
     let estado = 'pending';
-    if (evento.includes('approved') || evento.includes('aprobado')) {
+    
+    // Mapear estados del payload a nuestros estados
+    if (statusField === 'PENDING_PAYMENT' || statusField === 'pending') {
+      estado = 'pending';
+    } else if (statusField === 'APPROVED' || statusField === 'approved' || evento.includes('approved')) {
       estado = 'approved';
-    } else if (evento.includes('rejected') || evento.includes('rechazado')) {
+    } else if (statusField === 'REJECTED' || statusField === 'rejected' || evento.includes('rejected')) {
       estado = 'rejected';
-    } else if (evento.includes('expired') || evento.includes('expirado')) {
+    } else if (statusField === 'EXPIRED' || statusField === 'expired' || evento.includes('expired')) {
       estado = 'expired';
-    } else if (evento.includes('refund') || evento.includes('reembolso')) {
+    } else if (statusField === 'REFUNDED' || statusField === 'refunded' || evento.includes('refund') || evento.includes('reembolso')) {
       estado = 'refunded';
     }
 
     const montoTotal = this.extractDecimal(
-      cuerpo.amount || cuerpo.monto || cuerpo.monto_total || cuerpo.total || 0
+      payload.amountTotal || payload.amount || payload.monto || payload.monto_total || payload.total || 0
     );
-    const moneda = cuerpo.currency || cuerpo.moneda || 'ARS';
-    const metodo = cuerpo.method || cuerpo.metodo || cuerpo.paymentMethod;
+    const moneda = payload.currency || payload.moneda || 'ARS';
+    
+    // Para eventos method_selected, el método está en methodType
+    let metodo = null;
+    if (evento.includes('method_selected')) {
+      metodo = payload.methodType || payload.method || payload.metodo;
+    } else {
+      metodo = payload.method || payload.metodo || payload.paymentMethod || payload.metodoPago;
+    }
 
-    // Para payment.created, usar timestamp del evento como timestamp_creado
-    // Para otros eventos, buscar el pago existente y actualizar timestamp_actual
     const timestampCreado = evento.includes('created') 
       ? event.timestamp 
-      : event.timestamp; // En otros casos, se actualizará desde el registro existente
+      : event.timestamp;
 
-    const capturedAt = estado === 'approved' ? event.timestamp : null;
+    // Para captured_at, usar updatedAt si existe (eventos status_updated), sino usar event.timestamp
+    let capturedAt = null;
+    if (estado === 'approved') {
+      if (payload.updatedAt && Array.isArray(payload.updatedAt)) {
+        // updatedAt viene como array [year, month, day, hour, minute, second, nanosecond]
+        // IMPORTANTE: Todos los datos están en UTC, usar Date.UTC() para crear la fecha correctamente
+        const [year, month, day, hour, minute, second] = payload.updatedAt;
+        // Crear fecha en UTC directamente (no usar new Date() que usa zona horaria local)
+        capturedAt = new Date(Date.UTC(year, month - 1, day, hour, minute, second || 0));
+      } else {
+        capturedAt = event.timestamp;
+      }
+    }
+
     const refundId = estado === 'refunded' 
-      ? this.extractBigInt(cuerpo.refundId || cuerpo.id_reembolso)
+      ? this.extractBigInt(payload.refundId || payload.id_reembolso)
       : null;
 
     // Buscar pago existente
     const existingPago = await pagoRepo.findOne({ where: { id_pago: idPago } });
 
     if (existingPago) {
-      // Actualizar pago existente
-      await pagoRepo.save({
-        ...existingPago,
-        estado: estado,
-        metodo: metodo || existingPago.metodo,
-        timestamp_actual: event.timestamp,
-        captured_at: capturedAt || existingPago.captured_at,
-        refund_id: refundId || existingPago.refund_id,
-      });
-    } else {
-      // Crear nuevo pago (solo para payment.created)
-      if (evento.includes('created')) {
-        await pagoRepo.save({
+      // Actualizar pago existente usando upsert
+      logger.info(`🔄 Updating pago | id: ${idPago} | old_estado: ${existingPago.estado} | new_estado: ${estado}`);
+      
+      // Si el pago existente no tiene userId pero el evento sí, actualizarlo
+      const finalUserId = existingPago.id_usuario || idUsuario || null;
+      
+      await pagoRepo.upsert(
+        {
           id_pago: idPago,
-          id_usuario: idUsuario,
+          id_usuario: finalUserId,
+          id_prestador: idPrestador || existingPago.id_prestador,
+          id_solicitud: idSolicitud || existingPago.id_solicitud,
+          monto_total: montoTotal || existingPago.monto_total,
+          moneda: moneda,
+          metodo: metodo || existingPago.metodo,
+          estado: estado,
+          timestamp_creado: existingPago.timestamp_creado,
+          timestamp_actual: event.timestamp,
+          captured_at: capturedAt || existingPago.captured_at,
+          refund_id: refundId || existingPago.refund_id,
+        },
+        ['id_pago']
+      );
+      logger.info(`✅ Pago ${idPago} updated to estado: ${estado}`);
+    } else {
+      // Crear nuevo pago
+      // Nota: puede no tener userId si es un evento status_updated que llegó antes que created
+      if (!idUsuario) {
+        logger.warn(`⚠️ Creando pago ${idPago} sin userId. Evento: ${event.evento}`);
+        logger.warn(`   El userId se completará cuando llegue el evento 'created'`);
+      }
+      
+      logger.info(`💾 Creating pago | id: ${idPago} | usuario: ${idUsuario || 'NULL'} | estado: ${estado}`);
+      await pagoRepo.upsert(
+        {
+          id_pago: idPago,
+          id_usuario: idUsuario || null,
           id_prestador: idPrestador || null,
           id_solicitud: idSolicitud || null,
           monto_total: montoTotal,
@@ -396,11 +634,11 @@ export class EventNormalizationService {
           timestamp_actual: event.timestamp,
           captured_at: capturedAt,
           refund_id: refundId,
-        } as Pago);
-      }
+        },
+        ['id_pago']
+      );
+      logger.info(`✅ Pago ${idPago} created`);
     }
-
-    logger.debug(`Normalized payment event ${event.id} -> pago ${idPago}`);
   }
 
   /**
@@ -409,14 +647,17 @@ export class EventNormalizationService {
    */
   private async processPrestadorEvent(event: Event): Promise<void> {
     const cuerpo = event.cuerpo;
+    const payload = this.extractPayload(cuerpo);
     const prestadorRepo = AppDataSource.getRepository(Prestador);
 
     const idPrestador = this.extractBigInt(
-      cuerpo.prestadorId || cuerpo.id_prestador || cuerpo.providerId || cuerpo.id
+      payload.prestadorId || payload.id_prestador || payload.providerId || payload.userId || payload.id
     );
 
     if (!idPrestador) {
-      logger.warn(`No se pudo extraer id_prestador del evento ${event.id}`);
+      logger.warn(`❌ No se pudo extraer id_prestador del evento ${event.id}`);
+      logger.warn(`   squad: ${event.squad} | topico: ${event.topico} | evento: ${event.evento}`);
+      logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
       return;
     }
 
@@ -429,27 +670,80 @@ export class EventNormalizationService {
     }
 
     // Extraer nombre y apellido
-    const nombre = cuerpo.nombre || cuerpo.name || cuerpo.firstName || null;
-    const apellido = cuerpo.apellido || cuerpo.lastName || null;
+    const nombre = payload.nombre || payload.name || payload.firstName || null;
+    const apellido = payload.apellido || payload.lastName || null;
 
     // Determinar si el perfil está completo
-    // Se considera completo si tiene: nombre, apellido, y otros campos importantes
     const perfilCompleto = !!(nombre && apellido && 
-      (cuerpo.foto || cuerpo.photo) && 
-      (cuerpo.zonas || cuerpo.zones) && 
-      (cuerpo.habilidades || cuerpo.skills));
+      (payload.foto || payload.photo) && 
+      (payload.zonas || payload.zones) && 
+      (payload.habilidades || payload.skills));
 
-    // Usar upsert para insertar o actualizar
-    await prestadorRepo.save({
-      id_prestador: idPrestador,
-      nombre: nombre,
-      apellido: apellido,
-      estado: estado,
-      timestamp: event.timestamp,
-      perfil_completo: perfilCompleto,
-    } as Prestador);
+    logger.info(`💾 Saving prestador | id: ${idPrestador} | estado: ${estado}`);
 
-    logger.debug(`Normalized prestador event ${event.id} -> prestador ${idPrestador}`);
+    await prestadorRepo.upsert(
+      {
+        id_prestador: idPrestador,
+        nombre: nombre,
+        apellido: apellido,
+        estado: estado,
+        timestamp: event.timestamp,
+        perfil_completo: perfilCompleto,
+      },
+      ['id_prestador'] // Conflict target: unique constraint en id_prestador
+    );
+
+    logger.info(`✅ Prestador ${idPrestador} saved`);
+
+    // Procesar habilidades del prestador si vienen en el payload
+    if (payload.habilidades && Array.isArray(payload.habilidades)) {
+      const habilidadRepo = AppDataSource.getRepository(Habilidad);
+      logger.info(`🔧 Processing ${payload.habilidades.length} habilidades for prestador ${idPrestador}`);
+      
+      for (const hab of payload.habilidades) {
+        const habId = this.extractBigInt(hab.id || hab.id_habilidad || hab.habilidadId);
+        const habNombre = hab.nombre || hab.name || 'unknown';
+        const habIdRubro = this.extractBigInt(hab.id_rubro || hab.rubroId || hab.categoryId);
+        
+        if (habId) {
+          await habilidadRepo.upsert(
+            {
+              id_usuario: idPrestador,
+              id_habilidad: habId,
+              nombre_habilidad: habNombre,
+              id_rubro: habIdRubro,
+              activa: true,
+            },
+            ['id_usuario', 'id_habilidad']
+          );
+          logger.debug(`  ✅ Habilidad ${habId} (${habNombre}) with rubro ${habIdRubro} saved for prestador ${idPrestador}`);
+        }
+      }
+    }
+
+    // Procesar zonas del prestador si vienen en el payload
+    if (payload.zonas && Array.isArray(payload.zonas)) {
+      const zonaRepo = AppDataSource.getRepository(Zona);
+      logger.info(`🗺️ Processing ${payload.zonas.length} zonas for prestador ${idPrestador}`);
+      
+      for (const zon of payload.zonas) {
+        const zonId = this.extractBigInt(zon.id || zon.id_zona || zon.zonaId);
+        const zonNombre = zon.nombre || zon.name || 'unknown';
+        
+        if (zonId) {
+          await zonaRepo.upsert(
+            {
+              id_usuario: idPrestador,
+              id_zona: zonId,
+              nombre_zona: zonNombre,
+              activa: true,
+            },
+            ['id_usuario', 'id_zona']
+          );
+          logger.debug(`  ✅ Zona ${zonId} (${zonNombre}) saved for prestador ${idPrestador}`);
+        }
+      }
+    }
   }
 
   /**
@@ -458,47 +752,66 @@ export class EventNormalizationService {
    */
   private async processRubroEvent(event: Event): Promise<void> {
     const cuerpo = event.cuerpo;
+    const payload = this.extractPayload(cuerpo);
     const rubroRepo = AppDataSource.getRepository(Rubro);
 
     const idRubro = this.extractBigInt(
-      cuerpo.rubroId || cuerpo.id_rubro || cuerpo.id
+      payload.rubroId || payload.id_rubro || payload.id
     );
 
     if (!idRubro) {
-      logger.warn(`No se pudo extraer id_rubro del evento ${event.id}`);
+      logger.warn(`❌ No se pudo extraer id_rubro del evento ${event.id}`);
+      logger.warn(`   squad: ${event.squad} | topico: ${event.topico} | evento: ${event.evento}`);
+      logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
       return;
     }
 
     const evento = event.evento.toLowerCase();
 
-    // Si es baja, eliminar el registro (o marcarlo como inactivo si no queremos eliminar)
+    // Si es baja, eliminar el registro
     if (evento.includes('baja')) {
       await rubroRepo.delete({ id_rubro: idRubro });
-      logger.debug(`Deleted rubro ${idRubro} from event ${event.id}`);
+      logger.info(`🗑️ Deleted rubro ${idRubro}`);
       return;
     }
 
     // Extraer nombre del rubro
-    const nombreRubro = cuerpo.nombre || cuerpo.name || cuerpo.nombre_rubro || cuerpo.rubro || 'unknown';
+    const nombreRubro = payload.nombre || payload.name || payload.nombre_rubro || payload.rubro || 'unknown';
 
-    // Usar upsert para insertar o actualizar
+    logger.info(`💾 Saving rubro | id: ${idRubro} | nombre: ${nombreRubro}`);
+
     await rubroRepo.save({
       id_rubro: idRubro,
       nombre_rubro: nombreRubro,
     } as Rubro);
 
-    logger.debug(`Normalized rubro event ${event.id} -> rubro ${idRubro}`);
+    logger.info(`✅ Rubro ${idRubro} saved`);
   }
 
   /**
    * Extrae un BigInt de diferentes formatos
+   * Maneja números, strings numéricos, y filtra strings no numéricos (ej: "HAB_002")
    */
   private extractBigInt(value: any): number | null {
     if (value === null || value === undefined) return null;
     
-    // Si es string numérico
+    // Si es string
     if (typeof value === 'string') {
-      const parsed = parseInt(value, 10);
+      // Intentar extraer solo los dígitos del string
+      // Esto maneja casos como "PREST_001" -> 1, "HAB_005" -> 5, etc.
+      const digitsOnly = value.replace(/\D/g, ''); // Elimina todo excepto dígitos
+      
+      if (digitsOnly.length === 0) {
+        return null; // No hay dígitos
+      }
+      
+      const parsed = parseInt(digitsOnly, 10);
+      
+      // Si el string original contenía letras, logear warning
+      if (/[a-zA-Z]/.test(value) && !isNaN(parsed)) {
+        logger.warn(`⚠️ Extracted numeric ID ${parsed} from string "${value}". Consider using numeric IDs.`);
+      }
+      
       return isNaN(parsed) ? null : parsed;
     }
     
@@ -508,6 +821,21 @@ export class EventNormalizationService {
     }
 
     return null;
+  }
+
+  /**
+   * Extrae el payload real del evento
+   * Los eventos de Core Hub tienen estructura: { messageId, timestamp, payload: {...}, destination, routingKey }
+   * Los eventos directos tienen los datos directamente en cuerpo
+   */
+  private extractPayload(cuerpo: any): any {
+    // Si tiene payload, usarlo (Core Hub)
+    if (cuerpo.payload && typeof cuerpo.payload === 'object') {
+      return cuerpo.payload;
+    }
+    
+    // Si no, usar el cuerpo directamente (webhook directo)
+    return cuerpo;
   }
 
   /**

@@ -104,7 +104,7 @@ export class FeatureFlagService {
 
 // Feature flags conocidos
 export const FEATURE_FLAGS = {
-  BYPASS_AUTH_SERVICE: 'bypass_auth_service', // Bypass del servicio de usuarios para auth
+  BYPASS_AUTH_SERVICE: 'bypass_auth_service', // Bypass del servicio de usuarios para auth (desactivado por defecto)
 } as const;
 
 export const featureFlagService = new FeatureFlagService();

@@ -37,11 +37,6 @@ const controller = new UsuariosMetricsController();
  *         schema:
  *           type: string
  *           format: date
- *       - in: query
- *         name: zona
- *         schema:
- *           type: string
- *         description: Filtrar por zona (opcional)
  *     responses:
  *       200:
  *         description: Nuevos clientes registrados
@@ -82,11 +77,6 @@ router.get('/nuevos-clientes', controller.getNuevosClientes.bind(controller));
  *         schema:
  *           type: string
  *           format: date
- *       - in: query
- *         name: zona
- *         schema:
- *           type: string
- *         description: Filtrar por zona (opcional)
  *     responses:
  *       200:
  *         description: Nuevos prestadores registrados
@@ -127,11 +117,6 @@ router.get('/nuevos-prestadores', controller.getNuevosPrestadoresUsuarios.bind(c
  *         schema:
  *           type: string
  *           format: date
- *       - in: query
- *         name: zona
- *         schema:
- *           type: string
- *         description: Filtrar por zona (opcional)
  *     responses:
  *       200:
  *         description: Nuevos administradores registrados
@@ -150,8 +135,8 @@ router.get('/nuevos-administradores', controller.getNuevosAdministradores.bind(c
  * @swagger
  * /api/metrica/usuarios/tasa-roles-activos:
  *   get:
- *     summary: Tasa de roles activos (%)
- *     description: Retorna el porcentaje de usuarios activos sobre el total de usuarios y su distribución por rol
+ *     summary: Tasa de roles inactivos (%)
+ *     description: Retorna el porcentaje de usuarios inactivos sobre el total de usuarios y su distribución por rol
  *     tags: [Métricas - Usuarios]
  *     security:
  *       - bearerAuth: []
@@ -174,7 +159,7 @@ router.get('/nuevos-administradores', controller.getNuevosAdministradores.bind(c
  *           format: date
  *     responses:
  *       200:
- *         description: Tasa de roles activos y distribución
+ *         description: Tasa de roles inactivos y distribución
  *         content:
  *           application/json:
  *             schema:
@@ -185,7 +170,7 @@ router.get('/nuevos-administradores', controller.getNuevosAdministradores.bind(c
  *                 data:
  *                   type: object
  *                   properties:
- *                     tasaActivos:
+ *                     tasaInactivos:
  *                       $ref: '#/components/schemas/CardMetricResponse'
  *                     distribucionPorRol:
  *                       $ref: '#/components/schemas/PieMetricResponse'
@@ -195,6 +180,58 @@ router.get('/nuevos-administradores', controller.getNuevosAdministradores.bind(c
  *         description: No autorizado
  */
 router.get('/tasa-roles-activos', controller.getTasaRolesActivos.bind(controller));
+
+/**
+ * @swagger
+ * /api/metrica/usuarios/distribucion-por-rol:
+ *   get:
+ *     summary: Distribución por rol histórico
+ *     description: Retorna la distribución de usuarios por rol sin filtro de periodo (histórico)
+ *     tags: [Métricas - Usuarios]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Distribución por rol histórico
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/PieMetricResponse'
+ *       401:
+ *         description: No autorizado
+ */
+router.get('/distribucion-por-rol', controller.getDistribucionPorRol.bind(controller));
+
+/**
+ * @swagger
+ * /api/metrica/usuarios/totales:
+ *   get:
+ *     summary: Usuarios totales (histórico)
+ *     description: Retorna el total de usuarios sin filtro de periodo (histórico)
+ *     tags: [Métricas - Usuarios]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Total de usuarios histórico
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/CardMetricResponse'
+ *       401:
+ *         description: No autorizado
+ */
+router.get('/totales', controller.getUsuariosTotales.bind(controller));
 
 // Rutas legacy
 /**

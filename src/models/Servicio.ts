@@ -1,11 +1,15 @@
-import { Entity, PrimaryColumn, Column, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity('servicios')
+@Index(['id_servicio'], { unique: true })
 @Index(['id_usuario'])
 @Index(['activo'])
 @Index(['timestamp'])
 export class Servicio {
-  @PrimaryColumn({ type: 'bigint', name: 'id_servicio' })
+  @PrimaryGeneratedColumn('increment')
+  id: number;
+
+  @Column({ type: 'bigint', name: 'id_servicio', nullable: false })
   id_servicio: number;
 
   @Column({ type: 'bigint', name: 'id_usuario', nullable: false })

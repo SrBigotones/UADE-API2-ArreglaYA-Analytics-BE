@@ -1,20 +1,24 @@
-import { Entity, PrimaryColumn, Column, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity('cotizaciones')
+@Index(['id_cotizacion'])
 @Index(['id_solicitud'])
 @Index(['id_usuario'])
 @Index(['id_prestador'])
 @Index(['estado'])
 @Index(['timestamp'])
 export class Cotizacion {
-  @PrimaryColumn({ type: 'bigint', name: 'id_cotizacion' })
-  id_cotizacion: number;
+  @PrimaryGeneratedColumn('increment')
+  id: number;
+
+  @Column({ type: 'bigint', name: 'id_cotizacion', nullable: true, unique: true })
+  id_cotizacion: number | null;
 
   @Column({ type: 'bigint', name: 'id_solicitud', nullable: false })
   id_solicitud: number;
 
-  @Column({ type: 'bigint', name: 'id_usuario', nullable: false })
-  id_usuario: number;
+  @Column({ type: 'bigint', name: 'id_usuario', nullable: true })
+  id_usuario: number | null;
 
   @Column({ type: 'bigint', name: 'id_prestador', nullable: false })
   id_prestador: number;

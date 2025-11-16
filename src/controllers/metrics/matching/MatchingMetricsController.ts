@@ -44,25 +44,21 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
   }
 
   /**
-   * Parsea los parámetros de segmentación del request
+   * Parsea y valida los parámetros de segmentación
    */
-  private parseSegmentationParams(req: Request): SegmentationFilters | undefined {
+  protected parseSegmentationParams(req: Request): SegmentationFilters | undefined {
     const { rubro, zona, tipoSolicitud } = req.query;
-    
-    if (!rubro && !zona && !tipoSolicitud) {
-      return undefined;
+    const filters: SegmentationFilters = {};
+
+    if (rubro) {
+      const rubroValue = typeof rubro === 'string' && !isNaN(Number(rubro)) ? Number(rubro) : rubro;
+      filters.rubro = rubroValue as string | number;
     }
 
-    const filters: SegmentationFilters = {};
-    
-    if (rubro) {
-      filters.rubro = isNaN(Number(rubro)) ? rubro as string : Number(rubro);
-    }
-    
     if (zona) {
       filters.zona = zona as string;
     }
-    
+
     if (tipoSolicitud) {
       if (tipoSolicitud !== 'abierta' && tipoSolicitud !== 'dirigida') {
         throw new Error('tipoSolicitud debe ser "abierta" o "dirigida"');
@@ -121,7 +117,6 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/cotizaciones/conversion-aceptada
    * 4. Conversión a cotización aceptada (%)
-   * Segmentar por: Rubro, zona
    */
   public async getConversionCotizacionAceptada(req: Request, res: Response): Promise<void> {
     try {
@@ -148,7 +143,8 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
           const aceptadasInt = await this.countCotizacionesByEstado('aceptada', start, end, filters);
           const rechazadasInt = await this.countCotizacionesByEstado('rechazada', start, end, filters);
           const totalInt = aceptadasInt + rechazadasInt;
-          return totalInt > 0 ? (aceptadasInt / totalInt) * 100 : 0;
+          const rate = totalInt > 0 ? (aceptadasInt / totalInt) * 100 : 0;
+          return this.roundPercentage(rate);
         },
         'absoluto'
       );
@@ -167,16 +163,17 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
-      const currentAvg = await this.calculateAverageMatchingTime(dateRanges.startDate, dateRanges.endDate);
-      const previousAvg = await this.calculateAverageMatchingTime(dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const currentAvg = await this.calculateAverageMatchingTime(dateRanges.startDate, dateRanges.endDate, filters);
+      const previousAvg = await this.calculateAverageMatchingTime(dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
         currentAvg,
         previousAvg,
-        async (start: Date, end: Date) => this.calculateAverageMatchingTime(start, end),
+        async (start: Date, end: Date) => this.calculateAverageMatchingTime(start, end, filters),
         'absoluto'
       );
       
@@ -194,22 +191,11 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
       // Cotizaciones pendientes son las emitidas que no están aceptadas ni rechazadas ni expiradas
-      const repo = AppDataSource.getRepository(Cotizacion);
-      const pendientes = await repo
-        .createQueryBuilder('cotizacion')
-        .where('cotizacion.estado = :estado', { estado: 'emitida' })
-        .andWhere('cotizacion.timestamp >= :startDate', { startDate: dateRanges.startDate })
-        .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.endDate })
-        .getCount();
-
-      const prevPendientes = await repo
-        .createQueryBuilder('cotizacion')
-        .where('cotizacion.estado = :estado', { estado: 'emitida' })
-        .andWhere('cotizacion.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
-        .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
-        .getCount();
+      const pendientes = await this.countCotizacionesByEstado('emitida', dateRanges.startDate, dateRanges.endDate, filters);
+      const prevPendientes = await this.countCotizacionesByEstado('emitida', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
@@ -217,12 +203,7 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
         pendientes,
         prevPendientes,
         async (start: Date, end: Date) => {
-          return await repo
-            .createQueryBuilder('cotizacion')
-            .where('cotizacion.estado = :estado', { estado: 'emitida' })
-            .andWhere('cotizacion.timestamp >= :startDate', { startDate: start })
-            .andWhere('cotizacion.timestamp <= :endDate', { endDate: end })
-            .getCount();
+          return await this.countCotizacionesByEstado('emitida', start, end, filters);
         },
         'porcentaje'
       );
@@ -241,16 +222,17 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
-      const currentAvg = await this.calculateAverageProviderResponseTime(dateRanges.startDate, dateRanges.endDate);
-      const previousAvg = await this.calculateAverageProviderResponseTime(dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const currentAvg = await this.calculateAverageProviderResponseTime(dateRanges.startDate, dateRanges.endDate, filters);
+      const previousAvg = await this.calculateAverageProviderResponseTime(dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
         currentAvg,
         previousAvg,
-        async (start: Date, end: Date) => this.calculateAverageProviderResponseTime(start, end),
+        async (start: Date, end: Date) => this.calculateAverageProviderResponseTime(start, end, filters),
         'absoluto'
       );
       
@@ -268,15 +250,14 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
-      const expiradas = await this.countCotizacionesByEstado('expirada', dateRanges.startDate, dateRanges.endDate);
-      const emitidas = await this.countCotizacionesByEstado('emitida', dateRanges.startDate, dateRanges.endDate);
-      const totalEmitidas = expiradas + emitidas; // También incluir aceptadas y rechazadas para el total real
-      const todasEmitidas = await this.countCotizaciones(dateRanges.startDate, dateRanges.endDate);
+      const expiradas = await this.countCotizacionesByEstado('expirada', dateRanges.startDate, dateRanges.endDate, filters);
+      const todasEmitidas = await this.countCotizaciones(dateRanges.startDate, dateRanges.endDate, filters);
       const currentRate = todasEmitidas > 0 ? (expiradas / todasEmitidas) * 100 : 0;
 
-      const prevExpiradas = await this.countCotizacionesByEstado('expirada', dateRanges.previousStartDate, dateRanges.previousEndDate);
-      const prevTodasEmitidas = await this.countCotizaciones(dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const prevExpiradas = await this.countCotizacionesByEstado('expirada', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
+      const prevTodasEmitidas = await this.countCotizaciones(dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
       const previousRate = prevTodasEmitidas > 0 ? (prevExpiradas / prevTodasEmitidas) * 100 : 0;
 
       const metric = await this.calculateMetricWithChart(
@@ -285,9 +266,10 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
         this.roundPercentage(currentRate),
         this.roundPercentage(previousRate),
         async (start: Date, end: Date) => {
-          const expiradas = await this.countCotizacionesByEstado('expirada', start, end);
-          const todasEmitidas = await this.countCotizaciones(start, end);
-          return todasEmitidas > 0 ? (expiradas / todasEmitidas) * 100 : 0;
+          const expiradas = await this.countCotizacionesByEstado('expirada', start, end, filters);
+          const todasEmitidas = await this.countCotizaciones(start, end, filters);
+          const rate = todasEmitidas > 0 ? (expiradas / todasEmitidas) * 100 : 0;
+          return this.roundPercentage(rate);
         },
         'absoluto'
       );
@@ -312,16 +294,17 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
-      const currentAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.startDate, dateRanges.endDate);
-      const previousAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.previousStartDate, dateRanges.previousEndDate);
+      const currentAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.startDate, dateRanges.endDate, filters);
+      const previousAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
         currentAvg,
         previousAvg,
-        async (start: Date, end: Date) => this.calculateAverageTimeToFirstQuote(start, end),
+        async (start: Date, end: Date) => this.calculateAverageTimeToFirstQuote(start, end, filters),
         'absoluto'
       );
       

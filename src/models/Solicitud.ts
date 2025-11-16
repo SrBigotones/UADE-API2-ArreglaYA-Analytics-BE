@@ -1,6 +1,7 @@
-import { Entity, PrimaryColumn, Column, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity('solicitudes')
+@Index(['id_solicitud'], { unique: true })
 @Index(['id_usuario'])
 @Index(['id_prestador'])
 @Index(['estado'])
@@ -8,11 +9,14 @@ import { Entity, PrimaryColumn, Column, Index, CreateDateColumn, UpdateDateColum
 @Index(['timestamp'])
 @Index(['es_critica'])
 export class Solicitud {
-  @PrimaryColumn({ type: 'bigint', name: 'id_solicitud' })
+  @PrimaryGeneratedColumn('increment')
+  id: number;
+
+  @Column({ type: 'bigint', name: 'id_solicitud', nullable: false })
   id_solicitud: number;
 
-  @Column({ type: 'bigint', name: 'id_usuario', nullable: false })
-  id_usuario: number;
+  @Column({ type: 'bigint', name: 'id_usuario', nullable: true })
+  id_usuario: number | null;
 
   @Column({ type: 'bigint', name: 'id_prestador', nullable: true })
   id_prestador: number | null;

@@ -10,7 +10,7 @@ import webhookRoutes from './routes/webhooks';
 import metricsRoutes from './routes/metrics';
 import authRoutes from './routes/auth';
 import adminRoutes from './routes/admin';
-import testDataRoutes from './routes/testData';
+import catalogoRoutes from './routes/catalogo';
 import featureFlagRoutes from './routes/featureFlags';
 import { errorHandler } from './middleware/errorHandler';
 import { swaggerUi, specs } from './config/swagger';
@@ -33,7 +33,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/metrica', metricsRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/test-data', testDataRoutes);
+app.use('/api/catalogo', catalogoRoutes);
 
 // Rutas internas (ocultas, no aparecen en Swagger)
 app.use('/api/internal/feature-flags', featureFlagRoutes);

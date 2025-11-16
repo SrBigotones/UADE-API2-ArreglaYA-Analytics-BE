@@ -44,26 +44,22 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
   }
 
   /**
-   * Parsea los parámetros de segmentación del request
+   * Parsea y valida los parámetros de segmentación
    */
-  private parseSegmentationParams(req: Request): SegmentationFilters | undefined {
+  protected parseSegmentationParams(req: Request): SegmentationFilters | undefined {
     const { rubro, zona, tipoSolicitud } = req.query;
-    
-    if (!rubro && !zona && !tipoSolicitud) {
-      return undefined;
+    const filters: SegmentationFilters = {};
+
+    if (rubro) {
+      // Puede ser número o string
+      const rubroValue = typeof rubro === 'string' && !isNaN(Number(rubro)) ? Number(rubro) : rubro;
+      filters.rubro = rubroValue as string | number;
     }
 
-    const filters: SegmentationFilters = {};
-    
-    if (rubro) {
-      // Puede ser string (nombre) o number (id)
-      filters.rubro = isNaN(Number(rubro)) ? rubro as string : Number(rubro);
-    }
-    
     if (zona) {
       filters.zona = zona as string;
     }
-    
+
     if (tipoSolicitud) {
       if (tipoSolicitud !== 'abierta' && tipoSolicitud !== 'dirigida') {
         throw new Error('tipoSolicitud debe ser "abierta" o "dirigida"');
@@ -71,6 +67,7 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
       filters.tipoSolicitud = tipoSolicitud as 'abierta' | 'dirigida';
     }
 
+    // Si no hay filtros, retornar undefined
     return Object.keys(filters).length > 0 ? filters : undefined;
   }
 
@@ -122,7 +119,6 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/solicitudes/volumen
    * 1. Volumen de demanda (N° de solicitudes creadas)
-   * Segmentar por: Rubro, zona
    */
   public async getVolumenDemanda(req: Request, res: Response): Promise<void> {
     try {
@@ -151,7 +147,6 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/solicitudes/tasa-cancelacion
    * 2. Tasa de cancelación de solicitudes (%)
-   * Segmentar por: Rubro, zona
    */
   public async getTasaCancelacionSolicitudes(req: Request, res: Response): Promise<void> {
     try {
@@ -176,7 +171,8 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
         async (start: Date, end: Date) => {
           const creadasInt = await this.countSolicitudesByEstado('creada', start, end, filters);
           const canceladasInt = await this.countSolicitudesByEstado('cancelada', start, end, filters);
-          return creadasInt > 0 ? (canceladasInt / creadasInt) * 100 : 0;
+          const rate = creadasInt > 0 ? (canceladasInt / creadasInt) * 100 : 0;
+          return this.roundPercentage(rate);
         },
         'absoluto'
       );
@@ -190,7 +186,6 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/solicitudes/tiempo-primera-cotizacion
    * 3. Tiempo a primera cotización (horas)
-   * Segmentar por: Rubro, tipo de solicitud (abierta/dirigida)
    */
   public async getTiempoPrimeraCotizacion(req: Request, res: Response): Promise<void> {
     try {
@@ -224,24 +219,46 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
-      const solicitudesPorZona = await this.countSolicitudesPorZona(dateRanges.startDate, dateRanges.endDate);
-      
-      // Por ahora retornamos datos por zona (las coordenadas se pueden mapear después)
-      const points: HeatmapPoint[] = [];
-      
-      // Si hay coordenadas en las solicitudes, usarlas; si no, usar zonas
-      const solicitudes = await AppDataSource.getRepository(Solicitud)
+      const repo = AppDataSource.getRepository(Solicitud);
+      const qb = repo
         .createQueryBuilder('solicitud')
+        .select('solicitud.zona', 'zona')
+        .addSelect('COUNT(*)', 'count')
         .where('solicitud.timestamp >= :startDate', { startDate: dateRanges.startDate })
         .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate })
-        .getMany();
+        .andWhere('solicitud.zona IS NOT NULL')
+        .groupBy('solicitud.zona');
+      
+      this.applySolicitudFilters(qb, filters);
+      const result = await qb.getRawMany();
 
-      // Agrupar por zona y crear puntos (requeriría mapeo de zonas a coordenadas)
-      // Por ahora retornar estructura básica
+      // Obtener coordenadas de las zonas desde la base de datos
+      const zonaCoordenadas = await this.getZonasCoordenadas();
+
+      // Coordenadas por defecto de Buenos Aires (centro) para zonas sin coordenadas en BD
+      const defaultCoords = { lat: -34.6037, lon: -58.3816 };
+
+      const points: HeatmapPoint[] = [];
+      
+      result.forEach(row => {
+        const zona = row.zona;
+        const count = parseInt(row.count);
+        
+        // Obtener coordenadas de la zona desde BD o usar coordenadas por defecto
+        const coords = zonaCoordenadas[zona] || defaultCoords;
+        
+        points.push({
+          lat: coords.lat,
+          lon: coords.lon,
+          intensity: count
+        });
+      });
+
       const response: HeatmapResponse = {
         data: points,
-        totalPoints: solicitudes.length,
+        totalPoints: points.length,
         period: {
           startDate: dateRanges.startDate.toISOString().split('T')[0],
           endDate: dateRanges.endDate.toISOString().split('T')[0]
@@ -269,7 +286,7 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
         .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate })
         .getMany();
 
-      // Agrupar por zona (ya que no tenemos coordenadas)
+      // Agrupar por zona
       const zonasMap = new Map<string, number>();
       solicitudes.forEach(s => {
         if (s.zona) {
@@ -277,13 +294,17 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
         }
       });
 
+      // Obtener coordenadas de las zonas desde la base de datos
+      const zonaCoordenadas = await this.getZonasCoordenadas();
+      const defaultCoords = { lat: -34.6037, lon: -58.3816 }; // Buenos Aires centro por defecto
+
       const heatmapPoints: HeatmapPoint[] = [];
-      // Nota: Sin coordenadas, retornamos puntos ficticios basados en zonas
       zonasMap.forEach((count, zona) => {
-        // Coordenadas aproximadas por zona (deberían venir de una tabla de zonas)
+        // Obtener coordenadas de la zona desde BD o usar coordenadas por defecto
+        const coords = zonaCoordenadas[zona] || defaultCoords;
         heatmapPoints.push({
-          lat: -34.6037, // Buenos Aires por defecto
-          lon: -58.3816,
+          lat: coords.lat,
+          lon: coords.lon,
           intensity: count
         });
       });

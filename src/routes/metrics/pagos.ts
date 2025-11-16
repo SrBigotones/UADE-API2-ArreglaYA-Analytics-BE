@@ -37,16 +37,6 @@ const controller = new PagosMetricsController();
  *         schema:
  *           type: string
  *           format: date
- *       - in: query
- *         name: metodo
- *         schema:
- *           type: string
- *         description: Filtrar por método de pago (opcional)
- *       - in: query
- *         name: rubro
- *         schema:
- *           type: string
- *         description: Filtrar por rubro (opcional)
  *     responses:
  *       200:
  *         description: Tasa de éxito de pagos
@@ -111,7 +101,7 @@ router.get('/distribucion-metodos', controller.getDistribucionMetodosPago.bind(c
  * /api/metrica/pagos/distribucion-eventos:
  *   get:
  *     summary: Distribución por tipo de evento de pago
- *     description: Retorna la cantidad de pagos agrupados por estado (aprobado, rechazado, expirado, pendiente)
+ *     description: Retorna la cantidad de pagos agrupados por estado (aprobado, rechazado, pendiente)
  *     tags: [Métricas - Pagos]
  *     security:
  *       - bearerAuth: []
@@ -217,21 +207,6 @@ router.get('/tiempo-procesamiento', controller.getTiempoProcesamientoPagos.bind(
  *         schema:
  *           type: string
  *           format: date
- *       - in: query
- *         name: rubro
- *         schema:
- *           type: string
- *         description: Filtrar por rubro (opcional)
- *       - in: query
- *         name: zona
- *         schema:
- *           type: string
- *         description: Filtrar por zona (opcional)
- *       - in: query
- *         name: metodo
- *         schema:
- *           type: string
- *         description: Filtrar por método de pago (opcional)
  *     responses:
  *       200:
  *         description: Ingreso bruto y ticket medio

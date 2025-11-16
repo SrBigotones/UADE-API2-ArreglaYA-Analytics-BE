@@ -48,21 +48,18 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
   }
 
   /**
-   * Parsea los parámetros de segmentación del request
+   * Parsea y valida los parámetros de segmentación
+   * Nota: Win Rate NO acepta filtros de segmentación (es general)
    */
-  private parseSegmentationParams(req: Request): SegmentationFilters | undefined {
+  protected parseSegmentationParams(req: Request): SegmentationFilters | undefined {
     const { rubro, zona } = req.query;
-    
-    if (!rubro && !zona) {
-      return undefined;
+    const filters: SegmentationFilters = {};
+
+    if (rubro) {
+      const rubroValue = typeof rubro === 'string' && !isNaN(Number(rubro)) ? Number(rubro) : rubro;
+      filters.rubro = rubroValue as string | number;
     }
 
-    const filters: SegmentationFilters = {};
-    
-    if (rubro) {
-      filters.rubro = isNaN(Number(rubro)) ? rubro as string : Number(rubro);
-    }
-    
     if (zona) {
       filters.zona = zona as string;
     }
@@ -118,7 +115,6 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/prestadores/nuevos-registrados
    * 1. Nuevos prestadores registrados
-   * Segmentar por: Zona, rubro
    */
   public async getNuevosPrestadoresRegistrados(req: Request, res: Response): Promise<void> {
     try {
@@ -186,47 +182,38 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/prestadores/win-rate-rubro
    * 5. Win Rate por rubro (%)
-   * Nota: Calcula el Win Rate global ya que no hay relación directa entre cotizaciones y rubros en el modelo actual
+   * Calcula el Win Rate: de las cotizaciones emitidas en el período, cuántas fueron aceptadas
+   * Nota: Actualmente calcula el Win Rate global. Para calcular por rubro se necesitaría join con prestadores->habilidades->rubros
    */
   public async getWinRatePorRubro(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
 
-      // Calcular Win Rate global (todas las cotizaciones)
       const cotizacionesRepo = AppDataSource.getRepository(Cotizacion);
       
-      const emitidas = await cotizacionesRepo
+      // Obtener todas las cotizaciones creadas (emitidas) en el período actual
+      // Todas las cotizaciones se crean como 'emitida', luego pueden cambiar a 'aceptada', 'rechazada' o 'expirada'
+      const cotizacionesEmitidas = await cotizacionesRepo
         .createQueryBuilder('cotizacion')
-        .where('cotizacion.estado = :estado', { estado: 'emitida' })
-        .andWhere('cotizacion.timestamp >= :startDate', { startDate: dateRanges.startDate })
+        .where('cotizacion.timestamp >= :startDate', { startDate: dateRanges.startDate })
         .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.endDate })
-        .getCount();
+        .getMany();
 
-      const aceptadas = await cotizacionesRepo
-        .createQueryBuilder('cotizacion')
-        .where('cotizacion.estado = :estado', { estado: 'aceptada' })
-        .andWhere('cotizacion.timestamp >= :startDate', { startDate: dateRanges.startDate })
-        .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.endDate })
-        .getCount();
-
+      // De las emitidas en el período, contar cuántas fueron aceptadas (estado actual = 'aceptada')
+      const aceptadas = cotizacionesEmitidas.filter(c => c.estado === 'aceptada').length;
+      const emitidas = cotizacionesEmitidas.length;
       const currentRate = emitidas > 0 ? (aceptadas / emitidas) * 100 : 0;
 
       // Calcular para período anterior
-      const prevEmitidas = await cotizacionesRepo
+      const prevCotizacionesEmitidas = await cotizacionesRepo
         .createQueryBuilder('cotizacion')
-        .where('cotizacion.estado = :estado', { estado: 'emitida' })
-        .andWhere('cotizacion.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
+        .where('cotizacion.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
         .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
-        .getCount();
+        .getMany();
 
-      const prevAceptadas = await cotizacionesRepo
-        .createQueryBuilder('cotizacion')
-        .where('cotizacion.estado = :estado', { estado: 'aceptada' })
-        .andWhere('cotizacion.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
-        .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
-        .getCount();
-
+      const prevAceptadas = prevCotizacionesEmitidas.filter(c => c.estado === 'aceptada').length;
+      const prevEmitidas = prevCotizacionesEmitidas.length;
       const previousRate = prevEmitidas > 0 ? (prevAceptadas / prevEmitidas) * 100 : 0;
 
       const metric = await this.calculateMetricWithChart(
@@ -235,23 +222,19 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
         this.roundPercentage(currentRate),
         this.roundPercentage(previousRate),
         async (start: Date, end: Date) => {
+          // Para cada intervalo histórico, calcular win rate de la misma forma
           const emitidasInt = await cotizacionesRepo
             .createQueryBuilder('cotizacion')
-            .where('cotizacion.estado = :estado', { estado: 'emitida' })
-            .andWhere('cotizacion.timestamp >= :startDate', { startDate: start })
+            .where('cotizacion.timestamp >= :startDate', { startDate: start })
             .andWhere('cotizacion.timestamp <= :endDate', { endDate: end })
-            .getCount();
+            .getMany();
           
-          const aceptadasInt = await cotizacionesRepo
-            .createQueryBuilder('cotizacion')
-            .where('cotizacion.estado = :estado', { estado: 'aceptada' })
-            .andWhere('cotizacion.timestamp >= :startDate', { startDate: start })
-            .andWhere('cotizacion.timestamp <= :endDate', { endDate: end })
-            .getCount();
+          const aceptadasInt = emitidasInt.filter(c => c.estado === 'aceptada').length;
+          const rate = emitidasInt.length > 0 ? (aceptadasInt / emitidasInt.length) * 100 : 0;
           
-          return emitidasInt > 0 ? (aceptadasInt / emitidasInt) * 100 : 0;
+          return this.roundPercentage(rate);
         },
-        'absoluto'
+        'porcentaje'
       );
       
       res.status(200).json({ success: true, data: metric });
@@ -262,48 +245,120 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
 
   /**
    * GET /api/metrica/servicios/distribucion
-   * 7. Distribución de servicios
+   * 7. Distribución de servicios por cantidad de prestadores
+   * Muestra cuántos prestadores ofrecen cada tipo de servicio/habilidad
    */
   public async getDistribucionServicios(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
 
-      // Contar solicitudes agrupadas por habilidad (que representa el tipo de servicio)
       const habilidadesRepo = AppDataSource.getRepository(Habilidad);
-      const solicitudesRepo = AppDataSource.getRepository(Solicitud);
 
-      const solicitudes = await solicitudesRepo
-        .createQueryBuilder('solicitud')
-        .where('solicitud.timestamp >= :startDate', { startDate: dateRanges.startDate })
-        .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate })
-        .getMany();
-
-      // Agrupar por habilidad asociada (necesitaríamos relación entre solicitud y habilidad)
-      // Por ahora agrupar por nombre de habilidad si está disponible en las solicitudes
-      const distribution: PieMetricResponse = {};
-
-      // Si las solicitudes tienen información de habilidad, agrupar por eso
-      // Si no, usar rubros o categorías
-      const habilidades = await habilidadesRepo.find();
+      // Contar PRESTADORES (usuarios) por habilidad - muestra la oferta de servicios
+      const qb = habilidadesRepo
+        .createQueryBuilder('hab')
+        .select('hab.nombre_habilidad', 'habilidad')
+        .addSelect('COUNT(DISTINCT hab.id_usuario)', 'count')
+        .where('hab.activa = true');  // Solo habilidades activas
       
-      for (const habilidad of habilidades) {
-        const count = await solicitudesRepo
-          .createQueryBuilder('solicitud')
-          .innerJoin('habilidades', 'hab', 'hab.id_usuario = solicitud.id_prestador')
-          .where('hab.id_habilidad = :idHabilidad', { idHabilidad: habilidad.id_habilidad })
-          .andWhere('solicitud.timestamp >= :startDate', { startDate: dateRanges.startDate })
-          .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate })
-          .getCount();
-        
-        if (count > 0) {
-          distribution[habilidad.nombre_habilidad] = count;
-        }
+      // Filtrar prestadores activos en el período seleccionado
+      qb.innerJoin('usuarios', 'u', 'u.id_usuario = hab.id_usuario')
+        .andWhere('u.timestamp <= :endDate', { endDate: dateRanges.endDate });
+
+      // Aplicar filtros de zona y rubro si existen
+      if (filters && filters.zona) {
+        // Usar la tabla zonas (relación many-to-many) en lugar de usuarios.ubicacion
+        qb.innerJoin('zonas', 'zona', 'zona.id_usuario = hab.id_usuario AND zona.activa = true')
+          .andWhere('zona.nombre_zona = :zona', { zona: filters.zona });
       }
+
+      if (filters && filters.rubro) {
+        qb.andWhere('hab.id_rubro = :rubro', { rubro: filters.rubro });
+      }
+
+      qb.groupBy('hab.id_habilidad, hab.nombre_habilidad')
+        .having('COUNT(DISTINCT hab.id_usuario) > 0');
+
+      const results = await qb.getRawMany();
+      
+      // Construir distribución raw
+      const rawDistribution: Record<string, number> = {};
+      results.forEach(row => {
+        rawDistribution[row.habilidad] = parseInt(row.count);
+      });
+
+      // Aplicar estrategia Top N + umbral mínimo para evitar gráficos saturados
+      const distribution = this.processTopNDistribution(rawDistribution, {
+        topN: 12,              // Máximo 12 habilidades visibles
+        minPercentage: 1.5,    // Solo mostrar si representa >= 1.5% del total
+        othersLabel: 'Otros'   // Agrupar el resto en "Otros"
+      });
 
       res.status(200).json({ success: true, data: distribution });
     } catch (error) {
       await this.handleError(res, error, 'getDistribucionServicios');
+    }
+  }
+
+  /**
+   * GET /api/metrica/prestadores/servicios/distribucion-por-rubro
+   * 8. Distribución de prestadores por rubro
+   * Muestra cuántos prestadores ofrecen servicios en cada rubro
+   */
+  public async getDistribucionServiciosPorRubro(req: Request, res: Response): Promise<void> {
+    try {
+      const periodType = this.parsePeriodParams(req);
+      const dateRanges = DateRangeService.getPeriodRanges(periodType);
+      const filters = this.parseSegmentationParams(req);
+
+      const habilidadesRepo = AppDataSource.getRepository(Habilidad);
+
+      // Contar PRESTADORES únicos por rubro
+      // Agrupa habilidades → prestadores → rubros
+      const qb = habilidadesRepo
+        .createQueryBuilder('hab')
+        .innerJoin('rubros', 'r', 'r.id_rubro = hab.id_rubro')
+        .select('r.nombre_rubro', 'rubro')
+        .addSelect('COUNT(DISTINCT hab.id_usuario)', 'count')
+        .where('hab.activa = true')
+        .andWhere('hab.id_rubro IS NOT NULL');  // Solo habilidades con rubro asignado
+      
+      // Filtrar prestadores activos en el período seleccionado
+      qb.innerJoin('usuarios', 'u', 'u.id_usuario = hab.id_usuario')
+        .andWhere('u.timestamp <= :endDate', { endDate: dateRanges.endDate });
+
+      // Aplicar filtro de zona si existe
+      if (filters && filters.zona) {
+        // Usar la tabla zonas (relación many-to-many) en lugar de usuarios.ubicacion
+        qb.innerJoin('zonas', 'zona', 'zona.id_usuario = hab.id_usuario AND zona.activa = true')
+          .andWhere('zona.nombre_zona = :zona', { zona: filters.zona });
+      }
+
+      // NOTA: No aplicar filtro de rubro aquí, ya que esta métrica ES la distribución por rubros
+
+      qb.groupBy('r.id_rubro, r.nombre_rubro')
+        .having('COUNT(DISTINCT hab.id_usuario) > 0');
+
+      const results = await qb.getRawMany();
+      
+      // Construir distribución raw
+      const rawDistribution: Record<string, number> = {};
+      results.forEach(row => {
+        rawDistribution[row.rubro] = parseInt(row.count);
+      });
+
+      // Aplicar estrategia Top N + umbral mínimo
+      const distribution = this.processTopNDistribution(rawDistribution, {
+        topN: 10,              // Máximo 10 rubros visibles
+        minPercentage: 1.5,    // Solo mostrar si representa >= 1.5% del total
+        othersLabel: 'Otros'
+      });
+
+      res.status(200).json({ success: true, data: distribution });
+    } catch (error) {
+      await this.handleError(res, error, 'getDistribucionServiciosPorRubro');
     }
   }
 

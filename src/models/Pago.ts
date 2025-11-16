@@ -1,6 +1,7 @@
-import { Entity, PrimaryColumn, Column, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity('pagos')
+@Index(['id_pago'], { unique: true })
 @Index(['id_usuario'])
 @Index(['id_prestador'])
 @Index(['id_solicitud'])
@@ -8,11 +9,14 @@ import { Entity, PrimaryColumn, Column, Index, CreateDateColumn, UpdateDateColum
 @Index(['timestamp_creado'])
 @Index(['metodo'])
 export class Pago {
-  @PrimaryColumn({ type: 'bigint', name: 'id_pago' })
+  @PrimaryGeneratedColumn('increment')
+  id: number;
+
+  @Column({ type: 'bigint', name: 'id_pago', nullable: false })
   id_pago: number;
 
-  @Column({ type: 'bigint', name: 'id_usuario', nullable: false })
-  id_usuario: number;
+  @Column({ type: 'bigint', name: 'id_usuario', nullable: true })
+  id_usuario: number | null;
 
   @Column({ type: 'bigint', name: 'id_prestador', nullable: true })
   id_prestador: number | null;

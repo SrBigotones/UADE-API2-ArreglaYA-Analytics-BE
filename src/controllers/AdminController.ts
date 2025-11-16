@@ -1,5 +1,8 @@
 import { Request, Response } from 'express';
 import { DataMigrationService } from '../services/DataMigrationService';
+import { EventNormalizationService } from '../services/EventNormalizationService';
+import { AppDataSource } from '../config/database';
+import { Event } from '../models/Event';
 import { logger } from '../config/logger';
 
 /**
@@ -8,9 +11,11 @@ import { logger } from '../config/logger';
  */
 export class AdminController {
   private migrationService: DataMigrationService;
+  private normalizationService: EventNormalizationService;
 
   constructor() {
     this.migrationService = new DataMigrationService();
+    this.normalizationService = new EventNormalizationService();
   }
 
   /**
@@ -112,6 +117,121 @@ export class AdminController {
       res.status(500).json({
         success: false,
         message: 'Error en migración',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
+  /**
+   * POST /api/admin/reprocess-events
+   * Reprocesa eventos que ya fueron guardados pero necesitan renormalización
+   * Útil después de actualizar la lógica de normalización
+   */
+  public async reprocessEvents(req: Request, res: Response): Promise<void> {
+    try {
+      const { 
+        eventType,     // 'user', 'payment', 'solicitud', etc.
+        squad,         // Filtrar por squad específico
+        limit = 100,   // Cantidad máxima de eventos a reprocesar
+        markAsUnprocessed = false,  // Si true, solo marca como no procesados (para que el worker los procese)
+        processedOnly = false  // Si true, solo reprocesa eventos ya procesados. Si false, reprocesa los NO procesados
+      } = req.body;
+
+      logger.info(`Iniciando reprocesamiento de eventos | type: ${eventType} | squad: ${squad} | limit: ${limit} | processedOnly: ${processedOnly}`);
+
+      const eventRepository = AppDataSource.getRepository(Event);
+      const queryBuilder = eventRepository.createQueryBuilder('event');
+
+      // Filtros
+      if (eventType) {
+        queryBuilder.andWhere('LOWER(event.evento) LIKE :eventType', { 
+          eventType: `%${eventType.toLowerCase()}%` 
+        });
+      }
+      if (squad) {
+        queryBuilder.andWhere('event.squad = :squad', { squad });
+      }
+
+      // Filtrar por estado de procesamiento
+      if (processedOnly) {
+        // Solo eventos que ya están marcados como procesados
+        queryBuilder.andWhere('event.processed = :processed', { processed: true });
+      } else {
+        // Solo eventos que NO están procesados (los que fallaron)
+        queryBuilder.andWhere('event.processed = :processed', { processed: false });
+      }
+      
+      queryBuilder
+        .orderBy('event.timestamp', 'DESC')
+        .take(limit);
+
+      const events = await queryBuilder.getMany();
+
+      logger.info(`Encontrados ${events.length} eventos para reprocesar`);
+
+      if (markAsUnprocessed) {
+        // Solo marcar como no procesados
+        for (const event of events) {
+          event.processed = false;
+          await eventRepository.save(event);
+        }
+
+        res.status(200).json({
+          success: true,
+          message: `${events.length} eventos marcados como no procesados`,
+          eventsMarked: events.length
+        });
+        return;
+      }
+
+      // Reprocesar inmediatamente
+      let successCount = 0;
+      let errorCount = 0;
+      const errors: any[] = [];
+
+      for (const event of events) {
+        try {
+          // Marcar como no procesado
+          event.processed = false;
+          await eventRepository.save(event);
+
+          // Renormalizar
+          await this.normalizationService.normalizeEvent(event);
+
+          // Marcar como procesado nuevamente
+          event.processed = true;
+          await eventRepository.save(event);
+
+          successCount++;
+        } catch (error) {
+          errorCount++;
+          errors.push({
+            eventId: event.id,
+            squad: event.squad,
+            topico: event.topico,
+            evento: event.evento,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+          logger.error(`Error reprocesando evento ${event.id}:`, error);
+        }
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'Reprocesamiento completado',
+        result: {
+          total: events.length,
+          success: successCount,
+          errors: errorCount,
+          errorDetails: errors.slice(0, 10) // Solo primeros 10 errores
+        }
+      });
+
+    } catch (error) {
+      logger.error('Error en reprocesamiento de eventos:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error en reprocesamiento',
         error: error instanceof Error ? error.message : 'Unknown error'
       });
     }

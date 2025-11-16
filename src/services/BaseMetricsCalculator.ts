@@ -17,6 +17,63 @@ import { DateRangeService } from './DateRangeService';
  */
 export class BaseMetricsCalculator {
   /**
+   * Procesa distribuciones para gráficos de torta limitando a Top N categorías
+   * Estrategia híbrida: Top N con umbral mínimo de porcentaje
+   * 
+   * @param rawDistribution Objeto con la distribución raw { categoria: count }
+   * @param options Opciones de configuración
+   * @returns Distribución procesada con categorías principales + "Otros"
+   */
+  protected processTopNDistribution(
+    rawDistribution: Record<string, number>,
+    options: {
+      topN?: number;           // Número máximo de categorías a mostrar (default: 12)
+      minPercentage?: number;  // Porcentaje mínimo para mostrar (default: 1.5%)
+      othersLabel?: string;    // Etiqueta para categorías agrupadas (default: "Otros")
+    } = {}
+  ): PieMetricResponse {
+    const { 
+      topN = 10, 
+      minPercentage = 1.5, 
+      othersLabel = 'Otros' 
+    } = options;
+
+    // Convertir a array y ordenar por count descendente
+    const entries = Object.entries(rawDistribution)
+      .map(([key, value]) => ({ key, value }))
+      .sort((a, b) => b.value - a.value);
+
+    // Calcular total
+    const total = entries.reduce((sum, entry) => sum + entry.value, 0);
+
+    // Si no hay datos, retornar vacío
+    if (total === 0) {
+      return {};
+    }
+
+    const result: PieMetricResponse = {};
+    let othersCount = 0;
+
+    entries.forEach((entry, index) => {
+      const percentage = (entry.value / total) * 100;
+      
+      // Mostrar si está en el Top N Y supera el umbral mínimo
+      if (index < topN && percentage >= minPercentage) {
+        result[entry.key] = entry.value;
+      } else {
+        othersCount += entry.value;
+      }
+    });
+
+    // Agregar "Otros" si hay categorías agrupadas
+    if (othersCount > 0) {
+      result[othersLabel] = othersCount;
+    }
+
+    return result;
+  }
+
+  /**
    * Calcula una métrica tipo card con comparación de período anterior
    */
   protected calculateCardMetric(
@@ -34,7 +91,8 @@ export class BaseMetricsCalculator {
         change = Math.round(((currentValue - previousValue) / previousValue) * 100);
       }
     } else {
-      change = currentValue - previousValue;
+      // Redondear a 2 decimales para evitar errores de precisión de punto flotante
+      change = Math.round((currentValue - previousValue) * 100) / 100;
     }
 
     changeStatus = change >= 0 ? 'positivo' : 'negativo';
@@ -223,87 +281,38 @@ export class BaseMetricsCalculator {
       .getCount();
   }
 
-  protected async countUsuariosByRol(rol: string, startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+  protected async countUsuariosByRol(rol: string, startDate: Date, endDate: Date): Promise<number> {
     const repo = AppDataSource.getRepository(Usuario);
-    const query = repo
+    const result = await repo
       .createQueryBuilder('usuario')
       .where('usuario.rol = :rol', { rol })
       .andWhere('usuario.timestamp >= :startDate', { startDate })
-      .andWhere('usuario.timestamp <= :endDate', { endDate });
-    
-    if (filters?.zona) {
-      query.andWhere('usuario.ubicacion = :zona', { zona: filters.zona });
-    }
-    
-    return await query.getCount();
+      .andWhere('usuario.timestamp <= :endDate', { endDate })
+      .getCount();
+    return result;
   }
 
   // ========== MÉTODOS PARA SOLICITUDES ==========
   
-  protected async countSolicitudes(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+  protected async countSolicitudes(startDate: Date, endDate: Date): Promise<number> {
     const repo = AppDataSource.getRepository(Solicitud);
-    const query = repo
+    return await repo
       .createQueryBuilder('solicitud')
       .where('solicitud.timestamp >= :startDate', { startDate })
-      .andWhere('solicitud.timestamp <= :endDate', { endDate });
-    
-    this.applySolicitudFilters(query, filters);
-    
-    return await query.getCount();
+      .andWhere('solicitud.timestamp <= :endDate', { endDate })
+      .getCount();
   }
 
   protected async countSolicitudesByEstado(estado: string, startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
     const repo = AppDataSource.getRepository(Solicitud);
-    const query = repo
+    const qb = repo
       .createQueryBuilder('solicitud')
       .where('solicitud.estado = :estado', { estado })
       .andWhere('solicitud.timestamp >= :startDate', { startDate })
       .andWhere('solicitud.timestamp <= :endDate', { endDate });
     
-    this.applySolicitudFilters(query, filters);
-    
-    return await query.getCount();
-  }
-  
-  /**
-   * Aplica filtros de segmentación a queries de solicitudes
-   */
-  protected applySolicitudFilters(query: any, filters?: SegmentationFilters): void {
-    if (!filters) return;
-    
-    if (filters.zona) {
-      query.andWhere('solicitud.zona = :zona', { zona: filters.zona });
-    }
-    
-    // Para rubro, necesitamos hacer join con prestadores y habilidades/rubros
-    if (filters.rubro) {
-      // Join con prestador a través de id_prestador
-      query.leftJoin(Prestador, 'prestador', 'prestador.id_prestador = solicitud.id_prestador');
-      // Join con habilidades del prestador
-      query.leftJoin(Habilidad, 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true');
-      // Join con rubros
-      query.leftJoin(Rubro, 'rubro', 'rubro.id_rubro = habilidad.id_habilidad OR rubro.nombre_rubro = habilidad.nombre_habilidad');
-      
-      // Filtrar por rubro (puede ser ID o nombre)
-      if (typeof filters.rubro === 'number') {
-        query.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
-      } else {
-        query.andWhere('(rubro.nombre_rubro = :rubroNombre OR habilidad.nombre_habilidad = :rubroNombre)', { 
-          rubroNombre: filters.rubro 
-        });
-      }
-    }
-    
-    // Para tipo de solicitud (abierta/dirigida)
-    // Abierta: id_prestador es NULL al crearse
-    // Dirigida: id_prestador NO es NULL al crearse
-    if (filters.tipoSolicitud) {
-      if (filters.tipoSolicitud === 'abierta') {
-        query.andWhere('solicitud.id_prestador IS NULL');
-      } else if (filters.tipoSolicitud === 'dirigida') {
-        query.andWhere('solicitud.id_prestador IS NOT NULL');
-      }
-    }
+    this.applySolicitudFilters(qb, filters);
+    return await qb.getCount();
   }
 
   protected async getSolicitudes(startDate: Date, endDate: Date) {
@@ -317,68 +326,27 @@ export class BaseMetricsCalculator {
 
   // ========== MÉTODOS PARA COTIZACIONES ==========
   
-  protected async countCotizaciones(startDate: Date, endDate: Date): Promise<number> {
+  protected async countCotizaciones(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
     const repo = AppDataSource.getRepository(Cotizacion);
-    return await repo
+    const qb = repo
       .createQueryBuilder('cotizacion')
       .where('cotizacion.timestamp >= :startDate', { startDate })
-      .andWhere('cotizacion.timestamp <= :endDate', { endDate })
-      .getCount();
+      .andWhere('cotizacion.timestamp <= :endDate', { endDate });
+    
+    this.applyCotizacionFilters(qb, filters);
+    return await qb.getCount();
   }
 
   protected async countCotizacionesByEstado(estado: string, startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
     const repo = AppDataSource.getRepository(Cotizacion);
-    const query = repo
+    const qb = repo
       .createQueryBuilder('cotizacion')
       .where('cotizacion.estado = :estado', { estado })
       .andWhere('cotizacion.timestamp >= :startDate', { startDate })
       .andWhere('cotizacion.timestamp <= :endDate', { endDate });
     
-    this.applyCotizacionFilters(query, filters);
-    
-    return await query.getCount();
-  }
-  
-  /**
-   * Aplica filtros de segmentación a queries de cotizaciones
-   */
-  protected applyCotizacionFilters(query: any, filters?: SegmentationFilters): void {
-    if (!filters) return;
-    
-    // Para zona y rubro, necesitamos join con solicitudes
-    if (filters.zona || filters.rubro) {
-      query.leftJoin(Solicitud, 'solicitud', 'solicitud.id_solicitud = cotizacion.id_solicitud');
-      
-      if (filters.zona) {
-        query.andWhere('solicitud.zona = :zona', { zona: filters.zona });
-      }
-      
-      if (filters.rubro) {
-        query.leftJoin(Prestador, 'prestador', 'prestador.id_prestador = solicitud.id_prestador');
-        query.leftJoin(Habilidad, 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true');
-        query.leftJoin(Rubro, 'rubro', 'rubro.id_rubro = habilidad.id_habilidad OR rubro.nombre_rubro = habilidad.nombre_habilidad');
-        
-        if (typeof filters.rubro === 'number') {
-          query.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
-        } else {
-          query.andWhere('(rubro.nombre_rubro = :rubroNombre OR habilidad.nombre_habilidad = :rubroNombre)', { 
-            rubroNombre: filters.rubro 
-          });
-        }
-      }
-    }
-    
-    if (filters.tipoSolicitud) {
-      if (!query.expressionMap.joinAttributes.find((j: any) => j.alias.name === 'solicitud')) {
-        query.leftJoin(Solicitud, 'solicitud', 'solicitud.id_solicitud = cotizacion.id_solicitud');
-      }
-      
-      if (filters.tipoSolicitud === 'abierta') {
-        query.andWhere('solicitud.id_prestador IS NULL');
-      } else if (filters.tipoSolicitud === 'dirigida') {
-        query.andWhere('solicitud.id_prestador IS NOT NULL');
-      }
-    }
+    this.applyCotizacionFilters(qb, filters);
+    return await qb.getCount();
   }
 
   protected async getCotizaciones(startDate: Date, endDate: Date) {
@@ -400,73 +368,25 @@ export class BaseMetricsCalculator {
 
   // ========== MÉTODOS PARA PAGOS ==========
   
-  protected async countPagos(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+  protected async countPagos(startDate: Date, endDate: Date): Promise<number> {
     const repo = AppDataSource.getRepository(Pago);
-    const query = repo
+    return await repo
       .createQueryBuilder('pago')
       .where('pago.timestamp_creado >= :startDate', { startDate })
-      .andWhere('pago.timestamp_creado <= :endDate', { endDate });
-    
-    this.applyPagoFilters(query, filters);
-    
-    return await query.getCount();
+      .andWhere('pago.timestamp_creado <= :endDate', { endDate })
+      .getCount();
   }
 
   protected async countPagosByEstado(estado: string, startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
     const repo = AppDataSource.getRepository(Pago);
-    const query = repo
+    const qb = repo
       .createQueryBuilder('pago')
       .where('pago.estado = :estado', { estado })
       .andWhere('pago.timestamp_creado >= :startDate', { startDate })
       .andWhere('pago.timestamp_creado <= :endDate', { endDate });
     
-    this.applyPagoFilters(query, filters);
-    
-    return await query.getCount();
-  }
-  
-  /**
-   * Aplica filtros de segmentación a queries de pagos
-   */
-  protected applyPagoFilters(query: any, filters?: SegmentationFilters): void {
-    if (!filters) return;
-    
-    if (filters.metodo) {
-      query.andWhere('pago.metodo = :metodo', { metodo: filters.metodo });
-    }
-    
-    if (filters.monto) {
-      if (filters.monto.min !== undefined) {
-        query.andWhere('pago.monto_total >= :minMonto', { minMonto: filters.monto.min });
-      }
-      if (filters.monto.max !== undefined) {
-        query.andWhere('pago.monto_total <= :maxMonto', { maxMonto: filters.monto.max });
-      }
-    }
-    
-    // Para zona y rubro, necesitamos join con solicitudes
-    if (filters.zona || filters.rubro) {
-      query.leftJoin(Solicitud, 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud');
-      
-      if (filters.zona) {
-        query.andWhere('solicitud.zona = :zona', { zona: filters.zona });
-      }
-      
-      // Para rubro, necesitamos join con prestadores y habilidades
-      if (filters.rubro) {
-        query.leftJoin(Prestador, 'prestador', 'prestador.id_prestador = solicitud.id_prestador');
-        query.leftJoin(Habilidad, 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true');
-        query.leftJoin(Rubro, 'rubro', 'rubro.id_rubro = habilidad.id_habilidad OR rubro.nombre_rubro = habilidad.nombre_habilidad');
-        
-        if (typeof filters.rubro === 'number') {
-          query.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
-        } else {
-          query.andWhere('(rubro.nombre_rubro = :rubroNombre OR habilidad.nombre_habilidad = :rubroNombre)', { 
-            rubroNombre: filters.rubro 
-          });
-        }
-      }
-    }
+    this.applyPagoFilters(qb, filters);
+    return await qb.getCount();
   }
 
   protected async getPagos(startDate: Date, endDate: Date) {
@@ -490,30 +410,38 @@ export class BaseMetricsCalculator {
 
   protected async sumMontoPagosAprobados(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
     const repo = AppDataSource.getRepository(Pago);
-    const query = repo
+    const qb = repo
       .createQueryBuilder('pago')
       .select('COALESCE(SUM(pago.monto_total), 0)', 'total')
       .where('pago.estado = :estado', { estado: 'approved' })
       .andWhere('pago.timestamp_creado >= :startDate', { startDate })
       .andWhere('pago.timestamp_creado <= :endDate', { endDate });
     
-    this.applyPagoFilters(query, filters);
-    
-    const result = await query.getRawOne();
-    return parseFloat(result?.total || '0');
+    this.applyPagoFilters(qb, filters);
+    const result = await qb.getRawOne();
+    const total = parseFloat(result?.total || '0');
+    // Redondear montos a 2 decimales
+    return Math.round(total * 100) / 100;
   }
 
-  protected async calculateAverageProcessingTimePagos(startDate: Date, endDate: Date): Promise<number> {
+  protected async calculateAverageProcessingTimePagos(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
     const repo = AppDataSource.getRepository(Pago);
-    const result = await repo
+    const qb = repo
       .createQueryBuilder('pago')
+      // Calcular el tiempo entre creación y captura, filtrando casos donde captured_at < timestamp_creado
+      // (que pueden ocurrir si los eventos llegan fuera de orden)
       .select('AVG(EXTRACT(EPOCH FROM (pago.captured_at - pago.timestamp_creado)) / 60)', 'avg_minutes')
       .where('pago.estado = :estado', { estado: 'approved' })
       .andWhere('pago.timestamp_creado >= :startDate', { startDate })
       .andWhere('pago.timestamp_creado <= :endDate', { endDate })
       .andWhere('pago.captured_at IS NOT NULL')
-      .getRawOne();
-    return Math.round((parseFloat(result?.avg_minutes || '0')) * 100) / 100;
+      .andWhere('pago.captured_at >= pago.timestamp_creado'); // Solo tiempos positivos (eventos en orden correcto)
+    
+    this.applyPagoFilters(qb, filters);
+    const result = await qb.getRawOne();
+    const avgMinutes = parseFloat(result?.avg_minutes || '0');
+    // Si el resultado es negativo (no debería pasar con el filtro), devolver 0
+    return avgMinutes >= 0 ? Math.round(avgMinutes * 100) / 100 : 0;
   }
 
   // ========== MÉTODOS PARA CÁLCULOS DE TIEMPO ==========
@@ -522,78 +450,46 @@ export class BaseMetricsCalculator {
     const solicitudesRepo = AppDataSource.getRepository(Solicitud);
     const cotizacionesRepo = AppDataSource.getRepository(Cotizacion);
     
-    const query = solicitudesRepo
+    // Obtener solicitudes con filtros (solo las que están en el rango de fechas)
+    const qb = solicitudesRepo
       .createQueryBuilder('solicitud')
       .where('solicitud.timestamp >= :startDate', { startDate })
       .andWhere('solicitud.timestamp <= :endDate', { endDate });
     
-    this.applySolicitudFilters(query, filters);
-    
-    const solicitudes = await query.getMany();
+    this.applySolicitudFilters(qb, filters);
+    const solicitudes = await qb.getMany();
+
+    if (solicitudes.length === 0) return 0;
 
     const tiempos: number[] = [];
 
-    for (const solicitud of solicitudes) {
-      const primeraCotizacion = await cotizacionesRepo
-        .createQueryBuilder('cotizacion')
-        .where('cotizacion.id_solicitud = :idSolicitud', { idSolicitud: solicitud.id_solicitud })
-        .andWhere('cotizacion.estado = :estado', { estado: 'emitida' })
-        .orderBy('cotizacion.timestamp', 'ASC')
-        .getOne();
+    // Obtener todas las primeras cotizaciones (sin filtrar por fecha de cotización)
+    // La primera cotización puede ser de cualquier fecha, solo importa que sea la primera
+    const idsSolicitudes = solicitudes.map(s => s.id_solicitud);
+    if (idsSolicitudes.length === 0) return 0;
 
+    const primerasCotizaciones = await cotizacionesRepo
+      .createQueryBuilder('cotizacion')
+      .where('cotizacion.id_solicitud IN (:...ids)', { ids: idsSolicitudes })
+      .select('cotizacion.id_solicitud', 'id_solicitud')
+      .addSelect('MIN(cotizacion.timestamp)', 'primer_timestamp')
+      .groupBy('cotizacion.id_solicitud')
+      .getRawMany();
+
+    // Crear un mapa de solicitud -> primera cotización
+    const cotizacionesMap = new Map<number, Date>();
+    primerasCotizaciones.forEach(c => {
+      cotizacionesMap.set(c.id_solicitud, new Date(c.primer_timestamp));
+    });
+
+    // Calcular tiempos
+    for (const solicitud of solicitudes) {
+      const primeraCotizacion = cotizacionesMap.get(solicitud.id_solicitud);
       if (primeraCotizacion) {
-        const diffMs = primeraCotizacion.timestamp.getTime() - solicitud.timestamp.getTime();
-        const diffHoras = diffMs / (1000 * 60 * 60);
-        tiempos.push(diffHoras);
-      }
-    }
-
-    if (tiempos.length === 0) return 0;
-    const promedio = tiempos.reduce((sum, t) => sum + t, 0) / tiempos.length;
-    return Math.round(promedio * 100) / 100;
-  }
-
-  protected async calculateAverageMatchingTime(startDate: Date, endDate: Date): Promise<number> {
-    // Matching completado es cuando se asigna un prestador a una solicitud
-    // Esto se refleja cuando id_prestador se asigna en solicitud
-    const repo = AppDataSource.getRepository(Solicitud);
-    const result = await repo
-      .createQueryBuilder('solicitud')
-      .where('solicitud.id_prestador IS NOT NULL')
-      .andWhere('solicitud.timestamp >= :startDate', { startDate })
-      .andWhere('solicitud.timestamp <= :endDate', { endDate })
-      .getMany();
-
-    // El tiempo de matching sería 0 para solicitudes que ya vienen con prestador asignado
-    // O podríamos calcular la diferencia entre cuando se creó y cuando se asignó el prestador
-    // Por ahora retornamos 0 ya que no tenemos el evento de matching explícito
-    return 0;
-  }
-
-  protected async calculateAverageProviderResponseTime(startDate: Date, endDate: Date): Promise<number> {
-    const solicitudesRepo = AppDataSource.getRepository(Solicitud);
-    const cotizacionesRepo = AppDataSource.getRepository(Cotizacion);
-    
-    const solicitudes = await solicitudesRepo
-      .createQueryBuilder('solicitud')
-      .where('solicitud.timestamp >= :startDate', { startDate })
-      .andWhere('solicitud.timestamp <= :endDate', { endDate })
-      .getMany();
-
-    const tiempos: number[] = [];
-
-    for (const solicitud of solicitudes) {
-      if (solicitud.id_prestador) {
-        const cotizacion = await cotizacionesRepo
-          .createQueryBuilder('cotizacion')
-          .where('cotizacion.id_solicitud = :idSolicitud', { idSolicitud: solicitud.id_solicitud })
-          .andWhere('cotizacion.id_prestador = :idPrestador', { idPrestador: solicitud.id_prestador })
-          .andWhere('cotizacion.estado = :estado', { estado: 'emitida' })
-          .orderBy('cotizacion.timestamp', 'ASC')
-          .getOne();
-
-        if (cotizacion) {
-          const diffMs = cotizacion.timestamp.getTime() - solicitud.timestamp.getTime();
+        const diffMs = primeraCotizacion.getTime() - solicitud.timestamp.getTime();
+        // Incluir diferencias >= 0 (incluye igualdad, excluye negativos)
+        if (diffMs >= 0) {
+          // Convertir a minutos (consistente con matching)
           const diffMinutos = diffMs / (1000 * 60);
           tiempos.push(diffMinutos);
         }
@@ -605,46 +501,119 @@ export class BaseMetricsCalculator {
     return Math.round(promedio * 100) / 100;
   }
 
+  protected async calculateAverageMatchingTime(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+    // Matching completado es cuando se asigna un prestador a una solicitud
+    // Calculamos el tiempo entre la creación de la solicitud y la primera cotización del prestador asignado
+    const solicitudesRepo = AppDataSource.getRepository(Solicitud);
+    const cotizacionesRepo = AppDataSource.getRepository(Cotizacion);
+    
+    // Obtener solicitudes con prestador asignado y filtros (solo las que están en el rango de fechas)
+    const qb = solicitudesRepo
+      .createQueryBuilder('solicitud')
+      .where('solicitud.timestamp >= :startDate', { startDate })
+      .andWhere('solicitud.timestamp <= :endDate', { endDate })
+      .andWhere('solicitud.id_prestador IS NOT NULL');
+    
+    this.applySolicitudFilters(qb, filters);
+    const solicitudes = await qb.getMany();
+
+    if (solicitudes.length === 0) return 0;
+
+    const tiempos: number[] = [];
+
+    // Para cada solicitud, buscar la primera cotización del prestador asignado
+    for (const solicitud of solicitudes) {
+      if (solicitud.id_prestador) {
+        const primeraCotizacion = await cotizacionesRepo
+          .createQueryBuilder('cotizacion')
+          .where('cotizacion.id_solicitud = :idSolicitud', { idSolicitud: solicitud.id_solicitud })
+          .andWhere('cotizacion.id_prestador = :idPrestador', { idPrestador: solicitud.id_prestador })
+          .orderBy('cotizacion.timestamp', 'ASC')
+          .getOne();
+
+        if (primeraCotizacion) {
+          const diffMs = primeraCotizacion.timestamp.getTime() - solicitud.timestamp.getTime();
+          // Incluir diferencias >= 0 (incluye igualdad, excluye negativos)
+          if (diffMs >= 0) {
+            // Convertir a minutos
+            const diffMinutos = diffMs / (1000 * 60);
+            tiempos.push(diffMinutos);
+          }
+        }
+      }
+    }
+
+    if (tiempos.length === 0) return 0;
+    const promedio = tiempos.reduce((sum, t) => sum + t, 0) / tiempos.length;
+    return Math.round(promedio * 100) / 100;
+  }
+
+  protected async calculateAverageProviderResponseTime(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+    // Tiempo promedio de cotizaciones: para cada solicitud, calcular el promedio de tiempo
+    // entre todas las cotizaciones propuestas, y luego promediar esos promedios
+    const solicitudesRepo = AppDataSource.getRepository(Solicitud);
+    const cotizacionesRepo = AppDataSource.getRepository(Cotizacion);
+    
+    // Obtener solicitudes con filtros (solo las que están en el rango de fechas)
+    const qb = solicitudesRepo
+      .createQueryBuilder('solicitud')
+      .where('solicitud.timestamp >= :startDate', { startDate })
+      .andWhere('solicitud.timestamp <= :endDate', { endDate });
+    
+    this.applySolicitudFilters(qb, filters);
+    const solicitudes = await qb.getMany();
+
+    if (solicitudes.length === 0) return 0;
+
+    const promediosPorSolicitud: number[] = [];
+
+    // Para cada solicitud, calcular el promedio de tiempo de todas sus cotizaciones
+    for (const solicitud of solicitudes) {
+      const cotizaciones = await cotizacionesRepo
+        .createQueryBuilder('cotizacion')
+        .where('cotizacion.id_solicitud = :idSolicitud', { idSolicitud: solicitud.id_solicitud })
+        .orderBy('cotizacion.timestamp', 'ASC')
+        .getMany();
+
+      if (cotizaciones.length > 0) {
+        const tiemposCotizaciones: number[] = [];
+        
+        // Calcular tiempo desde solicitud hasta cada cotización
+        for (const cotizacion of cotizaciones) {
+          const diffMs = cotizacion.timestamp.getTime() - solicitud.timestamp.getTime();
+          if (diffMs >= 0) { // Incluir 0 y positivos
+            const diffMinutos = diffMs / (1000 * 60);
+            tiemposCotizaciones.push(diffMinutos);
+          }
+        }
+
+        // Si hay tiempos válidos, calcular el promedio para esta solicitud
+        if (tiemposCotizaciones.length > 0) {
+          const promedioSolicitud = tiemposCotizaciones.reduce((sum, t) => sum + t, 0) / tiemposCotizaciones.length;
+          promediosPorSolicitud.push(promedioSolicitud);
+        }
+      }
+    }
+
+    if (promediosPorSolicitud.length === 0) return 0;
+    
+    // Promediar los promedios de cada solicitud
+    const promedioFinal = promediosPorSolicitud.reduce((sum, t) => sum + t, 0) / promediosPorSolicitud.length;
+    return Math.round(promedioFinal * 100) / 100;
+  }
+
   // ========== MÉTODOS PARA PRESTADORES ==========
   
   protected async countPrestadoresByEstado(estado: string, startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
     const repo = AppDataSource.getRepository(Prestador);
-    const query = repo
+    const qb = repo
       .createQueryBuilder('prestador')
       .where('prestador.estado = :estado', { estado })
       .andWhere('prestador.timestamp >= :startDate', { startDate })
       .andWhere('prestador.timestamp <= :endDate', { endDate });
     
-    this.applyPrestadorFilters(query, filters);
-    
-    return await query.getCount();
-  }
-  
-  /**
-   * Aplica filtros de segmentación a queries de prestadores
-   */
-  protected applyPrestadorFilters(query: any, filters?: SegmentationFilters): void {
-    if (!filters) return;
-    
-    // Para zona, necesitamos join con usuarios
-    if (filters.zona) {
-      query.leftJoin(Usuario, 'usuario', 'usuario.id_usuario = prestador.id_prestador');
-      query.andWhere('usuario.ubicacion = :zona', { zona: filters.zona });
-    }
-    
-    // Para rubro, necesitamos join con habilidades
-    if (filters.rubro) {
-      query.leftJoin(Habilidad, 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true');
-      query.leftJoin(Rubro, 'rubro', 'rubro.id_rubro = habilidad.id_habilidad OR rubro.nombre_rubro = habilidad.nombre_habilidad');
-      
-      if (typeof filters.rubro === 'number') {
-        query.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
-      } else {
-        query.andWhere('(rubro.nombre_rubro = :rubroNombre OR habilidad.nombre_habilidad = :rubroNombre)', { 
-          rubroNombre: filters.rubro 
-        });
-      }
-    }
+    this.applyPrestadorFilters(qb, filters);
+    return await qb.getCount();
   }
 
   protected async countPrestadoresActivos(): Promise<number> {
@@ -725,6 +694,36 @@ export class BaseMetricsCalculator {
     }));
   }
 
+  /**
+   * Obtiene las coordenadas de las zonas desde la base de datos
+   * @returns Mapa de nombre de zona a coordenadas { lat: number, lon: number }
+   */
+  protected async getZonasCoordenadas(): Promise<Record<string, { lat: number; lon: number }>> {
+    const repo = AppDataSource.getRepository(Zona);
+    const zonas = await repo
+      .createQueryBuilder('zona')
+      .select('zona.nombre_zona', 'nombre_zona')
+      .addSelect('zona.latitud', 'latitud')
+      .addSelect('zona.longitud', 'longitud')
+      .where('zona.latitud IS NOT NULL')
+      .andWhere('zona.longitud IS NOT NULL')
+      .andWhere('zona.activa = :activa', { activa: true })
+      .getRawMany();
+
+    const coordenadasMap: Record<string, { lat: number; lon: number }> = {};
+    
+    zonas.forEach(zona => {
+      if (zona.nombre_zona && zona.latitud && zona.longitud) {
+        coordenadasMap[zona.nombre_zona] = {
+          lat: parseFloat(zona.latitud),
+          lon: parseFloat(zona.longitud)
+        };
+      }
+    });
+
+    return coordenadasMap;
+  }
+
   protected async getSolicitudesConCoordenadas(startDate: Date, endDate: Date): Promise<Array<{ lat: number; lon: number }>> {
     const repo = AppDataSource.getRepository(Solicitud);
     // Asumimos que las solicitudes pueden tener coordenadas, si no están en la tabla, usar zonas
@@ -737,5 +736,169 @@ export class BaseMetricsCalculator {
     // Si no hay coordenadas directas, usar las zonas para mapear (esto requeriría una tabla de zonas con coordenadas)
     // Por ahora retornamos array vacío y se puede implementar después
     return [];
+  }
+
+  // ========== MÉTODOS DE FILTRADO DE SEGMENTACIÓN ==========
+
+  /**
+   * Aplica filtros de segmentación a un query builder de solicitudes
+   */
+  protected applySolicitudFilters(
+    qb: any,
+    filters?: SegmentationFilters
+  ): void {
+    if (!filters) return;
+
+    // Filtro por zona
+    if (filters.zona) {
+      qb.andWhere('solicitud.zona = :zona', { zona: filters.zona });
+    }
+
+    // Filtro por tipo de solicitud
+    if (filters.tipoSolicitud) {
+      if (filters.tipoSolicitud === 'abierta') {
+        qb.andWhere('solicitud.id_prestador IS NULL');
+      } else if (filters.tipoSolicitud === 'dirigida') {
+        qb.andWhere('solicitud.id_prestador IS NOT NULL');
+      }
+    }
+
+    // Filtro por rubro (requiere joins complejos: solicitud -> prestador -> habilidad -> rubro)
+    if (filters.rubro) {
+      qb.leftJoin('prestadores', 'prestador', 'prestador.id_prestador = solicitud.id_prestador')
+        .leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true')
+        .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_habilidad OR rubro.nombre_rubro = habilidad.nombre_habilidad');
+      
+      if (typeof filters.rubro === 'number') {
+        qb.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
+      } else {
+        qb.andWhere('(rubro.nombre_rubro = :rubroNombre OR habilidad.nombre_habilidad = :rubroNombre)', { 
+          rubroNombre: filters.rubro 
+        });
+      }
+    }
+  }
+
+  /**
+   * Aplica filtros de segmentación a un query builder de pagos
+   */
+  protected applyPagoFilters(
+    qb: any,
+    filters?: SegmentationFilters
+  ): void {
+    if (!filters) return;
+
+    // Filtro por método de pago
+    if (filters.metodo) {
+      qb.andWhere('pago.metodo = :metodo', { metodo: filters.metodo });
+    }
+
+    // Filtro por rango de monto
+    if (filters.minMonto !== undefined) {
+      qb.andWhere('pago.monto_total >= :minMonto', { minMonto: filters.minMonto });
+    }
+    if (filters.maxMonto !== undefined) {
+      qb.andWhere('pago.monto_total <= :maxMonto', { maxMonto: filters.maxMonto });
+    }
+
+    // Filtro por zona (a través de solicitud)
+    if (filters.zona) {
+      qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud')
+        .andWhere('solicitud.zona = :zona', { zona: filters.zona });
+    }
+
+    // Filtro por rubro (a través de solicitud -> prestador -> habilidad -> rubro)
+    if (filters.rubro) {
+      if (!filters.zona) {
+        qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud');
+      }
+      qb.leftJoin('prestadores', 'prestador', 'prestador.id_prestador = solicitud.id_prestador')
+        .leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true')
+        .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_habilidad OR rubro.nombre_rubro = habilidad.nombre_habilidad');
+      
+      if (typeof filters.rubro === 'number') {
+        qb.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
+      } else {
+        qb.andWhere('(rubro.nombre_rubro = :rubroNombre OR habilidad.nombre_habilidad = :rubroNombre)', { 
+          rubroNombre: filters.rubro 
+        });
+      }
+    }
+  }
+
+  /**
+   * Aplica filtros de segmentación a un query builder de cotizaciones
+   */
+  protected applyCotizacionFilters(
+    qb: any,
+    filters?: SegmentationFilters
+  ): void {
+    if (!filters) return;
+
+    // Filtro por zona (a través de solicitud)
+    if (filters.zona) {
+      qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = cotizacion.id_solicitud')
+        .andWhere('solicitud.zona = :zona', { zona: filters.zona });
+    }
+
+    // Filtro por tipo de solicitud (a través de solicitud)
+    if (filters.tipoSolicitud) {
+      if (!filters.zona) {
+        qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = cotizacion.id_solicitud');
+      }
+      if (filters.tipoSolicitud === 'abierta') {
+        qb.andWhere('solicitud.id_prestador IS NULL');
+      } else if (filters.tipoSolicitud === 'dirigida') {
+        qb.andWhere('solicitud.id_prestador IS NOT NULL');
+      }
+    }
+
+    // Filtro por rubro (a través de solicitud -> prestador -> habilidad -> rubro)
+    if (filters.rubro) {
+      if (!filters.zona && !filters.tipoSolicitud) {
+        qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = cotizacion.id_solicitud');
+      }
+      qb.leftJoin('prestadores', 'prestador', 'prestador.id_prestador = solicitud.id_prestador')
+        .leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true')
+        .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_habilidad OR rubro.nombre_rubro = habilidad.nombre_habilidad');
+      
+      if (typeof filters.rubro === 'number') {
+        qb.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
+      } else {
+        qb.andWhere('(rubro.nombre_rubro = :rubroNombre OR habilidad.nombre_habilidad = :rubroNombre)', { 
+          rubroNombre: filters.rubro 
+        });
+      }
+    }
+  }
+
+  /**
+   * Aplica filtros de segmentación a un query builder de prestadores
+   */
+  protected applyPrestadorFilters(
+    qb: any,
+    filters?: SegmentationFilters
+  ): void {
+    if (!filters) return;
+
+    // Filtro por zona (usando tabla zonas - relación many-to-many)
+    if (filters.zona) {
+      qb.leftJoin('zonas', 'zona', 'zona.id_usuario = prestador.id_prestador AND zona.activa = true')
+        .andWhere('zona.nombre_zona = :zona', { zona: filters.zona });
+    }
+
+    // Filtro por rubro (a través de habilidad -> rubro)
+    if (filters.rubro) {
+      qb.leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true')
+        .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_habilidad OR rubro.nombre_rubro = habilidad.nombre_habilidad');
+      
+      if (typeof filters.rubro === 'number') {
+        qb.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
+      } else {
+        qb.andWhere('(rubro.nombre_rubro = :rubroNombre OR habilidad.nombre_habilidad = :rubroNombre)', { 
+          rubroNombre: filters.rubro 
+        });
+      }
+    }
   }
 }
