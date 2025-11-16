@@ -428,15 +428,20 @@ export class BaseMetricsCalculator {
     const repo = AppDataSource.getRepository(Pago);
     const qb = repo
       .createQueryBuilder('pago')
+      // Calcular el tiempo entre creación y captura, filtrando casos donde captured_at < timestamp_creado
+      // (que pueden ocurrir si los eventos llegan fuera de orden)
       .select('AVG(EXTRACT(EPOCH FROM (pago.captured_at - pago.timestamp_creado)) / 60)', 'avg_minutes')
       .where('pago.estado = :estado', { estado: 'approved' })
       .andWhere('pago.timestamp_creado >= :startDate', { startDate })
       .andWhere('pago.timestamp_creado <= :endDate', { endDate })
-      .andWhere('pago.captured_at IS NOT NULL');
+      .andWhere('pago.captured_at IS NOT NULL')
+      .andWhere('pago.captured_at >= pago.timestamp_creado'); // Solo tiempos positivos (eventos en orden correcto)
     
     this.applyPagoFilters(qb, filters);
     const result = await qb.getRawOne();
-    return Math.round((parseFloat(result?.avg_minutes || '0')) * 100) / 100;
+    const avgMinutes = parseFloat(result?.avg_minutes || '0');
+    // Si el resultado es negativo (no debería pasar con el filtro), devolver 0
+    return avgMinutes >= 0 ? Math.round(avgMinutes * 100) / 100 : 0;
   }
 
   // ========== MÉTODOS PARA CÁLCULOS DE TIEMPO ==========
