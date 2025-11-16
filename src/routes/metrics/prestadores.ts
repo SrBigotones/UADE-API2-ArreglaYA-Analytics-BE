@@ -178,6 +178,56 @@ router.get('/servicios/distribucion', controller.getDistribucionServicios.bind(c
 
 /**
  * @swagger
+ * /api/metrica/prestadores/servicios/distribucion-por-rubro:
+ *   get:
+ *     summary: Distribución de prestadores por rubro
+ *     description: Retorna la cantidad de prestadores que ofrecen servicios en cada rubro
+ *     tags: [Métricas - Prestadores]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [hoy, ultimos_7_dias, ultimos_30_dias, ultimo_ano, historico, personalizado]
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: zona
+ *         schema:
+ *           type: string
+ *         description: Filtrar por zona geográfica (nombre)
+ *     responses:
+ *       200:
+ *         description: Distribución de prestadores por rubro
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/PieMetricResponse'
+ *       400:
+ *         description: Parámetros inválidos
+ *       401:
+ *         description: No autorizado
+ */
+router.get('/servicios/distribucion-por-rubro', controller.getDistribucionServiciosPorRubro.bind(controller));
+
+/**
+ * @swagger
  * /api/metrica/prestadores/zonas:
  *   get:
  *     summary: Prestadores por zona (legacy)
