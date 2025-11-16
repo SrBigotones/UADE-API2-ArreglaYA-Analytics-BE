@@ -230,8 +230,9 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
             .getMany();
           
           const aceptadasInt = emitidasInt.filter(c => c.estado === 'aceptada').length;
+          const rate = emitidasInt.length > 0 ? (aceptadasInt / emitidasInt.length) * 100 : 0;
           
-          return emitidasInt.length > 0 ? (aceptadasInt / emitidasInt.length) * 100 : 0;
+          return this.roundPercentage(rate);
         },
         'porcentaje'
       );
@@ -268,7 +269,9 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
 
       // Aplicar filtros de zona y rubro si existen
       if (filters && filters.zona) {
-        qb.andWhere('u.ubicacion = :zona', { zona: filters.zona });
+        // Usar la tabla zonas (relación many-to-many) en lugar de usuarios.ubicacion
+        qb.innerJoin('zonas', 'zona', 'zona.id_usuario = hab.id_usuario AND zona.activa = true')
+          .andWhere('zona.nombre_zona = :zona', { zona: filters.zona });
       }
 
       if (filters && filters.rubro) {
@@ -328,7 +331,9 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
 
       // Aplicar filtro de zona si existe
       if (filters && filters.zona) {
-        qb.andWhere('u.ubicacion = :zona', { zona: filters.zona });
+        // Usar la tabla zonas (relación many-to-many) en lugar de usuarios.ubicacion
+        qb.innerJoin('zonas', 'zona', 'zona.id_usuario = hab.id_usuario AND zona.activa = true')
+          .andWhere('zona.nombre_zona = :zona', { zona: filters.zona });
       }
 
       // NOTA: No aplicar filtro de rubro aquí, ya que esta métrica ES la distribución por rubros
