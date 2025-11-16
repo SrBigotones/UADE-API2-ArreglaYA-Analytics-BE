@@ -487,9 +487,11 @@ export class BaseMetricsCalculator {
       const primeraCotizacion = cotizacionesMap.get(solicitud.id_solicitud);
       if (primeraCotizacion) {
         const diffMs = primeraCotizacion.getTime() - solicitud.timestamp.getTime();
-        if (diffMs > 0) {
-          const diffHoras = diffMs / (1000 * 60 * 60);
-          tiempos.push(diffHoras);
+        // Incluir diferencias >= 0 (incluye igualdad, excluye negativos)
+        if (diffMs >= 0) {
+          // Convertir a minutos (consistente con matching)
+          const diffMinutos = diffMs / (1000 * 60);
+          tiempos.push(diffMinutos);
         }
       }
     }
@@ -531,7 +533,8 @@ export class BaseMetricsCalculator {
 
         if (primeraCotizacion) {
           const diffMs = primeraCotizacion.timestamp.getTime() - solicitud.timestamp.getTime();
-          if (diffMs > 0) {
+          // Incluir diferencias >= 0 (incluye igualdad, excluye negativos)
+          if (diffMs >= 0) {
             // Convertir a minutos
             const diffMinutos = diffMs / (1000 * 60);
             tiempos.push(diffMinutos);
@@ -546,47 +549,57 @@ export class BaseMetricsCalculator {
   }
 
   protected async calculateAverageProviderResponseTime(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+    // Tiempo promedio de cotizaciones: para cada solicitud, calcular el promedio de tiempo
+    // entre todas las cotizaciones propuestas, y luego promediar esos promedios
     const solicitudesRepo = AppDataSource.getRepository(Solicitud);
     const cotizacionesRepo = AppDataSource.getRepository(Cotizacion);
     
-    // Obtener solicitudes con prestador asignado y filtros (solo las que están en el rango de fechas)
+    // Obtener solicitudes con filtros (solo las que están en el rango de fechas)
     const qb = solicitudesRepo
       .createQueryBuilder('solicitud')
       .where('solicitud.timestamp >= :startDate', { startDate })
-      .andWhere('solicitud.timestamp <= :endDate', { endDate })
-      .andWhere('solicitud.id_prestador IS NOT NULL');
+      .andWhere('solicitud.timestamp <= :endDate', { endDate });
     
     this.applySolicitudFilters(qb, filters);
     const solicitudes = await qb.getMany();
 
     if (solicitudes.length === 0) return 0;
 
-    const tiempos: number[] = [];
+    const promediosPorSolicitud: number[] = [];
 
-    // Obtener todas las primeras cotizaciones del prestador asignado (sin filtrar por fecha de cotización)
-    // La primera cotización puede ser de cualquier fecha
+    // Para cada solicitud, calcular el promedio de tiempo de todas sus cotizaciones
     for (const solicitud of solicitudes) {
-      if (solicitud.id_prestador) {
-        const cotizacion = await cotizacionesRepo
-          .createQueryBuilder('cotizacion')
-          .where('cotizacion.id_solicitud = :idSolicitud', { idSolicitud: solicitud.id_solicitud })
-          .andWhere('cotizacion.id_prestador = :idPrestador', { idPrestador: solicitud.id_prestador })
-          .orderBy('cotizacion.timestamp', 'ASC')
-          .getOne();
+      const cotizaciones = await cotizacionesRepo
+        .createQueryBuilder('cotizacion')
+        .where('cotizacion.id_solicitud = :idSolicitud', { idSolicitud: solicitud.id_solicitud })
+        .orderBy('cotizacion.timestamp', 'ASC')
+        .getMany();
 
-        if (cotizacion) {
+      if (cotizaciones.length > 0) {
+        const tiemposCotizaciones: number[] = [];
+        
+        // Calcular tiempo desde solicitud hasta cada cotización
+        for (const cotizacion of cotizaciones) {
           const diffMs = cotizacion.timestamp.getTime() - solicitud.timestamp.getTime();
-          if (diffMs > 0) {
+          if (diffMs >= 0) { // Incluir 0 y positivos
             const diffMinutos = diffMs / (1000 * 60);
-            tiempos.push(diffMinutos);
+            tiemposCotizaciones.push(diffMinutos);
           }
+        }
+
+        // Si hay tiempos válidos, calcular el promedio para esta solicitud
+        if (tiemposCotizaciones.length > 0) {
+          const promedioSolicitud = tiemposCotizaciones.reduce((sum, t) => sum + t, 0) / tiemposCotizaciones.length;
+          promediosPorSolicitud.push(promedioSolicitud);
         }
       }
     }
 
-    if (tiempos.length === 0) return 0;
-    const promedio = tiempos.reduce((sum, t) => sum + t, 0) / tiempos.length;
-    return Math.round(promedio * 100) / 100;
+    if (promediosPorSolicitud.length === 0) return 0;
+    
+    // Promediar los promedios de cada solicitud
+    const promedioFinal = promediosPorSolicitud.reduce((sum, t) => sum + t, 0) / promediosPorSolicitud.length;
+    return Math.round(promedioFinal * 100) / 100;
   }
 
   // ========== MÉTODOS PARA PRESTADORES ==========

@@ -570,10 +570,10 @@ export class EventNormalizationService {
     if (estado === 'approved') {
       if (payload.updatedAt && Array.isArray(payload.updatedAt)) {
         // updatedAt viene como array [year, month, day, hour, minute, second, nanosecond]
-        // IMPORTANTE: este timestamp viene en hora local de Argentina (UTC-3)
+        // IMPORTANTE: Todos los datos están en UTC, usar Date.UTC() para crear la fecha correctamente
         const [year, month, day, hour, minute, second] = payload.updatedAt;
-        // Crear fecha en UTC sumando 3 horas (offset de Argentina)
-        capturedAt = new Date(Date.UTC(year, month - 1, day, hour + 3, minute, second));
+        // Crear fecha en UTC directamente (no usar new Date() que usa zona horaria local)
+        capturedAt = new Date(Date.UTC(year, month - 1, day, hour, minute, second || 0));
       } else {
         capturedAt = event.timestamp;
       }
