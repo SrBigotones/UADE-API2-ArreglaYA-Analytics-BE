@@ -49,6 +49,13 @@ export const createDataSource = async () => {
     entities: [Event, Usuario, Servicio, Solicitud, Cotizacion, Habilidad, Zona, Pago, Prestador, Rubro, FeatureFlag],
     migrations: [__dirname + '/../migrations/*.{ts,js}'],
     subscribers: [__dirname + '/../subscribers/*.{ts,js}'],
+    // Configuración de pool de conexiones para manejar concurrencia
+    extra: {
+      max: 20,                    // Máximo de conexiones en el pool
+      min: 2,                     // Mínimo de conexiones siempre abiertas
+      idleTimeoutMillis: 30000,   // Cerrar conexiones inactivas después de 30s
+      connectionTimeoutMillis: 5000, // Timeout para obtener conexión del pool
+    },
   });
 
   // Verificar la configuración final

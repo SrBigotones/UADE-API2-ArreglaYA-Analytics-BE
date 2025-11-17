@@ -840,7 +840,7 @@ export class BaseMetricsCalculator {
         qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud');
       }
       qb.leftJoin('prestadores', 'prestador', 'prestador.id_prestador = solicitud.id_prestador')
-        .leftJoin('habilidades', 'habilidad', 'habilidad.id_prestador = prestador.id_prestador')
+        .leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador')
         .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
       
       if (typeof filters.rubro === 'number') {
@@ -884,7 +884,7 @@ export class BaseMetricsCalculator {
         qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = cotizacion.id_solicitud');
       }
       qb.leftJoin('prestadores', 'prestador', 'prestador.id_prestador = solicitud.id_prestador')
-        .leftJoin('habilidades', 'habilidad', 'habilidad.id_prestador = prestador.id_prestador')
+        .leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador')
         .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
       
       if (typeof filters.rubro === 'number') {
