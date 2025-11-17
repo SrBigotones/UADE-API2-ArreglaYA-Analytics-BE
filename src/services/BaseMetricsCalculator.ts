@@ -791,10 +791,9 @@ export class BaseMetricsCalculator {
       }
     }
 
-    // Filtro por rubro (requiere joins complejos: solicitud -> prestador -> habilidad -> rubro)
+    // Filtro por rubro (requiere join: solicitud -> habilidad -> rubro)
     if (filters.rubro) {
-      qb.leftJoin('prestadores', 'prestador', 'prestador.id_prestador = solicitud.id_prestador')
-        .leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true')
+      qb.leftJoin('habilidades', 'habilidad', 'habilidad.id_habilidad = solicitud.id_habilidad')
         .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
       
       if (typeof filters.rubro === 'number') {

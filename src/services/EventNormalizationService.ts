@@ -226,6 +226,9 @@ export class EventNormalizationService {
     const idPrestador = this.extractBigInt(
       payload.providerId || payload.prestadorId || payload.prestador_id || payload.id_prestador
     );
+    const idHabilidad = this.extractBigInt(
+      payload.habilidadId || payload.habilidad_id || payload.skillId || payload.id_habilidad
+    );
 
     if (!idSolicitud || !idUsuario) {
       logger.warn(`❌ No se pudo extraer datos de solicitud del evento ${event.id}`);
@@ -267,13 +270,48 @@ export class EventNormalizationService {
                       payload.critica === true ||
                       payload.es_urgente === true;
 
-    logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado}`);
+    // NORMALIZACIÓN DE ZONA: intentar matchear con catálogo
+    if (zona) {
+      const zonaRepo = AppDataSource.getRepository(Zona);
+      
+      // Buscar zona por nombre (case-insensitive, trim espacios)
+      const zonaNormalizada = zona.trim();
+      const zonaMatch = await zonaRepo
+        .createQueryBuilder('z')
+        .where('LOWER(z.nombre_zona) = LOWER(:zona)', { zona: zonaNormalizada })
+        .getOne();
+      
+      if (zonaMatch) {
+        zona = zonaMatch.nombre_zona;
+        logger.debug(`✅ Zona normalizada: "${zonaNormalizada}" -> "${zonaMatch.nombre_zona}"`);
+      } else {
+        logger.warn(`⚠️ Zona "${zonaNormalizada}" no encontrada en catálogo. Usando valor original.`);
+      }
+    }
+
+    // Si no viene zona pero hay prestador asignado, intentar inferir del prestador
+    if (!zona && idPrestador) {
+      const zonaRepo = AppDataSource.getRepository(Zona);
+      const prestadorZona = await zonaRepo
+        .createQueryBuilder('z')
+        .where('z.id_usuario = :idPrestador', { idPrestador })
+        .andWhere('z.activa = true')
+        .getOne();
+      
+      if (prestadorZona) {
+        zona = prestadorZona.nombre_zona;
+        logger.debug(`📍 Zona inferida del prestador ${idPrestador}: ${zona}`);
+      }
+    }
+
+    logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado} | zona: ${zona || 'NULL'} | habilidad: ${idHabilidad || 'NULL'}`);
 
     await solicitudRepo.upsert(
       {
         id_solicitud: idSolicitud,
         id_usuario: idUsuario,
         id_prestador: idPrestador || null,
+        id_habilidad: idHabilidad || null,
         estado: estado,
         zona: zona || null,
         timestamp: event.timestamp,
