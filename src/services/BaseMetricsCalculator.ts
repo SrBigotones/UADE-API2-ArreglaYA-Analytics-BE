@@ -312,6 +312,13 @@ export class BaseMetricsCalculator {
       .andWhere('solicitud.timestamp <= :endDate', { endDate });
     
     this.applySolicitudFilters(qb, filters);
+    
+    // Usar COUNT(DISTINCT) cuando hay filtros de rubro (para evitar duplicados por múltiples habilidades)
+    if (filters?.rubro) {
+      const result = await qb.select('COUNT(DISTINCT solicitud.id)', 'count').getRawOne();
+      return parseInt(result?.count || '0');
+    }
+    
     return await qb.getCount();
   }
 
@@ -346,6 +353,13 @@ export class BaseMetricsCalculator {
       .andWhere('cotizacion.timestamp <= :endDate', { endDate });
     
     this.applyCotizacionFilters(qb, filters);
+    
+    // Usar COUNT(DISTINCT) cuando hay filtros de rubro (para evitar duplicados por múltiples habilidades)
+    if (filters?.rubro) {
+      const result = await qb.select('COUNT(DISTINCT cotizacion.id)', 'count').getRawOne();
+      return parseInt(result?.count || '0');
+    }
+    
     return await qb.getCount();
   }
 
@@ -386,6 +400,13 @@ export class BaseMetricsCalculator {
       .andWhere('pago.timestamp_creado <= :endDate', { endDate });
     
     this.applyPagoFilters(qb, filters);
+    
+    // Usar COUNT(DISTINCT) cuando hay filtros de rubro (para evitar duplicados por múltiples habilidades)
+    if (filters?.rubro) {
+      const result = await qb.select('COUNT(DISTINCT pago.id)', 'count').getRawOne();
+      return parseInt(result?.count || '0');
+    }
+    
     return await qb.getCount();
   }
 
@@ -613,6 +634,13 @@ export class BaseMetricsCalculator {
       .andWhere('prestador.timestamp <= :endDate', { endDate });
     
     this.applyPrestadorFilters(qb, filters);
+    
+    // Usar COUNT(DISTINCT) cuando hay filtros de rubro o zona (para evitar duplicados por múltiples habilidades/zonas)
+    if (filters?.rubro || filters?.zona) {
+      const result = await qb.select('COUNT(DISTINCT prestador.id)', 'count').getRawOne();
+      return parseInt(result?.count || '0');
+    }
+    
     return await qb.getCount();
   }
 
@@ -767,14 +795,12 @@ export class BaseMetricsCalculator {
     if (filters.rubro) {
       qb.leftJoin('prestadores', 'prestador', 'prestador.id_prestador = solicitud.id_prestador')
         .leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true')
-        .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_habilidad OR rubro.nombre_rubro = habilidad.nombre_habilidad');
+        .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
       
       if (typeof filters.rubro === 'number') {
         qb.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
       } else {
-        qb.andWhere('(rubro.nombre_rubro = :rubroNombre OR habilidad.nombre_habilidad = :rubroNombre)', { 
-          rubroNombre: filters.rubro 
-        });
+        qb.andWhere('rubro.nombre_rubro = :rubroNombre', { rubroNombre: filters.rubro });
       }
     }
   }
@@ -814,14 +840,12 @@ export class BaseMetricsCalculator {
       }
       qb.leftJoin('prestadores', 'prestador', 'prestador.id_prestador = solicitud.id_prestador')
         .leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true')
-        .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_habilidad OR rubro.nombre_rubro = habilidad.nombre_habilidad');
+        .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
       
       if (typeof filters.rubro === 'number') {
         qb.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
       } else {
-        qb.andWhere('(rubro.nombre_rubro = :rubroNombre OR habilidad.nombre_habilidad = :rubroNombre)', { 
-          rubroNombre: filters.rubro 
-        });
+        qb.andWhere('rubro.nombre_rubro = :rubroNombre', { rubroNombre: filters.rubro });
       }
     }
   }
@@ -860,14 +884,12 @@ export class BaseMetricsCalculator {
       }
       qb.leftJoin('prestadores', 'prestador', 'prestador.id_prestador = solicitud.id_prestador')
         .leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true')
-        .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_habilidad OR rubro.nombre_rubro = habilidad.nombre_habilidad');
+        .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
       
       if (typeof filters.rubro === 'number') {
         qb.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
       } else {
-        qb.andWhere('(rubro.nombre_rubro = :rubroNombre OR habilidad.nombre_habilidad = :rubroNombre)', { 
-          rubroNombre: filters.rubro 
-        });
+        qb.andWhere('rubro.nombre_rubro = :rubroNombre', { rubroNombre: filters.rubro });
       }
     }
   }
@@ -890,14 +912,12 @@ export class BaseMetricsCalculator {
     // Filtro por rubro (a través de habilidad -> rubro)
     if (filters.rubro) {
       qb.leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true')
-        .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_habilidad OR rubro.nombre_rubro = habilidad.nombre_habilidad');
+        .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
       
       if (typeof filters.rubro === 'number') {
         qb.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
       } else {
-        qb.andWhere('(rubro.nombre_rubro = :rubroNombre OR habilidad.nombre_habilidad = :rubroNombre)', { 
-          rubroNombre: filters.rubro 
-        });
+        qb.andWhere('rubro.nombre_rubro = :rubroNombre', { rubroNombre: filters.rubro });
       }
     }
   }
