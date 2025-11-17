@@ -793,6 +793,7 @@ export class BaseMetricsCalculator {
 
     // Filtro por rubro (requiere join: solicitud -> prestador -> habilidades -> rubro)
     // Nota: No usamos solicitud.id_habilidad porque SEARCH squad envía IDs incorrectos
+    // IMPORTANTE: prestadores.id_prestador = habilidades.id_usuario (campo correcto)
     if (filters.rubro) {
       qb.leftJoin('prestadores', 'prestador', 'prestador.id_prestador = solicitud.id_prestador')
         .leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador')
@@ -835,6 +836,7 @@ export class BaseMetricsCalculator {
     }
 
     // Filtro por rubro (a través de solicitud -> prestador -> habilidad -> rubro)
+    // IMPORTANTE: prestadores.id_prestador = habilidades.id_usuario (campo correcto)
     if (filters.rubro) {
       if (!filters.zona) {
         qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud');
@@ -879,6 +881,7 @@ export class BaseMetricsCalculator {
     }
 
     // Filtro por rubro (a través de solicitud -> prestador -> habilidad -> rubro)
+    // IMPORTANTE: prestadores.id_prestador = habilidades.id_usuario (campo correcto)
     if (filters.rubro) {
       if (!filters.zona && !filters.tipoSolicitud) {
         qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = cotizacion.id_solicitud');

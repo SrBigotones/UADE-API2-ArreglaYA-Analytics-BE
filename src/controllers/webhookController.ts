@@ -118,6 +118,16 @@ export class WebhookController {
       // Save event to database
       const eventRepository = AppDataSource.getRepository(Event);
 
+      // Check if messageId already exists (deduplication)
+      const existingEvent = await eventRepository.findOne({
+        where: { messageId: coreHubEvent.messageId }
+      });
+
+      if (existingEvent) {
+        logger.info(`⚠️ Duplicate event detected | messageId: ${messageId} | existing id: ${existingEvent.id} | Skipping processing`);
+        return; // Exit early without error - idempotent behavior
+      }
+
       const newEvent = eventRepository.create({
         squad: eventMessage.squad,
         topico: eventMessage.topico,
