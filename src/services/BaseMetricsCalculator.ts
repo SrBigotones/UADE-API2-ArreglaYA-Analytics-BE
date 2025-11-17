@@ -791,18 +791,16 @@ export class BaseMetricsCalculator {
       }
     }
 
-    // Filtro por rubro (requiere join: solicitud -> prestador -> habilidades -> rubro)
-    // Nota: No usamos solicitud.id_habilidad porque SEARCH squad envía IDs incorrectos
-    // IMPORTANTE: prestadores.id_prestador = habilidades.id_usuario (campo correcto)
+    // Filtro por rubro (join directo desde solicitud.id_habilidad -> habilidad -> rubro)
+    // Esto funciona correctamente ahora que guardamos id_habilidad en solicitudes
     if (filters.rubro) {
-      qb.leftJoin('prestadores', 'prestador', 'prestador.id_prestador = solicitud.id_prestador')
-        .leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador')
+      qb.leftJoin('habilidades', 'habilidad', 'habilidad.id_habilidad = solicitud.id_habilidad')
         .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
       
       if (typeof filters.rubro === 'number') {
         qb.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
       } else {
-        qb.andWhere('rubro.nombre_rubro = :rubroNombre', { rubroNombre: filters.rubro });
+        qb.andWhere('LOWER(rubro.nombre_rubro) = LOWER(:rubroNombre)', { rubroNombre: filters.rubro });
       }
     }
   }
@@ -835,20 +833,21 @@ export class BaseMetricsCalculator {
         .andWhere('solicitud.zona = :zona', { zona: filters.zona });
     }
 
-    // Filtro por rubro (a través de solicitud -> prestador -> habilidad -> rubro)
-    // IMPORTANTE: prestadores.id_prestador = habilidades.id_usuario (campo correcto)
+    // Filtro por rubro (join directo desde solicitud.id_habilidad -> habilidad -> rubro)
+    // Esto funciona correctamente ahora que guardamos id_habilidad en solicitudes
     if (filters.rubro) {
       if (!filters.zona) {
         qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud');
       }
-      qb.leftJoin('prestadores', 'prestador', 'prestador.id_prestador = solicitud.id_prestador')
-        .leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador')
+      
+      // Ahora usar el join directo con id_habilidad
+      qb.leftJoin('habilidades', 'habilidad', 'habilidad.id_habilidad = solicitud.id_habilidad')
         .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
       
       if (typeof filters.rubro === 'number') {
         qb.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
       } else {
-        qb.andWhere('rubro.nombre_rubro = :rubroNombre', { rubroNombre: filters.rubro });
+        qb.andWhere('LOWER(rubro.nombre_rubro) = LOWER(:rubroNombre)', { rubroNombre: filters.rubro });
       }
     }
   }
@@ -880,20 +879,21 @@ export class BaseMetricsCalculator {
       }
     }
 
-    // Filtro por rubro (a través de solicitud -> prestador -> habilidad -> rubro)
-    // IMPORTANTE: prestadores.id_prestador = habilidades.id_usuario (campo correcto)
+    // Filtro por rubro (join directo desde solicitud.id_habilidad -> habilidad -> rubro)
+    // Esto funciona correctamente ahora que guardamos id_habilidad en solicitudes
     if (filters.rubro) {
       if (!filters.zona && !filters.tipoSolicitud) {
         qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = cotizacion.id_solicitud');
       }
-      qb.leftJoin('prestadores', 'prestador', 'prestador.id_prestador = solicitud.id_prestador')
-        .leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador')
+      
+      // Ahora usar el join directo con id_habilidad
+      qb.leftJoin('habilidades', 'habilidad', 'habilidad.id_habilidad = solicitud.id_habilidad')
         .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
       
       if (typeof filters.rubro === 'number') {
         qb.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
       } else {
-        qb.andWhere('rubro.nombre_rubro = :rubroNombre', { rubroNombre: filters.rubro });
+        qb.andWhere('LOWER(rubro.nombre_rubro) = LOWER(:rubroNombre)', { rubroNombre: filters.rubro });
       }
     }
   }
