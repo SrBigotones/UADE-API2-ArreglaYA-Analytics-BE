@@ -791,9 +791,11 @@ export class BaseMetricsCalculator {
       }
     }
 
-    // Filtro por rubro (requiere join: solicitud -> habilidad -> rubro)
+    // Filtro por rubro (requiere join: solicitud -> prestador -> habilidades -> rubro)
+    // Nota: No usamos solicitud.id_habilidad porque SEARCH squad envía IDs incorrectos
     if (filters.rubro) {
-      qb.leftJoin('habilidades', 'habilidad', 'habilidad.id_habilidad = solicitud.id_habilidad')
+      qb.leftJoin('prestadores', 'prestador', 'prestador.id_prestador = solicitud.id_prestador')
+        .leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador')
         .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
       
       if (typeof filters.rubro === 'number') {
@@ -838,7 +840,7 @@ export class BaseMetricsCalculator {
         qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud');
       }
       qb.leftJoin('prestadores', 'prestador', 'prestador.id_prestador = solicitud.id_prestador')
-        .leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true')
+        .leftJoin('habilidades', 'habilidad', 'habilidad.id_prestador = prestador.id_prestador')
         .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
       
       if (typeof filters.rubro === 'number') {
@@ -882,7 +884,7 @@ export class BaseMetricsCalculator {
         qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = cotizacion.id_solicitud');
       }
       qb.leftJoin('prestadores', 'prestador', 'prestador.id_prestador = solicitud.id_prestador')
-        .leftJoin('habilidades', 'habilidad', 'habilidad.id_usuario = prestador.id_prestador AND habilidad.activa = true')
+        .leftJoin('habilidades', 'habilidad', 'habilidad.id_prestador = prestador.id_prestador')
         .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
       
       if (typeof filters.rubro === 'number') {
