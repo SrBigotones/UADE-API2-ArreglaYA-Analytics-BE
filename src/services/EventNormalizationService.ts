@@ -156,19 +156,26 @@ export class EventNormalizationService {
 
     logger.info(`💾 Saving usuario | id: ${idUsuario} | rol: ${rol} | estado: ${estado}`);
 
-    // Usar upsert para insertar o actualizar basado en id_usuario (unique constraint)
-    await usuarioRepo.upsert(
-      {
-        id_usuario: idUsuario,
-        rol: rol,
-        estado: estado,
-        timestamp: event.timestamp,
-        ubicacion: ubicacion || null,
-      },
-      ['id_usuario'] // Conflict target: unique constraint en id_usuario
-    );
-
-    logger.info(`✅ Usuario ${idUsuario} saved to DB`);
+    if (evento.includes('deactivated')) {
+      await usuarioRepo.update(
+        { id_usuario: idUsuario },
+        { estado: 'baja', timestamp: event.timestamp }
+      );
+      logger.info(`✅ Usuario ${idUsuario} marcado como BAJA`);
+    } else {
+      // Para eventos de creación/actualización, hacer upsert completo
+      await usuarioRepo.upsert(
+        {
+          id_usuario: idUsuario,
+          rol: rol,
+          estado: estado,
+          timestamp: event.timestamp,
+          ubicacion: ubicacion || null,
+        },
+        ['id_usuario']
+      );
+      logger.info(`✅ Usuario ${idUsuario} saved to DB`);
+    }
   }
 
   /**
