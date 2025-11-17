@@ -394,13 +394,13 @@ export class EventNormalizationService {
           const idPrestador = this.extractBigInt(cotizacion.prestadorId);
           const idUsuario = this.extractBigInt(solicitud.usuarioId); // Del padre
 
-          // Si no hay cotizacionId, es solo una invitación, skip
-          if (!idCotizacion || !idSolicitud || !idPrestador) {
+          // Validación mínima: necesitamos solicitud y prestador
+          // cotizacionId puede ser null (invitaciones a cotizar)
+          if (!idSolicitud || !idPrestador) {
             continue;
           }
 
-          // Las cotizaciones del batch no tienen id_cotizacion hasta que son emitidas realmente
-          // Por ahora insertamos sin upsert (pueden ser duplicados)
+          // Insertar cotizaciones/invitaciones (id_cotizacion puede ser null)
           await cotizacionRepo.insert({
             id_cotizacion: idCotizacion,
             id_solicitud: idSolicitud,
