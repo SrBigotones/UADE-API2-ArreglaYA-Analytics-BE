@@ -97,6 +97,27 @@ export class AuthService {
         }
       );
 
+      // Verificar status codes específicos ANTES del catch
+      if (response.status === 401) {
+        logger.warn('Credenciales inválidas', { email: credentials.email });
+        throw new Error('Credenciales inválidas');
+      }
+
+      if (response.status === 403) {
+        logger.error('Acceso denegado por el servidor de usuarios', { 
+          email: credentials.email,
+          status: response.status
+        });
+        throw new Error('Acceso denegado por el servidor de autenticación');
+      }
+
+      if (response.status === 500) {
+        logger.error('Error interno del servidor de usuarios', { 
+          email: credentials.email
+        });
+        throw new Error('Error interno del servidor de autenticación');
+      }
+
       if (response.status === 200) {
         logger.info('Usuario autenticado exitosamente', { 
           email: credentials.email,
@@ -106,52 +127,52 @@ export class AuthService {
         return response.data;
       }
 
+      // Cualquier otro status code
+      logger.error('Status code inesperado del servidor de usuarios', {
+        email: credentials.email,
+        status: response.status
+      });
       throw new Error(`Error de autenticación: ${response.status}`);
     } catch (error) {
-      logger.error('Error en autenticación' + error);
+      logger.error('Error en autenticación', {
+        error: error instanceof Error ? error.message : 'Error desconocido',
+        email: credentials.email
+      });
+      
+      // Si ya es un error lanzado arriba (401, 403, 500), re-lanzarlo
+      if (error instanceof Error && 
+          (error.message === 'Credenciales inválidas' || 
+           error.message.includes('Acceso denegado') ||
+           error.message.includes('Error interno del servidor'))) {
+        throw error;
+      }
+      
       if (isAxiosError(error)) {
-        if (error.response?.status === 401) {
-          logger.warn('Credenciales inválidas', { email: credentials.email });
-          throw new Error('Credenciales inválidas');
-        }
-        if (error.response?.status === 403) {
-          logger.error('Acceso denegado por el servidor de usuarios (posible problema de CORS o configuración)', { 
-            email: credentials.email,
-            status: error.response.status,
-            data: error.response.data
-          });
-          // En desarrollo, usar datos mock si hay problema de acceso
-          if (config.nodeEnv === 'development') {
-            logger.warn('Usando datos mock para desarrollo debido a error 403', { 
-              email: credentials.email 
-            });
-            return this.getMockUserData(credentials.email);
-          }
-          throw new Error('Acceso denegado por el servidor de autenticación');
-        }
-        if (error.response?.status === 500) {
-          logger.error('Error interno del servidor de usuarios', { 
-            email: credentials.email,
-            error: error.message 
-          });
-          throw new Error('Error interno del servidor');
-        }
-        
-        // Si no se puede conectar al módulo externo
+        // Errores de conexión (no se puede conectar al servicio)
         if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND' || error.message.includes('No es posible conectar')) {
           logger.error('Módulo de usuarios no disponible', { 
-            email: credentials.email 
+            email: credentials.email,
+            errorCode: error.code
           });
           throw new Error('Error de conexión con el servidor de autenticación');
         }
         
-        logger.error('Error de conexión con el módulo de usuarios', { 
+        // En desarrollo, usar datos mock si hay problema de conexión
+        if (config.nodeEnv === 'development') {
+          logger.warn('Usando datos mock para desarrollo debido a error de conexión', { 
+            email: credentials.email 
+          });
+          return this.getMockUserData(credentials.email);
+        }
+        
+        logger.error('Error de axios inesperado', { 
           email: credentials.email,
           error: error.message,
-          status: error.response?.status
+          code: error.code
         });
         throw new Error('Error de conexión con el servidor de autenticación');
       }
+      
       logger.error('Error inesperado en autenticación', { 
         email: credentials.email,
         error: error instanceof Error ? error.message : 'Error desconocido'

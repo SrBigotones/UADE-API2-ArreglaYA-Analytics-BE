@@ -21,6 +21,9 @@ export class Solicitud {
   @Column({ type: 'bigint', name: 'id_prestador', nullable: true })
   id_prestador: number | null;
 
+  @Column({ type: 'bigint', name: 'id_habilidad', nullable: true })
+  id_habilidad: number | null;
+
   @Column({ type: 'varchar', length: 20, nullable: false })
   estado: string; // 'creada' / 'cancelada' / 'aceptada' / 'rechazada'
 

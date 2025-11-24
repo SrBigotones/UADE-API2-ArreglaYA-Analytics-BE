@@ -13,6 +13,7 @@ import adminRoutes from './routes/admin';
 import catalogoRoutes from './routes/catalogo';
 import featureFlagRoutes from './routes/featureFlags';
 import { errorHandler } from './middleware/errorHandler';
+import { requestLogger } from './middleware/requestLogger';
 import { swaggerUi, specs } from './config/swagger';
 import { HealthController } from './controllers/HealthController';
 
@@ -24,6 +25,9 @@ app.use(cors());
 app.use(compression());
 app.use(express.json());
 app.use(morgan('combined'));
+
+// Request logger para debuggear performance
+app.use(requestLogger);
 
 // Health endpoints
 app.get('/health', healthController.healthCheck.bind(healthController));

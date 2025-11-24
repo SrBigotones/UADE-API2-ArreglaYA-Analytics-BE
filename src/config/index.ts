@@ -1,12 +1,21 @@
 import dotenv from 'dotenv';
+import path from 'path';
 
-dotenv.config();
+// Load .env file explicitly with path resolution
+const envResult = dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+
+if (envResult.error) {
+  console.warn('⚠️ Warning: Could not load .env file:', envResult.error.message);
+} else {
+  console.log('✅ .env file loaded successfully');
+}
 
 // Log environment variables for debugging (especially in Lambda cold starts)
 console.log('🔍 Loading configuration...');
 console.log('NODE_ENV:', process.env.NODE_ENV);
 console.log('CORE_HUB_URL from env:', process.env.CORE_HUB_URL);
 console.log('CORE_HUB_API_KEY exists:', !!process.env.CORE_HUB_API_KEY);
+console.log('USERS_API_BASE_URL from env:', process.env.USERS_API_BASE_URL || 'NOT SET (will use default: http://localhost:8080)');
 
 const config = {
   port: process.env.PORT || 3000,
@@ -44,6 +53,9 @@ const config = {
   // We don't verify JWTs locally - tokens are forwarded to Users service for verification
   usersApiBaseUrl: process.env.USERS_API_BASE_URL || 'http://localhost:8080',
 };
+
+// Log the final configuration value
+console.log('📋 Final config.usersApiBaseUrl:', config.usersApiBaseUrl);
 
 export default config;
 export { config };
