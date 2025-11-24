@@ -156,10 +156,13 @@ export class EventNormalizationService {
 
     logger.info(`💾 Saving usuario | id: ${idUsuario} | rol: ${rol} | estado: ${estado}`);
 
+    // Usar timestamp actual en lugar del que viene en el evento
+    const currentTimestamp = new Date();
+    
     if (evento.includes('deactivated')) {
       await usuarioRepo.update(
         { id_usuario: idUsuario },
-        { estado: 'baja', timestamp: event.timestamp }
+        { estado: 'baja', timestamp: currentTimestamp }
       );
       logger.info(`✅ Usuario ${idUsuario} marcado como BAJA`);
     } else {
@@ -169,7 +172,7 @@ export class EventNormalizationService {
           id_usuario: idUsuario,
           rol: rol,
           estado: estado,
-          timestamp: event.timestamp,
+          timestamp: currentTimestamp,
           ubicacion: ubicacion || null,
         },
         ['id_usuario']
@@ -306,6 +309,9 @@ export class EventNormalizationService {
 
     logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado} | zona: ${zona || 'NULL'} | habilidad: ${idHabilidad || 'NULL'}`);
 
+    // Usar timestamp actual en lugar del que viene en el evento
+    const currentTimestamp = new Date();
+    
     await solicitudRepo.upsert(
       {
         id_solicitud: idSolicitud,
@@ -314,7 +320,7 @@ export class EventNormalizationService {
         id_habilidad: idHabilidad || null,
         estado: estado,
         zona: zona || null,
-        timestamp: event.timestamp,
+        timestamp: currentTimestamp,
         es_critica: esCritica || false,
       },
       ['id_solicitud'] // Conflict target: unique constraint en id_solicitud
@@ -363,6 +369,9 @@ export class EventNormalizationService {
 
         logger.info(`💾 Saving cotizacion from resumen | id: ${idCotizacion} | solicitud: ${idSolicitud} | prestador: ${idPrestador} | monto: ${monto}`);
 
+        // Usar timestamp actual en lugar del que viene en el evento
+        const currentTimestamp = new Date();
+        
         await cotizacionRepo.upsert(
           {
             id_cotizacion: idCotizacion,
@@ -371,7 +380,7 @@ export class EventNormalizationService {
             id_prestador: idPrestador,
             estado: 'emitida',
             monto: monto || null,
-            timestamp: event.timestamp,
+            timestamp: currentTimestamp,
           },
           ['id_cotizacion']
         );
@@ -400,6 +409,9 @@ export class EventNormalizationService {
             continue;
           }
 
+          // Usar timestamp actual en lugar del que viene en el evento
+          const currentTimestamp = new Date();
+          
           // Insertar cotizaciones/invitaciones (id_cotizacion puede ser null)
           await cotizacionRepo.insert({
             id_cotizacion: idCotizacion,
@@ -408,7 +420,7 @@ export class EventNormalizationService {
             id_prestador: idPrestador,
             estado: 'emitida',
             monto: null,
-            timestamp: event.timestamp,
+            timestamp: currentTimestamp,
           });
 
           logger.debug(`Saved cotizacion ${idCotizacion} from batch`);
@@ -458,6 +470,9 @@ export class EventNormalizationService {
 
     logger.info(`💾 Saving cotizacion | id: ${idCotizacion} | solicitud: ${idSolicitud} | estado: ${estado}`);
 
+    // Usar timestamp actual en lugar del que viene en el evento
+    const currentTimestamp = new Date();
+    
     // Las cotizaciones individuales tienen id_cotizacion, usamos upsert solo si existe
     if (idCotizacion) {
       await cotizacionRepo.upsert(
@@ -468,7 +483,7 @@ export class EventNormalizationService {
           id_prestador: idPrestador,
           estado: estado,
           monto: monto || null,
-          timestamp: event.timestamp,
+          timestamp: currentTimestamp,
         },
         ['id_cotizacion'] // Solo actualizar si ya existe esa cotizacion
       );
@@ -480,7 +495,7 @@ export class EventNormalizationService {
         id_prestador: idPrestador,
         estado: estado,
         monto: monto || null,
-        timestamp: event.timestamp,
+        timestamp: currentTimestamp,
       });
     }
 
@@ -518,6 +533,9 @@ export class EventNormalizationService {
         return;
       }
 
+      // Usar timestamp actual en lugar del que viene en el evento
+      const currentTimestamp = new Date();
+      
       logger.info(`💾 Creating pago from matching | id: ${idPago} | usuario: ${idUsuario} | monto: ${montoTotal}`);
       
       await pagoRepo.upsert(
@@ -530,8 +548,8 @@ export class EventNormalizationService {
           moneda: moneda,
           metodo: metodo,
           estado: 'pending', // Estado inicial cuando se emite desde matching
-          timestamp_creado: event.timestamp,
-          timestamp_actual: event.timestamp,
+          timestamp_creado: currentTimestamp,
+          timestamp_actual: currentTimestamp,
           captured_at: null,
           refund_id: null,
         },
@@ -606,11 +624,11 @@ export class EventNormalizationService {
       metodo = payload.method || payload.metodo || payload.paymentMethod || payload.metodoPago;
     }
 
-    const timestampCreado = evento.includes('created') 
-      ? event.timestamp 
-      : event.timestamp;
+    // Usar timestamp actual en lugar del que viene en el evento
+    const currentTimestamp = new Date();
+    const timestampCreado = currentTimestamp;
 
-    // Para captured_at, usar updatedAt si existe (eventos status_updated), sino usar event.timestamp
+    // Para captured_at, usar updatedAt si existe (eventos status_updated), sino usar timestamp actual
     let capturedAt = null;
     if (estado === 'approved') {
       if (payload.updatedAt && Array.isArray(payload.updatedAt)) {
@@ -620,7 +638,7 @@ export class EventNormalizationService {
         // Crear fecha en UTC directamente (no usar new Date() que usa zona horaria local)
         capturedAt = new Date(Date.UTC(year, month - 1, day, hour, minute, second || 0));
       } else {
-        capturedAt = event.timestamp;
+        capturedAt = currentTimestamp;
       }
     }
 
@@ -638,6 +656,9 @@ export class EventNormalizationService {
       // Si el pago existente no tiene userId pero el evento sí, actualizarlo
       const finalUserId = existingPago.id_usuario || idUsuario || null;
       
+      // Usar timestamp actual en lugar del que viene en el evento
+      const currentTimestamp = new Date();
+      
       await pagoRepo.upsert(
         {
           id_pago: idPago,
@@ -649,7 +670,7 @@ export class EventNormalizationService {
           metodo: metodo || existingPago.metodo,
           estado: estado,
           timestamp_creado: existingPago.timestamp_creado,
-          timestamp_actual: event.timestamp,
+          timestamp_actual: currentTimestamp,
           captured_at: capturedAt || existingPago.captured_at,
           refund_id: refundId || existingPago.refund_id,
         },
@@ -664,6 +685,9 @@ export class EventNormalizationService {
         logger.warn(`   El userId se completará cuando llegue el evento 'created'`);
       }
       
+      // Usar timestamp actual en lugar del que viene en el evento
+      const currentTimestamp = new Date();
+      
       logger.info(`💾 Creating pago | id: ${idPago} | usuario: ${idUsuario || 'NULL'} | estado: ${estado}`);
       await pagoRepo.upsert(
         {
@@ -675,8 +699,8 @@ export class EventNormalizationService {
           moneda: moneda,
           metodo: metodo || null,
           estado: estado,
-          timestamp_creado: timestampCreado,
-          timestamp_actual: event.timestamp,
+          timestamp_creado: currentTimestamp,
+          timestamp_actual: currentTimestamp,
           captured_at: capturedAt,
           refund_id: refundId,
         },
@@ -726,13 +750,16 @@ export class EventNormalizationService {
 
     logger.info(`💾 Saving prestador | id: ${idPrestador} | estado: ${estado}`);
 
+    // Usar timestamp actual en lugar del que viene en el evento
+    const currentTimestamp = new Date();
+    
     await prestadorRepo.upsert(
       {
         id_prestador: idPrestador,
         nombre: nombre,
         apellido: apellido,
         estado: estado,
-        timestamp: event.timestamp,
+        timestamp: currentTimestamp,
         perfil_completo: perfilCompleto,
       },
       ['id_prestador'] // Conflict target: unique constraint en id_prestador
