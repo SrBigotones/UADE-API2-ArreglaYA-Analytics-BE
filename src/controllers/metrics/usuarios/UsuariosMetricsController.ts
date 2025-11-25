@@ -10,7 +10,7 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
   
   ROL_CLIENTE = 'CLIENTE'
   ROL_PRESTADOR = 'PRESTADOR'
-  ROL_ADMIN = 'ADMINISTRADOR'
+  ROL_ADMIN = 'ADMIN'
 
   /**
    * Valida y parsea los parámetros de período de tiempo
@@ -198,6 +198,8 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
         .getCount();
 
       const currentRate = total > 0 ? (inactivos / total) * 100 : 0;
+      
+      logger.info(`[getTasaRolesActivos] Período actual: total=${total}, inactivos=${inactivos}, tasa=${currentRate}%`);
 
       const prevTotal = await repo
         .createQueryBuilder('usuario')
@@ -213,6 +215,8 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
         .getCount();
 
       const previousRate = prevTotal > 0 ? (prevInactivos / prevTotal) * 100 : 0;
+      
+      logger.info(`[getTasaRolesActivos] Período anterior: total=${prevTotal}, inactivos=${prevInactivos}, tasa=${previousRate}%`);
 
       // También devolver distribución por rol
       const porRol = await repo
@@ -231,11 +235,17 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
       });
 
       // Calcular métrica usando el método estándar
+      const roundedCurrent = this.roundPercentage(currentRate);
+      const roundedPrevious = this.roundPercentage(previousRate);
+      logger.info(`[getTasaRolesActivos] Valores redondeados: current=${roundedCurrent}, previous=${roundedPrevious}`);
+      
       const tasaInactivosMetric = this.calculateCardMetric(
-        this.roundPercentage(currentRate),
-        this.roundPercentage(previousRate),
+        roundedCurrent,
+        roundedPrevious,
         'absoluto'
       );
+      
+      logger.info(`[getTasaRolesActivos] Métrica calculada: value=${tasaInactivosMetric.value}, change=${tasaInactivosMetric.change}`);
 
       res.status(200).json({
         success: true,
