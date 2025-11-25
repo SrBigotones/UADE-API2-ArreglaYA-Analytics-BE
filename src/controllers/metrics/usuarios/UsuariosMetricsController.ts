@@ -10,7 +10,7 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
   
   ROL_CLIENTE = 'CLIENTE'
   ROL_PRESTADOR = 'PRESTADOR'
-  ROL_ADMIN = 'ADMINISTRADOR'
+  ROL_ADMIN = 'ADMIN'
 
   /**
    * Valida y parsea los parámetros de período de tiempo
