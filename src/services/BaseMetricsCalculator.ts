@@ -286,6 +286,7 @@ export class BaseMetricsCalculator {
     const result = await repo
       .createQueryBuilder('usuario')
       .where('usuario.rol = :rol', { rol })
+      .andWhere('usuario.estado = :estado', { estado: 'activo' })
       .andWhere('usuario.timestamp >= :startDate', { startDate })
       .andWhere('usuario.timestamp <= :endDate', { endDate })
       .getCount();

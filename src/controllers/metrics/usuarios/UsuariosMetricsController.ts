@@ -267,11 +267,12 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
     try {
       const repo = AppDataSource.getRepository(Usuario);
       
-      // Obtener distribución por rol sin filtro de periodo (histórico)
+      // Obtener distribución por rol sin filtro de periodo (histórico) - solo usuarios activos
       const porRol = await repo
         .createQueryBuilder('usuario')
         .select('usuario.rol', 'rol')
         .addSelect('COUNT(*)', 'total')
+        .where('usuario.estado = :estado', { estado: 'activo' })
         .groupBy('usuario.rol')
         .getRawMany();
 
@@ -291,15 +292,16 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
 
   /**
    * GET /api/metrica/usuarios/totales
-   * Usuarios totales (histórico, sin periodo)
+   * Usuarios totales (histórico, sin periodo) - solo usuarios activos
    */
   public async getUsuariosTotales(req: Request, res: Response): Promise<void> {
     try {
       const repo = AppDataSource.getRepository(Usuario);
       
-      // Contar todos los usuarios sin filtro de periodo
+      // Contar todos los usuarios activos sin filtro de periodo
       const total = await repo
         .createQueryBuilder('usuario')
+        .where('usuario.estado = :estado', { estado: 'activo' })
         .getCount();
 
       res.status(200).json({
