@@ -5,7 +5,6 @@ import { BaseMetricsCalculator } from '../../../services/BaseMetricsCalculator';
 import { PeriodType, PieMetricResponse, ProviderZonesResponse, ProviderZoneData, SegmentationFilters } from '../../../types';
 import { AppDataSource } from '../../../config/database';
 import { Prestador } from '../../../models/Prestador';
-import { Cotizacion } from '../../../models/Cotizacion';
 import { Solicitud } from '../../../models/Solicitud';
 import { Habilidad } from '../../../models/Habilidad';
 import { Usuario } from '../../../models/Usuario';
@@ -176,73 +175,6 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
       await this.handleError(res, error, 'getTotalPrestadoresActivos');
-    }
-  }
-
-  /**
-   * GET /api/metrica/prestadores/win-rate-rubro
-   * 5. Win Rate por rubro (%)
-   * Calcula el Win Rate: de las cotizaciones emitidas en el período, cuántas fueron aceptadas
-   * IMPORTANTE: Usa timestamp_creacion para filtrar por período (cuándo se creó la cotización)
-   * y el campo estado para determinar si fue aceptada o no
-   * Nota: Actualmente calcula el Win Rate global. Para calcular por rubro se necesitaría join con prestadores->habilidades->rubros
-   */
-  public async getWinRatePorRubro(req: Request, res: Response): Promise<void> {
-    try {
-      const periodType = this.parsePeriodParams(req);
-      const dateRanges = DateRangeService.getPeriodRanges(periodType);
-
-      const cotizacionesRepo = AppDataSource.getRepository(Cotizacion);
-      
-      // Obtener todas las cotizaciones CREADAS en el período actual
-      // Usamos timestamp_creacion para determinar cuándo se emitió originalmente
-      // El campo timestamp guarda la última actualización de estado
-      const cotizacionesEmitidas = await cotizacionesRepo
-        .createQueryBuilder('cotizacion')
-        .where('cotizacion.timestamp_creacion >= :startDate', { startDate: dateRanges.startDate })
-        .andWhere('cotizacion.timestamp_creacion <= :endDate', { endDate: dateRanges.endDate })
-        .getMany();
-
-      // De las emitidas en el período, contar cuántas fueron aceptadas (estado actual = 'aceptada')
-      const aceptadas = cotizacionesEmitidas.filter(c => c.estado === 'aceptada').length;
-      const emitidas = cotizacionesEmitidas.length;
-      const currentRate = emitidas > 0 ? (aceptadas / emitidas) * 100 : 0;
-
-      // Calcular para período anterior
-      const prevCotizacionesEmitidas = await cotizacionesRepo
-        .createQueryBuilder('cotizacion')
-        .where('cotizacion.timestamp_creacion >= :startDate', { startDate: dateRanges.previousStartDate })
-        .andWhere('cotizacion.timestamp_creacion <= :endDate', { endDate: dateRanges.previousEndDate })
-        .getMany();
-
-      const prevAceptadas = prevCotizacionesEmitidas.filter(c => c.estado === 'aceptada').length;
-      const prevEmitidas = prevCotizacionesEmitidas.length;
-      const previousRate = prevEmitidas > 0 ? (prevAceptadas / prevEmitidas) * 100 : 0;
-
-      const metric = await this.calculateMetricWithChart(
-        periodType,
-        dateRanges,
-        this.roundPercentage(currentRate),
-        this.roundPercentage(previousRate),
-        async (start: Date, end: Date) => {
-          // Para cada intervalo histórico, calcular win rate de la misma forma
-          const emitidasInt = await cotizacionesRepo
-            .createQueryBuilder('cotizacion')
-            .where('cotizacion.timestamp_creacion >= :startDate', { startDate: start })
-            .andWhere('cotizacion.timestamp_creacion <= :endDate', { endDate: end })
-            .getMany();
-          
-          const aceptadasInt = emitidasInt.filter(c => c.estado === 'aceptada').length;
-          const rate = emitidasInt.length > 0 ? (aceptadasInt / emitidasInt.length) * 100 : 0;
-          
-          return this.roundPercentage(rate);
-        },
-        'porcentaje'
-      );
-      
-      res.status(200).json({ success: true, data: metric });
-    } catch (error) {
-      await this.handleError(res, error, 'getWinRatePorRubro');
     }
   }
 

@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryColumn, Column, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity('solicitudes')
 @Index(['id_solicitud'], { unique: true })
@@ -6,13 +6,10 @@ import { Entity, PrimaryGeneratedColumn, Column, Index, CreateDateColumn, Update
 @Index(['id_prestador'])
 @Index(['estado'])
 @Index(['zona'])
-@Index(['timestamp'])
+@Index(['created_at'])
 @Index(['es_critica'])
 export class Solicitud {
-  @PrimaryGeneratedColumn('increment')
-  id: number;
-
-  @Column({ type: 'bigint', name: 'id_solicitud', nullable: false })
+  @PrimaryColumn({ type: 'bigint', name: 'id_solicitud' })
   id_solicitud: number;
 
   @Column({ type: 'bigint', name: 'id_usuario', nullable: true })
@@ -20,6 +17,9 @@ export class Solicitud {
 
   @Column({ type: 'bigint', name: 'id_prestador', nullable: true })
   id_prestador: number | null;
+
+  @Column({ type: 'boolean', nullable: false, default: false, name: 'prestador_asignado' })
+  prestador_asignado: boolean;
 
   @Column({ type: 'bigint', name: 'id_habilidad', nullable: true })
   id_habilidad: number | null;
@@ -30,8 +30,8 @@ export class Solicitud {
   @Column({ type: 'varchar', length: 100, nullable: true })
   zona: string | null;
 
-  @Column({ type: 'timestamp', nullable: false })
-  timestamp: Date;
+  @Column({ type: 'timestamp', nullable: true, name: 'fecha_confirmacion' })
+  fecha_confirmacion: Date | null;
 
   @Column({ type: 'boolean', nullable: false, default: false, name: 'es_critica' })
   es_critica: boolean;

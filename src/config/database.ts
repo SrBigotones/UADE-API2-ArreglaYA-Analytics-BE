@@ -8,7 +8,6 @@ import { Event } from '../models/Event';
 import { Usuario } from '../models/Usuario';
 import { Servicio } from '../models/Servicio';
 import { Solicitud } from '../models/Solicitud';
-import { Cotizacion } from '../models/Cotizacion';
 import { Habilidad } from '../models/Habilidad';
 import { Zona } from '../models/Zona';
 import { Pago } from '../models/Pago';
@@ -46,7 +45,7 @@ export const createDataSource = async () => {
   AppDataSource = new DataSource({
     ...dbConfig,
     // Importar entidades explícitamente para evitar problemas de carga
-    entities: [Event, Usuario, Servicio, Solicitud, Cotizacion, Habilidad, Zona, Pago, Prestador, Rubro, FeatureFlag],
+    entities: [Event, Usuario, Servicio, Solicitud, Habilidad, Zona, Pago, Prestador, Rubro, FeatureFlag],
     migrations: [__dirname + '/../migrations/*.{ts,js}'],
     subscribers: [__dirname + '/../subscribers/*.{ts,js}'],
     // Configuración de pool de conexiones para manejar concurrencia

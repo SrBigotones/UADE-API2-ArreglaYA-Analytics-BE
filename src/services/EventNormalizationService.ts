@@ -3,7 +3,6 @@ import { Event } from '../models/Event';
 import { Usuario } from '../models/Usuario';
 import { Servicio } from '../models/Servicio';
 import { Solicitud } from '../models/Solicitud';
-import { Cotizacion } from '../models/Cotizacion';
 import { Habilidad } from '../models/Habilidad';
 import { Zona } from '../models/Zona';
 import { Pago } from '../models/Pago';
@@ -39,10 +38,10 @@ export class EventNormalizationService {
         logger.info(`👤 Processing USER event`);
         await this.processUserEvent(event);
       }
-      // 3. Cotizaciones: topico = 'cotizacion' o eventos especiales con cotizaciones
-      else if (topico === 'cotizacion' || evento.includes('cotizacion') || evento.includes('quote') || evento.includes('cotización') || evento === 'resumen') {
-        logger.info(`� Processing COTIZACION event`);
-        await this.processQuoteEvent(event);
+      // 3. Cotización aceptada: evento específico search.cotizacion.aceptada
+      else if (topico === 'cotizacion' && evento.includes('aceptada')) {
+        logger.info(`✅ Processing COTIZACION ACEPTADA event`);
+        await this.processCotizacionAceptadaEvent(event);
       }
       // 4. Solicitudes: topico = 'solicitud' o evento contiene 'solicitud'/'request'
       else if (topico === 'solicitud' || evento.includes('solicitud') || evento.includes('request') || evento.includes('pedido') || evento.includes('order')) {
@@ -54,22 +53,17 @@ export class EventNormalizationService {
         logger.info(`💰 Processing PAGO event from matching`);
         await this.processPaymentEvent(event);
       }
-      // 6. Pedido con cotización enviada (catalogue.pedido.cotizacion_enviada)
-      else if (topico === 'pedido' && evento.includes('cotizacion')) {
-        logger.info(`📋 Processing PEDIDO-COTIZACION event`);
-        await this.processQuoteEvent(event);
-      }
-      // 7. Prestadores: topico = 'prestador' o eventos de prestador
+      // 6. Prestadores: topico = 'prestador' o eventos de prestador
       else if (topico === 'prestador' || (evento.includes('prestador') && (evento.includes('alta') || evento.includes('baja') || evento.includes('modificacion')))) {
         logger.info(`👨‍🔧 Processing PRESTADOR event`);
         await this.processPrestadorEvent(event);
       }
-      // 8. Rubros: topico = 'rubro' o eventos de rubro
+      // 7. Rubros: topico = 'rubro' o eventos de rubro
       else if (topico === 'rubro' || (evento.includes('rubro') && (evento.includes('alta') || evento.includes('baja') || evento.includes('modificacion')))) {
         logger.info(`📋 Processing RUBRO event`);
         await this.processRubroEvent(event);
       }
-      // 9. Zonas (NO procesamos habilidades como eventos independientes)
+      // 8. Zonas (NO procesamos habilidades como eventos independientes)
       else if (topico === 'zona' || evento.includes('zona') || evento.includes('zone')) {
         logger.info(`🗺️ Processing ZONE event`);
         await this.processZoneEvent(event);
@@ -211,7 +205,7 @@ export class EventNormalizationService {
 
   /**
    * Procesa eventos de solicitudes
-   * Eventos: solicitud.creada, solicitud.cancelada, cotizacion.aceptada, pedido_finalizado, pedido_cancelado
+   * Eventos: solicitud.creada, solicitud.cancelada, pedido_finalizado, pedido_cancelado
    */
   private async processRequestEvent(event: Event): Promise<void> {
     const cuerpo = event.cuerpo;
@@ -255,6 +249,9 @@ export class EventNormalizationService {
     } else if (evento.includes('solicitado')) {
       estado = 'creada'; // 'solicitado' es equivalente a 'creada'
     }
+
+    // Detectar si es evento de prestador asignado
+    const esPrestadorAsignado = evento.includes('prestadorasignado') || evento.includes('asignado');
 
     // Extraer zona de diferentes estructuras posibles
     let zona = null;
@@ -308,11 +305,8 @@ export class EventNormalizationService {
       }
     }
 
-    logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado} | zona: ${zona || 'NULL'} | habilidad: ${idHabilidad || 'NULL'}`);
+    logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado} | zona: ${zona || 'NULL'} | habilidad: ${idHabilidad || 'NULL'} | prestador_asignado: ${esPrestadorAsignado}`);
 
-    // Usar timestamp actual en lugar del que viene en el evento
-    const currentTimestamp = new Date();
-    
     await solicitudRepo.upsert(
       {
         id_solicitud: idSolicitud,
@@ -321,8 +315,8 @@ export class EventNormalizationService {
         id_habilidad: idHabilidad || null,
         estado: estado,
         zona: zona || null,
-        timestamp: currentTimestamp,
         es_critica: esCritica || false,
+        prestador_asignado: esPrestadorAsignado || !!idPrestador, // true si es evento de asignación O si viene id_prestador
       },
       ['id_solicitud'] // Conflict target: unique constraint en id_solicitud
     );
@@ -331,176 +325,58 @@ export class EventNormalizationService {
   }
 
   /**
-   * Procesa eventos de cotizaciones
-   * Eventos: cotizacion.emitida, cotizacion.aceptada, cotizacion.rechazada, cotizacion.expirada
-   * También: matching.cotizacion.emitida (eventos batch del servicio de matching)
+   * Procesa evento de cotización aceptada
+   * Evento: search.cotizacion.aceptada
+   * 
+   * Cuando se acepta una cotización, actualizamos la solicitud asociada:
+   * - estado = 'aceptada'
+   * - fecha_confirmacion = timestamp actual (momento del match confirmado)
    */
-  private async processQuoteEvent(event: Event): Promise<void> {
+  private async processCotizacionAceptadaEvent(event: Event): Promise<void> {
     const cuerpo = event.cuerpo;
     const payload = this.extractPayload(cuerpo);
-    const cotizacionRepo = AppDataSource.getRepository(Cotizacion);
+    const solicitudRepo = AppDataSource.getRepository(Solicitud);
 
     const evento = event.evento.toLowerCase();
+    logger.info(`✅ Processing cotización aceptada event | eventId: ${event.id}`);
 
-    // Caso especial: solicitud.resumen con cotizaciones reales
-    if (evento.includes('resumen') && payload.solicitud && payload.solicitud.cotizaciones) {
-      logger.info(`📊 Processing RESUMEN cotizaciones | solicitudId: ${payload.solicitud.solicitudId}`);
-      
-      const idSolicitud = this.extractBigInt(payload.solicitud.solicitudId);
-      if (!idSolicitud) {
-        logger.warn(`❌ No solicitudId in resumen event ${event.id}`);
-        return;
-      }
-
-      const cotizaciones = payload.solicitud.cotizaciones;
-      if (!Array.isArray(cotizaciones)) {
-        logger.warn(`❌ cotizaciones is not an array in resumen event ${event.id}`);
-        return;
-      }
-
-      for (const cotizacion of cotizaciones) {
-        const idCotizacion = this.extractBigInt(cotizacion.cotizacionId);
-        const idPrestador = this.extractBigInt(cotizacion.prestadorId);
-        const monto = this.extractDecimal(cotizacion.monto);
-
-        if (!idCotizacion || !idPrestador) {
-          logger.warn(`⚠️ Skipping cotizacion without id or prestador in resumen`);
-          continue;
-        }
-
-        logger.info(`💾 Saving cotizacion from resumen | id: ${idCotizacion} | solicitud: ${idSolicitud} | prestador: ${idPrestador} | monto: ${monto}`);
-
-        // Usar timestamp actual en lugar del que viene en el evento
-        const currentTimestamp = new Date();
-
-        await cotizacionRepo.upsert(
-          {
-          id_cotizacion: idCotizacion,
-          id_solicitud: idSolicitud,
-          id_usuario: null, // No viene en el resumen
-          id_prestador: idPrestador,
-          estado: 'emitida',
-          monto: monto || null,
-          timestamp: currentTimestamp,
-          },
-          ['id_cotizacion']
-        );
-      }
-
-      logger.info(`✅ Resumen cotizaciones processed | total: ${cotizaciones.length}`);
-      return;
-    }
-
-    // Caso especial: matching.emitida viene con array de solicitudes con top3 de cotizaciones
-    if (evento.includes('emitida') && payload.solicitudes && Array.isArray(payload.solicitudes)) {
-      logger.info(`📊 Processing BATCH cotizaciones | count: ${payload.solicitudes.length}`);
-      
-      for (const solicitud of payload.solicitudes) {
-        if (!solicitud.top3 || !Array.isArray(solicitud.top3)) continue;
-        
-        for (const cotizacion of solicitud.top3) {
-          const idCotizacion = this.extractBigInt(cotizacion.cotizacionId);
-          const idSolicitud = this.extractBigInt(cotizacion.solicitudId);
-          const idPrestador = this.extractBigInt(cotizacion.prestadorId);
-          const idUsuario = this.extractBigInt(solicitud.usuarioId); // Del padre
-
-          // Validación mínima: necesitamos solicitud y prestador
-          // cotizacionId puede ser null (invitaciones a cotizar)
-          if (!idSolicitud || !idPrestador) {
-            continue;
-          }
-
-          // Usar timestamp actual en lugar del que viene en el evento
-          const currentTimestamp = new Date();
-          
-          // Insertar cotizaciones/invitaciones (id_cotizacion puede ser null)
-          await cotizacionRepo.insert({
-            id_cotizacion: idCotizacion,
-            id_solicitud: idSolicitud,
-            id_usuario: idUsuario || null,
-            id_prestador: idPrestador,
-            estado: 'emitida',
-            monto: null,
-            timestamp: currentTimestamp,
-          });
-
-          logger.debug(`Saved cotizacion ${idCotizacion} from batch`);
-        }
-      }
-      logger.info(`✅ Batch cotizaciones processed`);
-      return;
-    }
-
-    // Caso normal: cotizacion individual
-    const idCotizacion = this.extractBigInt(
-      payload.quoteId || payload.cotizacionId || payload.cotizacion_id || payload.id_cotizacion || payload.id
-    );
+    // Extraer ID de solicitud de la cotización aceptada
     const idSolicitud = this.extractBigInt(
-      payload.requestId || payload.solicitudId || payload.solicitud_id || payload.id_solicitud || payload.orderId
-    );
-    const idUsuario = this.extractBigInt(
-      payload.userId || payload.id_usuario || payload.usuario_id || payload.clienteId
-    );
-    const idPrestador = this.extractBigInt(
-      payload.providerId || payload.prestadorId || payload.prestador_id || payload.id_prestador
+      payload.requestId || 
+      payload.solicitudId || 
+      payload.id_solicitud || 
+      payload.solicitud_id ||
+      payload.orderId || 
+      payload.pedidoId
     );
 
-    if (!idCotizacion || !idSolicitud || !idPrestador) {
-      logger.warn(`❌ No se pudo extraer datos de cotizacion del evento ${event.id}`);
+    if (!idSolicitud) {
+      logger.warn(`❌ No se pudo extraer id_solicitud del evento de cotización aceptada ${event.id}`);
       logger.warn(`   squad: ${event.squad} | topico: ${event.topico} | evento: ${event.evento}`);
-      logger.warn(`   idCotizacion: ${idCotizacion} | idSolicitud: ${idSolicitud} | idPrestador: ${idPrestador}`);
       logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
       return;
     }
 
-    // Determinar estado basado en el evento
-    let estado = 'emitida';
-    if (evento.includes('aceptada') || evento.includes('accept')) {
-      estado = 'aceptada';
-    } else if (evento.includes('rechazada') || evento.includes('reject')) {
-      estado = 'rechazada';
-    } else if (evento.includes('expirada') || evento.includes('expired')) {
-      estado = 'expirada';
-    } else if (evento.includes('emitida') || evento.includes('emitted') || evento.includes('created')) {
-      estado = 'emitida';
+    // Verificar que la solicitud exista
+    const solicitudExistente = await solicitudRepo.findOne({ where: { id_solicitud: idSolicitud } });
+    
+    if (!solicitudExistente) {
+      logger.warn(`⚠️ Solicitud ${idSolicitud} no encontrada para actualizar con cotización aceptada`);
+      return;
     }
 
-    const monto = this.extractDecimal(
-      payload.amount || payload.monto || payload.tarifa || payload.price || payload.precio
-    );
-
-    logger.info(`💾 Saving cotizacion | id: ${idCotizacion} | solicitud: ${idSolicitud} | estado: ${estado}`);
-
-    // Usar timestamp actual en lugar del que viene en el evento
+    // Actualizar solicitud con estado 'aceptada' y fecha_confirmacion
     const currentTimestamp = new Date();
     
-    // Las cotizaciones individuales tienen id_cotizacion, usamos upsert solo si existe
-    if (idCotizacion) {
-      await cotizacionRepo.upsert(
-        {
-      id_cotizacion: idCotizacion,
-      id_solicitud: idSolicitud,
-      id_usuario: idUsuario || null,
-      id_prestador: idPrestador,
-      estado: estado,
-      monto: monto || null,
-          timestamp: currentTimestamp,
-        },
-        ['id_cotizacion'] // Solo actualizar si ya existe esa cotizacion
-      );
-    } else {
-      // Sin id_cotizacion, solo insert
-      await cotizacionRepo.insert({
-        id_solicitud: idSolicitud,
-        id_usuario: idUsuario || null,
-        id_prestador: idPrestador,
-        estado: estado,
-        monto: monto || null,
-      timestamp: currentTimestamp,
-    });
-    }
+    await solicitudRepo.update(
+      { id_solicitud: idSolicitud },
+      { 
+        estado: 'aceptada',
+        fecha_confirmacion: currentTimestamp
+      }
+    );
 
-    logger.info(`✅ Cotizacion ${idCotizacion || 'sin id'} saved`);
+    logger.info(`✅ Solicitud ${idSolicitud} actualizada | estado: aceptada | fecha_confirmacion: ${currentTimestamp.toISOString()}`);
   }
 
   /**
