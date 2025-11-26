@@ -18,13 +18,13 @@ export class Servicio {
   @Column({ type: 'boolean', nullable: false, default: true })
   activo: boolean;
 
-  @Column({ type: 'timestamp', nullable: false })
+  @Column({ type: 'timestamptz', nullable: false })
   timestamp: Date;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   created_at: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updated_at: Date;
 }
 

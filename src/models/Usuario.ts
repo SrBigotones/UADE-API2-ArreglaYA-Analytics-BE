@@ -22,10 +22,10 @@ export class Usuario {
   @Column({ type: 'varchar', length: 100, nullable: true })
   ubicacion: string | null; // ciudad o provincia (solo para prestadores)
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   created_at: Date;
 
-  @Column({ type: 'timestamp', nullable: true, name: 'fecha_baja' })
+  @Column({ type: 'timestamptz', nullable: true, name: 'fecha_baja' })
   fecha_baja: Date | null; // Fecha cuando el usuario se dio de baja
 }
 
