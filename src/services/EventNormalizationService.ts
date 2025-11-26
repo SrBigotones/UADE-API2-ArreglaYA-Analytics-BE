@@ -392,48 +392,81 @@ export class EventNormalizationService {
     const evento = event.evento.toLowerCase();
 
     // CASO ESPECIAL: matching.pago.emitida tiene estructura diferente con subobjeto "pago"
+    // IMPORTANTE: Matching NO envía un ID de pago único, solo idCorrelacion (tracking del Core Hub)
+    // Usamos id_solicitud como clave porque múltiples intentos de pago se hacen para la misma solicitud
+    // Cuando payments cree el pago real con paymentId, se vinculará por id_solicitud
     if (evento === 'emitida' && payload.pago) {
-      logger.info(`💰 Processing matching.pago.emitida with pago subobjeto`);
+      logger.info(`💰 Processing matching.pago.emitida - orden de pago pendiente`);
       const pagoData = payload.pago;
       
-      const idPago = this.extractBigInt(pagoData.idCorrelacion); // Usar idCorrelacion como ID único
+      const idSolicitud = this.extractBigInt(pagoData.idSolicitud);
       const idUsuario = this.extractBigInt(pagoData.idUsuario);
       const idPrestador = this.extractBigInt(pagoData.idPrestador);
-      const idSolicitud = this.extractBigInt(pagoData.idSolicitud);
       const montoTotal = this.extractDecimal(pagoData.montoSubtotal);
       const moneda = pagoData.moneda || 'ARS';
       const metodo = pagoData.metodoPreferido || null;
 
-      if (!idPago || !idUsuario) {
-        logger.warn(`❌ No se pudo extraer datos de pago.emitida ${event.id}`);
+      if (!idSolicitud || !idUsuario) {
+        logger.warn(`❌ No se pudo extraer datos de matching.pago.emitida ${event.id}`);
         logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
         return;
       }
 
+      // Buscar si ya existe un pago para esta solicitud
+      const existingPago = await pagoRepo.findOne({ where: { id_solicitud: idSolicitud } });
+
       // Usar timestamp actual en lugar del que viene en el evento
       const currentTimestamp = new Date();
       
-      logger.info(`💾 Creating pago from matching | id: ${idPago} | usuario: ${idUsuario} | monto: ${montoTotal}`);
+      if (existingPago) {
+        // Si ya existe un pago real de payments (con paymentId), no sobrescribir
+        // Solo actualizar si el estado es pending y no tiene captured_at (es decir, aún no fue procesado por payments)
+        if (existingPago.estado === 'pending' && !existingPago.captured_at) {
+          logger.info(`🔄 Updating pending payment order for solicitud ${idSolicitud}`);
+          
+          await pagoRepo.update(
+            { id: existingPago.id },
+            {
+              monto_total: montoTotal,
+              moneda: moneda,
+              metodo: metodo || existingPago.metodo,
+              timestamp_actual: currentTimestamp,
+            }
+          );
+          
+          logger.info(`✅ Payment order for solicitud ${idSolicitud} updated`);
+        } else {
+          logger.info(`⏭️ Skipping matching event - solicitud ${idSolicitud} already has a processed payment (estado: ${existingPago.estado})`);
+        }
+      } else {
+        // Crear un registro temporal usando un ID sintético basado en id_solicitud
+        // Este ID será reemplazado cuando payments cree el pago real
+        // Usamos un número muy alto (1000000000 + solicitud) para evitar colisiones con IDs reales
+        const temporaryId = 1000000000 + idSolicitud;
+        
+        logger.info(`💾 Creating temporary payment order | solicitud: ${idSolicitud} | usuario: ${idUsuario} | monto: ${montoTotal}`);
+        
+        await pagoRepo.upsert(
+          {
+            id_pago: temporaryId,
+            id_usuario: idUsuario,
+            id_prestador: idPrestador || null,
+            id_solicitud: idSolicitud,
+            monto_total: montoTotal,
+            moneda: moneda,
+            metodo: metodo,
+            estado: 'pending',
+            timestamp_creado: currentTimestamp,
+            timestamp_actual: currentTimestamp,
+            captured_at: null,
+            refund_id: null,
+          },
+          ['id_pago']
+        );
+        
+        logger.info(`✅ Temporary payment order for solicitud ${idSolicitud} created with id ${temporaryId}`);
+      }
       
-      await pagoRepo.upsert(
-        {
-          id_pago: idPago,
-          id_usuario: idUsuario,
-          id_prestador: idPrestador || null,
-          id_solicitud: idSolicitud || null,
-          monto_total: montoTotal,
-          moneda: moneda,
-          metodo: metodo,
-          estado: 'pending', // Estado inicial cuando se emite desde matching
-          timestamp_creado: currentTimestamp,
-          timestamp_actual: currentTimestamp,
-          captured_at: null,
-          refund_id: null,
-        },
-        ['id_pago']
-      );
-      
-      logger.info(`✅ Pago from matching ${idPago} created`);
       return;
     }
 
@@ -532,8 +565,25 @@ export class EventNormalizationService {
       ? this.extractBigInt(payload.refundId || payload.id_reembolso)
       : null;
 
-    // Buscar pago existente
-    const existingPago = await pagoRepo.findOne({ where: { id_pago: idPago } });
+    // Buscar pago existente por id_pago O por id_solicitud (para vincular con eventos de matching)
+    let existingPago = await pagoRepo.findOne({ where: { id_pago: idPago } });
+    
+    // Si no existe por id_pago, buscar por id_solicitud (pago temporal de matching)
+    if (!existingPago && idSolicitud) {
+      existingPago = await pagoRepo.findOne({ where: { id_solicitud: idSolicitud } });
+      
+      if (existingPago) {
+        logger.info(`🔗 Found temporary payment from matching for solicitud ${idSolicitud}. Converting to real payment ${idPago}`);
+        
+        // Si el pago temporal tiene un ID sintético (>= 1000000000), reemplazarlo con el ID real
+        if (existingPago.id_pago >= 1000000000) {
+          // Eliminar el registro temporal y crear uno nuevo con el ID real
+          await pagoRepo.delete({ id: existingPago.id });
+          existingPago = null; // Forzar creación de nuevo registro más abajo
+          logger.info(`🗑️ Deleted temporary payment record, will create new one with real ID ${idPago}`);
+        }
+      }
+    }
 
     if (existingPago) {
       // Actualizar pago existente usando upsert
