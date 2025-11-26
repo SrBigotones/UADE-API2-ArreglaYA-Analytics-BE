@@ -186,15 +186,15 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
       
       const total = await repo
         .createQueryBuilder('usuario')
-        .where('usuario.timestamp >= :startDate', { startDate: dateRanges.startDate })
-        .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .where('usuario.created_at >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('usuario.created_at <= :endDate', { endDate: dateRanges.endDate })
         .getCount();
 
       const inactivos = await repo
         .createQueryBuilder('usuario')
         .where('usuario.estado != :estado', { estado: 'activo' })
-        .andWhere('usuario.timestamp >= :startDate', { startDate: dateRanges.startDate })
-        .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .andWhere('usuario.created_at >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('usuario.created_at <= :endDate', { endDate: dateRanges.endDate })
         .getCount();
 
       const currentRate = total > 0 ? (inactivos / total) * 100 : 0;
@@ -203,15 +203,15 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
 
       const prevTotal = await repo
         .createQueryBuilder('usuario')
-        .where('usuario.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
-        .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
+        .where('usuario.created_at >= :startDate', { startDate: dateRanges.previousStartDate })
+        .andWhere('usuario.created_at <= :endDate', { endDate: dateRanges.previousEndDate })
         .getCount();
 
       const prevInactivos = await repo
         .createQueryBuilder('usuario')
         .where('usuario.estado != :estado', { estado: 'activo' })
-        .andWhere('usuario.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
-        .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
+        .andWhere('usuario.created_at >= :startDate', { startDate: dateRanges.previousStartDate })
+        .andWhere('usuario.created_at <= :endDate', { endDate: dateRanges.previousEndDate })
         .getCount();
 
       const previousRate = prevTotal > 0 ? (prevInactivos / prevTotal) * 100 : 0;
@@ -224,8 +224,8 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
         .select('usuario.rol', 'rol')
         .addSelect('COUNT(*)', 'total')
         .where('usuario.estado = :estado', { estado: 'activo' })
-        .andWhere('usuario.timestamp >= :startDate', { startDate: dateRanges.startDate })
-        .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .andWhere('usuario.created_at >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('usuario.created_at <= :endDate', { endDate: dateRanges.endDate })
         .groupBy('usuario.rol')
         .getRawMany();
 
