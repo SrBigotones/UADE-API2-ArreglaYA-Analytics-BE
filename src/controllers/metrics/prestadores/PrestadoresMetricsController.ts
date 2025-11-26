@@ -268,7 +268,7 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
       
       // Filtrar prestadores activos en el período seleccionado
       qb.innerJoin('usuarios', 'u', 'u.id_usuario = hab.id_usuario')
-        .andWhere('u.timestamp <= :endDate', { endDate: dateRanges.endDate });
+        .andWhere('u.created_at <= :endDate', { endDate: dateRanges.endDate });
 
       // Aplicar filtros de zona y rubro si existen
       if (filters && filters.zona) {
@@ -330,7 +330,7 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
       
       // Filtrar prestadores activos en el período seleccionado
       qb.innerJoin('usuarios', 'u', 'u.id_usuario = hab.id_usuario')
-        .andWhere('u.timestamp <= :endDate', { endDate: dateRanges.endDate });
+        .andWhere('u.created_at <= :endDate', { endDate: dateRanges.endDate });
 
       // Aplicar filtro de zona si existe
       if (filters && filters.zona) {
