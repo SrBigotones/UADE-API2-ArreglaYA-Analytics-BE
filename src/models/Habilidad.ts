@@ -21,10 +21,10 @@ export class Habilidad {
   @Column({ type: 'boolean', nullable: false, default: true })
   activa: boolean;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   created_at: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updated_at: Date;
 }
 

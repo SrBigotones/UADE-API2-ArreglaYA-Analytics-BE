@@ -39,22 +39,22 @@ export class Pago {
   @Column({ type: 'varchar', length: 20, nullable: false, default: 'pending' })
   estado: string; // 'pending' / 'approved' / 'rejected' / 'expired' / 'refunded'
 
-  @Column({ type: 'timestamp', nullable: false, name: 'timestamp_creado' })
+  @Column({ type: 'timestamptz', nullable: false, name: 'timestamp_creado' })
   timestamp_creado: Date;
 
-  @Column({ type: 'timestamp', nullable: false, name: 'timestamp_actual' })
+  @Column({ type: 'timestamptz', nullable: false, name: 'timestamp_actual' })
   timestamp_actual: Date;
 
-  @Column({ type: 'timestamp', nullable: true, name: 'captured_at' })
+  @Column({ type: 'timestamptz', nullable: true, name: 'captured_at' })
   captured_at: Date | null;
 
   @Column({ type: 'bigint', nullable: true, name: 'refund_id' })
   refund_id: number | null;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   created_at: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updated_at: Date;
 }
 
