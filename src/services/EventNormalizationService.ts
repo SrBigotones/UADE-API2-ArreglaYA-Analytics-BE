@@ -415,6 +415,8 @@ export class EventNormalizationService {
       // Buscar si ya existe un pago para esta solicitud
       const existingPago = await pagoRepo.findOne({ where: { id_solicitud: idSolicitud } });
 
+      logger.debug(`🔍 matching.pago.emitida - solicitud ${idSolicitud} - existing payment: ${existingPago ? `${existingPago.id_pago} (${existingPago.estado}, captured: ${!!existingPago.captured_at})` : 'none'}`);
+
       // Usar timestamp actual en lugar del que viene en el evento
       const currentTimestamp = new Date();
       
@@ -571,22 +573,28 @@ export class EventNormalizationService {
     // Si no existe por id_pago, buscar PAGOS TEMPORALES por id_solicitud (de eventos de matching)
     // IMPORTANTE: Buscar solo pagos con ID temporal (>= 1000000000) para evitar conflictos
     if (!existingPago && idSolicitud) {
+      logger.debug(`🔍 payment.created ${idPago} - Searching for temporary payments for solicitud ${idSolicitud}`);
+      
       const temporaryPayments = await pagoRepo.find({ 
         where: { 
           id_solicitud: idSolicitud,
         }
       });
       
+      logger.debug(`🔍 Found ${temporaryPayments.length} payments for solicitud ${idSolicitud}: ${temporaryPayments.map(p => `${p.id_pago} (${p.estado})`).join(', ')}`);
+      
       // Buscar específicamente el pago temporal (id_pago >= 1000000000)
       const temporaryPago = temporaryPayments.find(p => p.id_pago >= 1000000000);
       
       if (temporaryPago) {
-        logger.info(`🔗 Found temporary payment ${temporaryPago.id_pago} from matching for solicitud ${idSolicitud}. Converting to real payment ${idPago}`);
+        logger.info(`🔗 Found temporary payment ${temporaryPago.id_pago} (DB id: ${temporaryPago.id}) from matching for solicitud ${idSolicitud}. Converting to real payment ${idPago}`);
         
         // Eliminar el registro temporal
-        await pagoRepo.delete({ id: temporaryPago.id });
-        logger.info(`🗑️ Deleted temporary payment ${temporaryPago.id_pago}, will create new one with real ID ${idPago}`);
+        const deleteResult = await pagoRepo.delete({ id: temporaryPago.id });
+        logger.info(`🗑️ Deleted temporary payment ${temporaryPago.id_pago} - affected rows: ${deleteResult.affected}`);
         // existingPago permanece null para forzar creación de nuevo registro más abajo
+      } else {
+        logger.debug(`ℹ️ No temporary payment found for solicitud ${idSolicitud}`);
       }
     }
 
