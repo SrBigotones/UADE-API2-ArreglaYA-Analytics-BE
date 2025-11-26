@@ -537,17 +537,25 @@ export class EventNormalizationService {
 
     if (existingPago) {
       // Actualizar pago existente usando upsert
-      // Para method_selected, preservar el estado existente
-      // IMPORTANTE: Si el pago existente ya está en approved/rejected/expired/refunded (estados finales),
-      // NO sobrescribir con pending (para evitar que method_selected deshaga un status_updated)
+      // REGLAS DE ACTUALIZACIÓN DE ESTADO:
+      // 1. method_selected NUNCA cambia el estado
+      // 2. Estados finales (approved/rejected/expired/refunded) NO se sobrescriben con pending
+      // 3. Solo status_updated puede cambiar de pending a approved/rejected/expired
       let finalEstado: string;
+      
+      const estadosFinales = ['approved', 'rejected', 'expired', 'refunded'];
+      const esEstadoFinal = estadosFinales.includes(existingPago.estado);
       
       if (isMethodSelected) {
         // method_selected NUNCA cambia el estado, solo el método
         finalEstado = existingPago.estado;
         logger.info(`🔄 Updating pago (method_selected) | id: ${idPago} | estado: ${existingPago.estado} (preserved) | metodo: ${metodo}`);
+      } else if (esEstadoFinal && estado === 'pending') {
+        // NO permitir que created o cualquier evento sobrescriba un estado final con pending
+        finalEstado = existingPago.estado;
+        logger.warn(`⚠️ Evento '${evento}' intenta cambiar pago ${idPago} de '${existingPago.estado}' a 'pending'. Preservando estado final.`);
       } else {
-        // Para otros eventos, usar el nuevo estado si viene, sino preservar el existente
+        // Para otros eventos (principalmente status_updated), actualizar el estado
         finalEstado = estado !== null ? estado : existingPago.estado;
         logger.info(`🔄 Updating pago | id: ${idPago} | old_estado: ${existingPago.estado} | new_estado: ${finalEstado} | evento: ${evento}`);
       }

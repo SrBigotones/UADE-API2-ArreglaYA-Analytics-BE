@@ -42,7 +42,8 @@ export class DataMigrationService {
           take: batchSize,
           skip: offset,
           order: {
-            timestamp: 'ASC' // Procesar desde los más antiguos
+            timestamp: 'ASC', // Procesar desde los más antiguos
+            createdAt: 'ASC'  // Segundo criterio: orden de llegada a DB
           }
         });
 
@@ -184,6 +185,7 @@ export class DataMigrationService {
           .take(batchSize)
           .skip(offset)
           .orderBy('event.timestamp', 'ASC')
+          .addOrderBy('event.createdAt', 'ASC')
           .getMany();
 
         if (events.length === 0) {
