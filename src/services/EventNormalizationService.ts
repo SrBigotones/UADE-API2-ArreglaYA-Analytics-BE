@@ -472,20 +472,28 @@ export class EventNormalizationService {
 
     // Determinar estado basado en el evento y el campo status del payload
     // Para eventos status_updated, el estado está en newStatus
-    const statusField = payload.newStatus || payload.status || 'PENDING_PAYMENT';
-    let estado = 'pending';
+    // Para eventos method_selected, NO determinamos estado (se preserva el existente)
+    let estado: string | null = null;
     
-    // Mapear estados del payload a nuestros estados
-    if (statusField === 'PENDING_PAYMENT' || statusField === 'pending') {
-      estado = 'pending';
-    } else if (statusField === 'APPROVED' || statusField === 'approved' || evento.includes('approved')) {
-      estado = 'approved';
-    } else if (statusField === 'REJECTED' || statusField === 'rejected' || evento.includes('rejected')) {
-      estado = 'rejected';
-    } else if (statusField === 'EXPIRED' || statusField === 'expired' || evento.includes('expired')) {
-      estado = 'expired';
-    } else if (statusField === 'REFUNDED' || statusField === 'refunded' || evento.includes('refund') || evento.includes('reembolso')) {
-      estado = 'refunded';
+    const isMethodSelected = evento.includes('method_selected');
+    
+    if (!isMethodSelected) {
+      const statusField = payload.newStatus || payload.status || 'PENDING_PAYMENT';
+      
+      // Mapear estados del payload a nuestros estados
+      if (statusField === 'PENDING_PAYMENT' || statusField === 'pending') {
+        estado = 'pending';
+      } else if (statusField === 'APPROVED' || statusField === 'approved' || evento.includes('approved')) {
+        estado = 'approved';
+      } else if (statusField === 'REJECTED' || statusField === 'rejected' || evento.includes('rejected')) {
+        estado = 'rejected';
+      } else if (statusField === 'EXPIRED' || statusField === 'expired' || evento.includes('expired')) {
+        estado = 'expired';
+      } else if (statusField === 'REFUNDED' || statusField === 'refunded' || evento.includes('refund') || evento.includes('reembolso')) {
+        estado = 'refunded';
+      } else {
+        estado = 'pending'; // Default fallback
+      }
     }
 
     const montoTotal = this.extractDecimal(
@@ -506,6 +514,7 @@ export class EventNormalizationService {
     const timestampCreado = currentTimestamp;
 
     // Para captured_at, usar updatedAt si existe (eventos status_updated), sino usar timestamp actual
+    // Solo establecer captured_at para pagos aprobados y si el estado es 'approved'
     let capturedAt = null;
     if (estado === 'approved') {
       if (payload.updatedAt && Array.isArray(payload.updatedAt)) {
@@ -528,13 +537,21 @@ export class EventNormalizationService {
 
     if (existingPago) {
       // Actualizar pago existente usando upsert
-      logger.info(`🔄 Updating pago | id: ${idPago} | old_estado: ${existingPago.estado} | new_estado: ${estado}`);
+      // Para method_selected, preservar el estado existente
+      const finalEstado = estado !== null ? estado : existingPago.estado;
+      
+      logger.info(`🔄 Updating pago | id: ${idPago} | old_estado: ${existingPago.estado} | new_estado: ${finalEstado} | evento: ${evento}`);
       
       // Si el pago existente no tiene userId pero el evento sí, actualizarlo
       const finalUserId = existingPago.id_usuario || idUsuario || null;
       
       // Usar timestamp actual en lugar del que viene en el evento
       const currentTimestamp = new Date();
+      
+      // Para captured_at: si el nuevo estado es approved, establecerlo; sino preservar el existente
+      const finalCapturedAt = estado === 'approved' 
+        ? (capturedAt || existingPago.captured_at)
+        : existingPago.captured_at;
       
       await pagoRepo.upsert(
         {
@@ -545,15 +562,15 @@ export class EventNormalizationService {
           monto_total: montoTotal || existingPago.monto_total,
           moneda: moneda,
           metodo: metodo || existingPago.metodo,
-          estado: estado,
+          estado: finalEstado,
           timestamp_creado: existingPago.timestamp_creado,
           timestamp_actual: currentTimestamp,
-          captured_at: capturedAt || existingPago.captured_at,
+          captured_at: finalCapturedAt,
           refund_id: refundId || existingPago.refund_id,
         },
         ['id_pago']
       );
-      logger.info(`✅ Pago ${idPago} updated to estado: ${estado}`);
+      logger.info(`✅ Pago ${idPago} updated to estado: ${finalEstado}`);
     } else {
       // Crear nuevo pago
       // Nota: puede no tener userId si es un evento status_updated que llegó antes que created
@@ -562,10 +579,13 @@ export class EventNormalizationService {
         logger.warn(`   El userId se completará cuando llegue el evento 'created'`);
       }
       
+      // Si es method_selected y no existe el pago, usar estado pending por defecto
+      const finalEstado = estado !== null ? estado : 'pending';
+      
       // Usar timestamp actual en lugar del que viene en el evento
       const currentTimestamp = new Date();
       
-      logger.info(`💾 Creating pago | id: ${idPago} | usuario: ${idUsuario || 'NULL'} | estado: ${estado}`);
+      logger.info(`💾 Creating pago | id: ${idPago} | usuario: ${idUsuario || 'NULL'} | estado: ${finalEstado} | evento: ${evento}`);
       await pagoRepo.upsert(
         {
           id_pago: idPago,
@@ -575,7 +595,7 @@ export class EventNormalizationService {
           monto_total: montoTotal,
           moneda: moneda,
           metodo: metodo || null,
-          estado: estado,
+          estado: finalEstado,
           timestamp_creado: currentTimestamp,
           timestamp_actual: currentTimestamp,
           captured_at: capturedAt,
@@ -583,7 +603,7 @@ export class EventNormalizationService {
         },
         ['id_pago']
       );
-      logger.info(`✅ Pago ${idPago} created`);
+      logger.info(`✅ Pago ${idPago} created with estado: ${finalEstado}`);
     }
   }
 
