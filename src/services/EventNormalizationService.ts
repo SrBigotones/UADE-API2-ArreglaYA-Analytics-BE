@@ -568,20 +568,25 @@ export class EventNormalizationService {
     // Buscar pago existente por id_pago O por id_solicitud (para vincular con eventos de matching)
     let existingPago = await pagoRepo.findOne({ where: { id_pago: idPago } });
     
-    // Si no existe por id_pago, buscar por id_solicitud (pago temporal de matching)
+    // Si no existe por id_pago, buscar PAGOS TEMPORALES por id_solicitud (de eventos de matching)
+    // IMPORTANTE: Buscar solo pagos con ID temporal (>= 1000000000) para evitar conflictos
     if (!existingPago && idSolicitud) {
-      existingPago = await pagoRepo.findOne({ where: { id_solicitud: idSolicitud } });
-      
-      if (existingPago) {
-        logger.info(`🔗 Found temporary payment from matching for solicitud ${idSolicitud}. Converting to real payment ${idPago}`);
-        
-        // Si el pago temporal tiene un ID sintético (>= 1000000000), reemplazarlo con el ID real
-        if (existingPago.id_pago >= 1000000000) {
-          // Eliminar el registro temporal y crear uno nuevo con el ID real
-          await pagoRepo.delete({ id: existingPago.id });
-          existingPago = null; // Forzar creación de nuevo registro más abajo
-          logger.info(`🗑️ Deleted temporary payment record, will create new one with real ID ${idPago}`);
+      const temporaryPayments = await pagoRepo.find({ 
+        where: { 
+          id_solicitud: idSolicitud,
         }
+      });
+      
+      // Buscar específicamente el pago temporal (id_pago >= 1000000000)
+      const temporaryPago = temporaryPayments.find(p => p.id_pago >= 1000000000);
+      
+      if (temporaryPago) {
+        logger.info(`🔗 Found temporary payment ${temporaryPago.id_pago} from matching for solicitud ${idSolicitud}. Converting to real payment ${idPago}`);
+        
+        // Eliminar el registro temporal
+        await pagoRepo.delete({ id: temporaryPago.id });
+        logger.info(`🗑️ Deleted temporary payment ${temporaryPago.id_pago}, will create new one with real ID ${idPago}`);
+        // existingPago permanece null para forzar creación de nuevo registro más abajo
       }
     }
 
