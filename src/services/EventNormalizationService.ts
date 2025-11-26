@@ -538,9 +538,19 @@ export class EventNormalizationService {
     if (existingPago) {
       // Actualizar pago existente usando upsert
       // Para method_selected, preservar el estado existente
-      const finalEstado = estado !== null ? estado : existingPago.estado;
+      // IMPORTANTE: Si el pago existente ya está en approved/rejected/expired/refunded (estados finales),
+      // NO sobrescribir con pending (para evitar que method_selected deshaga un status_updated)
+      let finalEstado: string;
       
-      logger.info(`🔄 Updating pago | id: ${idPago} | old_estado: ${existingPago.estado} | new_estado: ${finalEstado} | evento: ${evento}`);
+      if (isMethodSelected) {
+        // method_selected NUNCA cambia el estado, solo el método
+        finalEstado = existingPago.estado;
+        logger.info(`🔄 Updating pago (method_selected) | id: ${idPago} | estado: ${existingPago.estado} (preserved) | metodo: ${metodo}`);
+      } else {
+        // Para otros eventos, usar el nuevo estado si viene, sino preservar el existente
+        finalEstado = estado !== null ? estado : existingPago.estado;
+        logger.info(`🔄 Updating pago | id: ${idPago} | old_estado: ${existingPago.estado} | new_estado: ${finalEstado} | evento: ${evento}`);
+      }
       
       // Si el pago existente no tiene userId pero el evento sí, actualizarlo
       const finalUserId = existingPago.id_usuario || idUsuario || null;
