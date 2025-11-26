@@ -103,7 +103,12 @@ export const connectDatabase = async (): Promise<void> => {
     logger.info(`Synchronize: ${options.synchronize}`);
     
     await AppDataSource.initialize();
+    
+    // Configurar timezone a Argentina para que las fechas se interpreten correctamente
+    await AppDataSource.query("SET timezone = 'America/Argentina/Buenos_Aires'");
+    
     logger.info('✅ Successfully connected to PostgreSQL database');
+    logger.info('🌎 Timezone configured to America/Argentina/Buenos_Aires (UTC-3)');
 
     // Ejecutar migraciones automáticamente después de conectar
     await runMigrationsOnConnect();
