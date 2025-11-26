@@ -8,6 +8,7 @@ import { Prestador } from '../../../models/Prestador';
 import { Solicitud } from '../../../models/Solicitud';
 import { Habilidad } from '../../../models/Habilidad';
 import { Usuario } from '../../../models/Usuario';
+import { formatDateLocal } from '../../../utils/dateUtils';
 
 export class PrestadoresMetricsController extends BaseMetricsCalculator {
   
@@ -340,8 +341,8 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
         totalProviders: prestadores.length,
         providerTypes,
         period: {
-          startDate: dateRanges.startDate.toISOString(),
-          endDate: dateRanges.endDate.toISOString()
+          startDate: formatDateLocal(dateRanges.startDate),
+          endDate: formatDateLocal(dateRanges.endDate)
         }
       };
 
