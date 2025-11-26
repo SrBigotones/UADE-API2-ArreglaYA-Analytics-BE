@@ -2,7 +2,6 @@ import { AppDataSource } from '../config/database';
 import { Usuario } from '../models/Usuario';
 import { Servicio } from '../models/Servicio';
 import { Solicitud } from '../models/Solicitud';
-import { Cotizacion } from '../models/Cotizacion';
 import { Pago } from '../models/Pago';
 import { Habilidad } from '../models/Habilidad';
 import { Zona } from '../models/Zona';
@@ -299,8 +298,8 @@ export class BaseMetricsCalculator {
     const repo = AppDataSource.getRepository(Solicitud);
     return await repo
       .createQueryBuilder('solicitud')
-      .where('solicitud.timestamp >= :startDate', { startDate })
-      .andWhere('solicitud.timestamp <= :endDate', { endDate })
+      .where('solicitud.created_at >= :startDate', { startDate })
+      .andWhere('solicitud.created_at <= :endDate', { endDate })
       .getCount();
   }
 
@@ -309,8 +308,8 @@ export class BaseMetricsCalculator {
     const qb = repo
       .createQueryBuilder('solicitud')
       .where('solicitud.estado = :estado', { estado })
-      .andWhere('solicitud.timestamp >= :startDate', { startDate })
-      .andWhere('solicitud.timestamp <= :endDate', { endDate });
+      .andWhere('solicitud.created_at >= :startDate', { startDate })
+      .andWhere('solicitud.created_at <= :endDate', { endDate });
     
     this.applySolicitudFilters(qb, filters);
     
@@ -327,58 +326,9 @@ export class BaseMetricsCalculator {
     const repo = AppDataSource.getRepository(Solicitud);
     return await repo
       .createQueryBuilder('solicitud')
-      .where('solicitud.timestamp >= :startDate', { startDate })
-      .andWhere('solicitud.timestamp <= :endDate', { endDate })
+      .where('solicitud.created_at >= :startDate', { startDate })
+      .andWhere('solicitud.created_at <= :endDate', { endDate })
       .getMany();
-  }
-
-  // ========== MÉTODOS PARA COTIZACIONES ==========
-  
-  protected async countCotizaciones(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
-    const repo = AppDataSource.getRepository(Cotizacion);
-    const qb = repo
-      .createQueryBuilder('cotizacion')
-      .where('cotizacion.timestamp >= :startDate', { startDate })
-      .andWhere('cotizacion.timestamp <= :endDate', { endDate });
-    
-    this.applyCotizacionFilters(qb, filters);
-    return await qb.getCount();
-  }
-
-  protected async countCotizacionesByEstado(estado: string, startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
-    const repo = AppDataSource.getRepository(Cotizacion);
-    const qb = repo
-      .createQueryBuilder('cotizacion')
-      .where('cotizacion.estado = :estado', { estado })
-      .andWhere('cotizacion.timestamp >= :startDate', { startDate })
-      .andWhere('cotizacion.timestamp <= :endDate', { endDate });
-    
-    this.applyCotizacionFilters(qb, filters);
-    
-    // Usar COUNT(DISTINCT) cuando hay filtros de rubro (para evitar duplicados por múltiples habilidades)
-    if (filters?.rubro) {
-      const result = await qb.select('COUNT(DISTINCT cotizacion.id_cotizacion)', 'count').getRawOne();
-      return parseInt(result?.count || '0');
-    }
-    
-    return await qb.getCount();
-  }
-
-  protected async getCotizaciones(startDate: Date, endDate: Date) {
-    const repo = AppDataSource.getRepository(Cotizacion);
-    return await repo
-      .createQueryBuilder('cotizacion')
-      .where('cotizacion.timestamp >= :startDate', { startDate })
-      .andWhere('cotizacion.timestamp <= :endDate', { endDate })
-      .getMany();
-  }
-
-  protected async getCotizacionBySolicitud(idSolicitud: number): Promise<Cotizacion | null> {
-    const repo = AppDataSource.getRepository(Cotizacion);
-    return await repo.findOne({
-      where: { id_solicitud: idSolicitud },
-      order: { timestamp: 'ASC' }
-    });
   }
 
   // ========== MÉTODOS PARA PAGOS ==========
@@ -468,15 +418,21 @@ export class BaseMetricsCalculator {
 
   // ========== MÉTODOS PARA CÁLCULOS DE TIEMPO ==========
   
-  protected async calculateAverageTimeToFirstQuote(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+  /**
+   * Calcula el tiempo promedio de matching usando fecha_confirmacion
+   * Tiempo desde que se crea la solicitud hasta que se confirma el match (cotización aceptada)
+   * Solo considera solicitudes con estado 'aceptada' y fecha_confirmacion != null
+   */
+  protected async calculateAverageMatchingTimeFromConfirmacion(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
     const solicitudesRepo = AppDataSource.getRepository(Solicitud);
-    const cotizacionesRepo = AppDataSource.getRepository(Cotizacion);
     
-    // Obtener solicitudes con filtros (solo las que están en el rango de fechas)
+    // Obtener solicitudes aceptadas (con fecha_confirmacion) en el período
     const qb = solicitudesRepo
       .createQueryBuilder('solicitud')
-      .where('solicitud.timestamp >= :startDate', { startDate })
-      .andWhere('solicitud.timestamp <= :endDate', { endDate });
+      .where('solicitud.created_at >= :startDate', { startDate })
+      .andWhere('solicitud.created_at <= :endDate', { endDate })
+      .andWhere('solicitud.estado = :estado', { estado: 'aceptada' })
+      .andWhere('solicitud.fecha_confirmacion IS NOT NULL');
     
     this.applySolicitudFilters(qb, filters);
     const solicitudes = await qb.getMany();
@@ -485,33 +441,12 @@ export class BaseMetricsCalculator {
 
     const tiempos: number[] = [];
 
-    // Obtener todas las primeras cotizaciones (sin filtrar por fecha de cotización)
-    // La primera cotización puede ser de cualquier fecha, solo importa que sea la primera
-    const idsSolicitudes = solicitudes.map(s => s.id_solicitud);
-    if (idsSolicitudes.length === 0) return 0;
-
-    const primerasCotizaciones = await cotizacionesRepo
-      .createQueryBuilder('cotizacion')
-      .where('cotizacion.id_solicitud IN (:...ids)', { ids: idsSolicitudes })
-      .select('cotizacion.id_solicitud', 'id_solicitud')
-      .addSelect('MIN(cotizacion.timestamp)', 'primer_timestamp')
-      .groupBy('cotizacion.id_solicitud')
-      .getRawMany();
-
-    // Crear un mapa de solicitud -> primera cotización
-    const cotizacionesMap = new Map<number, Date>();
-    primerasCotizaciones.forEach(c => {
-      cotizacionesMap.set(c.id_solicitud, new Date(c.primer_timestamp));
-    });
-
-    // Calcular tiempos
+    // Calcular tiempos desde creación hasta confirmación
     for (const solicitud of solicitudes) {
-      const primeraCotizacion = cotizacionesMap.get(solicitud.id_solicitud);
-      if (primeraCotizacion) {
-        const diffMs = primeraCotizacion.getTime() - solicitud.timestamp.getTime();
-        // Incluir diferencias >= 0 (incluye igualdad, excluye negativos)
+      if (solicitud.fecha_confirmacion) {
+        const diffMs = solicitud.fecha_confirmacion.getTime() - solicitud.created_at.getTime();
         if (diffMs >= 0) {
-          // Convertir a minutos (consistente con matching)
+          // Convertir a minutos
           const diffMinutos = diffMs / (1000 * 60);
           tiempos.push(diffMinutos);
         }
@@ -521,107 +456,6 @@ export class BaseMetricsCalculator {
     if (tiempos.length === 0) return 0;
     const promedio = tiempos.reduce((sum, t) => sum + t, 0) / tiempos.length;
     return Math.round(promedio * 100) / 100;
-  }
-
-  protected async calculateAverageMatchingTime(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
-    // Matching completado es cuando se asigna un prestador a una solicitud
-    // Calculamos el tiempo entre la creación de la solicitud y la primera cotización del prestador asignado
-    const solicitudesRepo = AppDataSource.getRepository(Solicitud);
-    const cotizacionesRepo = AppDataSource.getRepository(Cotizacion);
-    
-    // Obtener solicitudes con prestador asignado y filtros (solo las que están en el rango de fechas)
-    const qb = solicitudesRepo
-      .createQueryBuilder('solicitud')
-      .where('solicitud.timestamp >= :startDate', { startDate })
-      .andWhere('solicitud.timestamp <= :endDate', { endDate })
-      .andWhere('solicitud.id_prestador IS NOT NULL');
-    
-    this.applySolicitudFilters(qb, filters);
-    const solicitudes = await qb.getMany();
-
-    if (solicitudes.length === 0) return 0;
-
-    const tiempos: number[] = [];
-
-    // Para cada solicitud, buscar la primera cotización del prestador asignado
-    for (const solicitud of solicitudes) {
-      if (solicitud.id_prestador) {
-        const primeraCotizacion = await cotizacionesRepo
-          .createQueryBuilder('cotizacion')
-          .where('cotizacion.id_solicitud = :idSolicitud', { idSolicitud: solicitud.id_solicitud })
-          .andWhere('cotizacion.id_prestador = :idPrestador', { idPrestador: solicitud.id_prestador })
-          .orderBy('cotizacion.timestamp', 'ASC')
-          .getOne();
-
-        if (primeraCotizacion) {
-          const diffMs = primeraCotizacion.timestamp.getTime() - solicitud.timestamp.getTime();
-          // Incluir diferencias >= 0 (incluye igualdad, excluye negativos)
-          if (diffMs >= 0) {
-            // Convertir a minutos
-            const diffMinutos = diffMs / (1000 * 60);
-            tiempos.push(diffMinutos);
-          }
-        }
-      }
-    }
-
-    if (tiempos.length === 0) return 0;
-    const promedio = tiempos.reduce((sum, t) => sum + t, 0) / tiempos.length;
-    return Math.round(promedio * 100) / 100;
-  }
-
-  protected async calculateAverageProviderResponseTime(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
-    // Tiempo promedio de cotizaciones: para cada solicitud, calcular el promedio de tiempo
-    // entre todas las cotizaciones propuestas, y luego promediar esos promedios
-    const solicitudesRepo = AppDataSource.getRepository(Solicitud);
-    const cotizacionesRepo = AppDataSource.getRepository(Cotizacion);
-    
-    // Obtener solicitudes con filtros (solo las que están en el rango de fechas)
-    const qb = solicitudesRepo
-      .createQueryBuilder('solicitud')
-      .where('solicitud.timestamp >= :startDate', { startDate })
-      .andWhere('solicitud.timestamp <= :endDate', { endDate });
-    
-    this.applySolicitudFilters(qb, filters);
-    const solicitudes = await qb.getMany();
-
-    if (solicitudes.length === 0) return 0;
-
-    const promediosPorSolicitud: number[] = [];
-
-    // Para cada solicitud, calcular el promedio de tiempo de todas sus cotizaciones
-    for (const solicitud of solicitudes) {
-      const cotizaciones = await cotizacionesRepo
-        .createQueryBuilder('cotizacion')
-        .where('cotizacion.id_solicitud = :idSolicitud', { idSolicitud: solicitud.id_solicitud })
-        .orderBy('cotizacion.timestamp', 'ASC')
-        .getMany();
-
-      if (cotizaciones.length > 0) {
-        const tiemposCotizaciones: number[] = [];
-        
-        // Calcular tiempo desde solicitud hasta cada cotización
-        for (const cotizacion of cotizaciones) {
-          const diffMs = cotizacion.timestamp.getTime() - solicitud.timestamp.getTime();
-          if (diffMs >= 0) { // Incluir 0 y positivos
-            const diffMinutos = diffMs / (1000 * 60);
-            tiemposCotizaciones.push(diffMinutos);
-          }
-        }
-
-        // Si hay tiempos válidos, calcular el promedio para esta solicitud
-        if (tiemposCotizaciones.length > 0) {
-          const promedioSolicitud = tiemposCotizaciones.reduce((sum, t) => sum + t, 0) / tiemposCotizaciones.length;
-          promediosPorSolicitud.push(promedioSolicitud);
-        }
-      }
-    }
-
-    if (promediosPorSolicitud.length === 0) return 0;
-    
-    // Promediar los promedios de cada solicitud
-    const promedioFinal = promediosPorSolicitud.reduce((sum, t) => sum + t, 0) / promediosPorSolicitud.length;
-    return Math.round(promedioFinal * 100) / 100;
   }
 
   // ========== MÉTODOS PARA PRESTADORES ==========
@@ -680,29 +514,6 @@ export class BaseMetricsCalculator {
     return await repo.find();
   }
 
-  // ========== MÉTODOS PARA WIN RATE ==========
-  
-  protected async countCotizacionesEmitidasPorPrestador(idPrestador: number, startDate: Date, endDate: Date): Promise<number> {
-    const repo = AppDataSource.getRepository(Cotizacion);
-    return await repo
-      .createQueryBuilder('cotizacion')
-      .where('cotizacion.id_prestador = :idPrestador', { idPrestador })
-      .andWhere('cotizacion.timestamp >= :startDate', { startDate })
-      .andWhere('cotizacion.timestamp <= :endDate', { endDate })
-      .getCount();
-  }
-
-  protected async countCotizacionesAceptadasPorPrestador(idPrestador: number, startDate: Date, endDate: Date): Promise<number> {
-    const repo = AppDataSource.getRepository(Cotizacion);
-    return await repo
-      .createQueryBuilder('cotizacion')
-      .where('cotizacion.id_prestador = :idPrestador', { idPrestador })
-      .andWhere('cotizacion.estado = :estado', { estado: 'aceptada' })
-      .andWhere('cotizacion.timestamp >= :startDate', { startDate })
-      .andWhere('cotizacion.timestamp <= :endDate', { endDate })
-      .getCount();
-  }
-
   // ========== MÉTODOS PARA SOLICITUDES POR ZONA/RUBRO ==========
   
   protected async countSolicitudesPorZona(startDate: Date, endDate: Date): Promise<Array<{ zona: string; count: number }>> {
@@ -711,8 +522,8 @@ export class BaseMetricsCalculator {
       .createQueryBuilder('solicitud')
       .select('solicitud.zona', 'zona')
       .addSelect('COUNT(*)', 'count')
-      .where('solicitud.timestamp >= :startDate', { startDate })
-      .andWhere('solicitud.timestamp <= :endDate', { endDate })
+      .where('solicitud.created_at >= :startDate', { startDate })
+      .andWhere('solicitud.created_at <= :endDate', { endDate })
       .andWhere('solicitud.zona IS NOT NULL')
       .groupBy('solicitud.zona')
       .getRawMany();
@@ -758,8 +569,8 @@ export class BaseMetricsCalculator {
     // Asumimos que las solicitudes pueden tener coordenadas, si no están en la tabla, usar zonas
     const solicitudes = await repo
       .createQueryBuilder('solicitud')
-      .where('solicitud.timestamp >= :startDate', { startDate })
-      .andWhere('solicitud.timestamp <= :endDate', { endDate })
+      .where('solicitud.created_at >= :startDate', { startDate })
+      .andWhere('solicitud.created_at <= :endDate', { endDate })
       .getMany();
 
     // Si no hay coordenadas directas, usar las zonas para mapear (esto requeriría una tabla de zonas con coordenadas)
@@ -839,52 +650,6 @@ export class BaseMetricsCalculator {
     if (filters.rubro) {
       if (!filters.zona) {
         qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud');
-      }
-      
-      // Ahora usar el join directo con id_habilidad
-      qb.leftJoin('habilidades', 'habilidad', 'habilidad.id_habilidad = solicitud.id_habilidad')
-        .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
-      
-      if (typeof filters.rubro === 'number') {
-        qb.andWhere('rubro.id_rubro = :rubroId', { rubroId: filters.rubro });
-      } else {
-        qb.andWhere('LOWER(rubro.nombre_rubro) = LOWER(:rubroNombre)', { rubroNombre: filters.rubro });
-      }
-    }
-  }
-
-  /**
-   * Aplica filtros de segmentación a un query builder de cotizaciones
-   */
-  protected applyCotizacionFilters(
-    qb: any,
-    filters?: SegmentationFilters
-  ): void {
-    if (!filters) return;
-
-    // Filtro por zona (a través de solicitud)
-    if (filters.zona) {
-      qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = cotizacion.id_solicitud')
-        .andWhere('solicitud.zona = :zona', { zona: filters.zona });
-    }
-
-    // Filtro por tipo de solicitud (a través de solicitud)
-    if (filters.tipoSolicitud) {
-      if (!filters.zona) {
-        qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = cotizacion.id_solicitud');
-      }
-      if (filters.tipoSolicitud === 'abierta') {
-        qb.andWhere('solicitud.id_prestador IS NULL');
-      } else if (filters.tipoSolicitud === 'dirigida') {
-        qb.andWhere('solicitud.id_prestador IS NOT NULL');
-      }
-    }
-
-    // Filtro por rubro (join directo desde solicitud.id_habilidad -> habilidad -> rubro)
-    // Esto funciona correctamente ahora que guardamos id_habilidad en solicitudes
-    if (filters.rubro) {
-      if (!filters.zona && !filters.tipoSolicitud) {
-        qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = cotizacion.id_solicitud');
       }
       
       // Ahora usar el join directo con id_habilidad

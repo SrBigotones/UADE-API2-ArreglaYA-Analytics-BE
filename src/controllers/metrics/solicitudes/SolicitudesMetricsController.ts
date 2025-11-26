@@ -184,34 +184,6 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
   }
 
   /**
-   * GET /api/metrica/solicitudes/tiempo-primera-cotizacion
-   * 3. Tiempo a primera cotización (horas)
-   */
-  public async getTiempoPrimeraCotizacion(req: Request, res: Response): Promise<void> {
-    try {
-      const periodType = this.parsePeriodParams(req);
-      const dateRanges = DateRangeService.getPeriodRanges(periodType);
-      const filters = this.parseSegmentationParams(req);
-
-      const currentAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.startDate, dateRanges.endDate, filters);
-      const previousAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
-
-      const metric = await this.calculateMetricWithChart(
-        periodType,
-        dateRanges,
-        currentAvg,
-        previousAvg,
-        async (start: Date, end: Date) => this.calculateAverageTimeToFirstQuote(start, end, filters),
-        'absoluto'
-      );
-      
-      res.status(200).json({ success: true, data: metric });
-    } catch (error) {
-      await this.handleError(res, error, 'getTiempoPrimeraCotizacion');
-    }
-  }
-
-  /**
    * GET /api/metrica/solicitudes/mapa-calor
    * 6. Mapa de calor de pedidos
    */
@@ -226,8 +198,8 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
         .createQueryBuilder('solicitud')
         .select('solicitud.zona', 'zona')
         .addSelect('COUNT(*)', 'count')
-        .where('solicitud.timestamp >= :startDate', { startDate: dateRanges.startDate })
-        .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .where('solicitud.created_at >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('solicitud.created_at <= :endDate', { endDate: dateRanges.endDate })
         .andWhere('solicitud.zona IS NOT NULL')
         .groupBy('solicitud.zona');
       
@@ -282,8 +254,8 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
       const repo = AppDataSource.getRepository(Solicitud);
       const solicitudes = await repo
         .createQueryBuilder('solicitud')
-        .where('solicitud.timestamp >= :startDate', { startDate: dateRanges.startDate })
-        .andWhere('solicitud.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .where('solicitud.created_at >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('solicitud.created_at <= :endDate', { endDate: dateRanges.endDate })
         .getMany();
 
       // Agrupar por zona

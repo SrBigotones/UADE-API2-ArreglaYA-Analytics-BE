@@ -4,7 +4,7 @@ import { DateRangeService } from '../../../services/DateRangeService';
 import { BaseMetricsCalculator } from '../../../services/BaseMetricsCalculator';
 import { PeriodType, SegmentationFilters } from '../../../types';
 import { AppDataSource } from '../../../config/database';
-import { Cotizacion } from '../../../models/Cotizacion';
+import { Solicitud } from '../../../models/Solicitud';
 
 export class MatchingMetricsController extends BaseMetricsCalculator {
   
@@ -115,8 +115,11 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
   }
 
   /**
-   * GET /api/metrica/cotizaciones/conversion-aceptada
+   * GET /api/metrica/matching/cotizaciones/conversion-aceptada
    * 4. Conversión a cotización aceptada (%)
+   * 
+   * REIMPLEMENTADO: Ahora usa solicitudes con fecha_confirmacion
+   * Tasa = (solicitudes con fecha_confirmacion) / (solicitudes con fecha_confirmacion + rechazadas)
    */
   public async getConversionCotizacionAceptada(req: Request, res: Response): Promise<void> {
     try {
@@ -124,13 +127,46 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
       const filters = this.parseSegmentationParams(req);
 
-      const aceptadas = await this.countCotizacionesByEstado('aceptada', dateRanges.startDate, dateRanges.endDate, filters);
-      const rechazadas = await this.countCotizacionesByEstado('rechazada', dateRanges.startDate, dateRanges.endDate, filters);
+      const repo = AppDataSource.getRepository(Solicitud);
+      
+      // Solicitudes aceptadas = tienen fecha_confirmacion
+      const qbAceptadas = repo
+        .createQueryBuilder('solicitud')
+        .where('solicitud.created_at >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('solicitud.created_at <= :endDate', { endDate: dateRanges.endDate })
+        .andWhere('solicitud.fecha_confirmacion IS NOT NULL');
+      this.applySolicitudFilters(qbAceptadas, filters);
+      const aceptadas = await qbAceptadas.getCount();
+      
+      // Solicitudes rechazadas
+      const qbRechazadas = repo
+        .createQueryBuilder('solicitud')
+        .where('solicitud.created_at >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('solicitud.created_at <= :endDate', { endDate: dateRanges.endDate })
+        .andWhere('solicitud.estado = :estado', { estado: 'rechazada' });
+      this.applySolicitudFilters(qbRechazadas, filters);
+      const rechazadas = await qbRechazadas.getCount();
+      
       const total = aceptadas + rechazadas;
       const currentRate = total > 0 ? (aceptadas / total) * 100 : 0;
 
-      const prevAceptadas = await this.countCotizacionesByEstado('aceptada', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
-      const prevRechazadas = await this.countCotizacionesByEstado('rechazada', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
+      // Período anterior
+      const prevQbAceptadas = repo
+        .createQueryBuilder('solicitud')
+        .where('solicitud.created_at >= :startDate', { startDate: dateRanges.previousStartDate })
+        .andWhere('solicitud.created_at <= :endDate', { endDate: dateRanges.previousEndDate })
+        .andWhere('solicitud.fecha_confirmacion IS NOT NULL');
+      this.applySolicitudFilters(prevQbAceptadas, filters);
+      const prevAceptadas = await prevQbAceptadas.getCount();
+      
+      const prevQbRechazadas = repo
+        .createQueryBuilder('solicitud')
+        .where('solicitud.created_at >= :startDate', { startDate: dateRanges.previousStartDate })
+        .andWhere('solicitud.created_at <= :endDate', { endDate: dateRanges.previousEndDate })
+        .andWhere('solicitud.estado = :estado', { estado: 'rechazada' });
+      this.applySolicitudFilters(prevQbRechazadas, filters);
+      const prevRechazadas = await prevQbRechazadas.getCount();
+      
       const prevTotal = prevAceptadas + prevRechazadas;
       const previousRate = prevTotal > 0 ? (prevAceptadas / prevTotal) * 100 : 0;
 
@@ -140,8 +176,22 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
         this.roundPercentage(currentRate),
         this.roundPercentage(previousRate),
         async (start: Date, end: Date) => {
-          const aceptadasInt = await this.countCotizacionesByEstado('aceptada', start, end, filters);
-          const rechazadasInt = await this.countCotizacionesByEstado('rechazada', start, end, filters);
+          const intQbAceptadas = repo
+            .createQueryBuilder('solicitud')
+            .where('solicitud.created_at >= :startDate', { startDate: start })
+            .andWhere('solicitud.created_at <= :endDate', { endDate: end })
+            .andWhere('solicitud.fecha_confirmacion IS NOT NULL');
+          this.applySolicitudFilters(intQbAceptadas, filters);
+          const aceptadasInt = await intQbAceptadas.getCount();
+          
+          const intQbRechazadas = repo
+            .createQueryBuilder('solicitud')
+            .where('solicitud.created_at >= :startDate', { startDate: start })
+            .andWhere('solicitud.created_at <= :endDate', { endDate: end })
+            .andWhere('solicitud.estado = :estado', { estado: 'rechazada' });
+          this.applySolicitudFilters(intQbRechazadas, filters);
+          const rechazadasInt = await intQbRechazadas.getCount();
+          
           const totalInt = aceptadasInt + rechazadasInt;
           const rate = totalInt > 0 ? (aceptadasInt / totalInt) * 100 : 0;
           return this.roundPercentage(rate);
@@ -158,6 +208,7 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/matching/tiempo-promedio
    * 14. Tiempo promedio de matching
+   * Calcula el tiempo promedio desde que se crea la solicitud hasta que se acepta la cotización (fecha_confirmacion)
    */
   public async getTiempoPromedioMatching(req: Request, res: Response): Promise<void> {
     try {
@@ -165,15 +216,15 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
       const filters = this.parseSegmentationParams(req);
 
-      const currentAvg = await this.calculateAverageMatchingTime(dateRanges.startDate, dateRanges.endDate, filters);
-      const previousAvg = await this.calculateAverageMatchingTime(dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
+      const currentAvg = await this.calculateAverageMatchingTimeFromConfirmacion(dateRanges.startDate, dateRanges.endDate, filters);
+      const previousAvg = await this.calculateAverageMatchingTimeFromConfirmacion(dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
 
       const metric = await this.calculateMetricWithChart(
         periodType,
         dateRanges,
         currentAvg,
         previousAvg,
-        async (start: Date, end: Date) => this.calculateAverageMatchingTime(start, end, filters),
+        async (start: Date, end: Date) => this.calculateAverageMatchingTimeFromConfirmacion(start, end, filters),
         'absoluto'
       );
       
@@ -184,18 +235,46 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
   }
 
   /**
-   * GET /api/metrica/cotizaciones/pendientes
-   * 15. Cotizaciones pendientes
+   * GET /api/metrica/matching/solicitudes/pendientes
+   * 15. Solicitudes pendientes (renombrado de "Cotizaciones pendientes")
+   * 
+   * Solicitudes "pendientes" son aquellas que:
+   * - NO tienen fecha_confirmacion (no fueron aceptadas aún)
+   * - NO están canceladas
+   * - NO están rechazadas
+   * 
+   * Esto incluye:
+   * - Solicitudes recién creadas (esperando matching)
+   * - Solicitudes con prestador asignado (esperando aceptación del cliente)
    */
-  public async getCotizacionesPendientes(req: Request, res: Response): Promise<void> {
+  public async getSolicitudesPendientes(req: Request, res: Response): Promise<void> {
     try {
       const periodType = this.parsePeriodParams(req);
       const dateRanges = DateRangeService.getPeriodRanges(periodType);
       const filters = this.parseSegmentationParams(req);
 
-      // Cotizaciones pendientes son las emitidas que no están aceptadas ni rechazadas ni expiradas
-      const pendientes = await this.countCotizacionesByEstado('emitida', dateRanges.startDate, dateRanges.endDate, filters);
-      const prevPendientes = await this.countCotizacionesByEstado('emitida', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
+      // Solicitudes pendientes: creadas en el período, sin fecha_confirmacion, no canceladas ni rechazadas
+      const repo = AppDataSource.getRepository(Solicitud);
+      
+      const qb = repo
+        .createQueryBuilder('solicitud')
+        .where('solicitud.created_at >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('solicitud.created_at <= :endDate', { endDate: dateRanges.endDate })
+        .andWhere('solicitud.fecha_confirmacion IS NULL')
+        .andWhere('solicitud.estado NOT IN (:...estados)', { estados: ['cancelada', 'rechazada'] });
+      
+      this.applySolicitudFilters(qb, filters);
+      const pendientes = await qb.getCount();
+      
+      const prevQb = repo
+        .createQueryBuilder('solicitud')
+        .where('solicitud.created_at >= :startDate', { startDate: dateRanges.previousStartDate })
+        .andWhere('solicitud.created_at <= :endDate', { endDate: dateRanges.previousEndDate })
+        .andWhere('solicitud.fecha_confirmacion IS NULL')
+        .andWhere('solicitud.estado NOT IN (:...estados)', { estados: ['cancelada', 'rechazada'] });
+      
+      this.applySolicitudFilters(prevQb, filters);
+      const prevPendientes = await prevQb.getCount();
 
       const metric = await this.calculateMetricWithChart(
         periodType,
@@ -203,80 +282,22 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
         pendientes,
         prevPendientes,
         async (start: Date, end: Date) => {
-          return await this.countCotizacionesByEstado('emitida', start, end, filters);
+          const intQb = repo
+            .createQueryBuilder('solicitud')
+            .where('solicitud.created_at >= :startDate', { startDate: start })
+            .andWhere('solicitud.created_at <= :endDate', { endDate: end })
+            .andWhere('solicitud.fecha_confirmacion IS NULL')
+            .andWhere('solicitud.estado NOT IN (:...estados)', { estados: ['cancelada', 'rechazada'] });
+          
+          this.applySolicitudFilters(intQb, filters);
+          return await intQb.getCount();
         },
         'porcentaje'
       );
       
       res.status(200).json({ success: true, data: metric });
     } catch (error) {
-      await this.handleError(res, error, 'getCotizacionesPendientes');
-    }
-  }
-
-  /**
-   * GET /api/metrica/prestadores/tiempo-respuesta
-   * 16. Tiempo promedio de respuesta del prestador
-   */
-  public async getTiempoRespuestaPrestador(req: Request, res: Response): Promise<void> {
-    try {
-      const periodType = this.parsePeriodParams(req);
-      const dateRanges = DateRangeService.getPeriodRanges(periodType);
-      const filters = this.parseSegmentationParams(req);
-
-      const currentAvg = await this.calculateAverageProviderResponseTime(dateRanges.startDate, dateRanges.endDate, filters);
-      const previousAvg = await this.calculateAverageProviderResponseTime(dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
-
-      const metric = await this.calculateMetricWithChart(
-        periodType,
-        dateRanges,
-        currentAvg,
-        previousAvg,
-        async (start: Date, end: Date) => this.calculateAverageProviderResponseTime(start, end, filters),
-        'absoluto'
-      );
-      
-      res.status(200).json({ success: true, data: metric });
-    } catch (error) {
-      await this.handleError(res, error, 'getTiempoRespuestaPrestador');
-    }
-  }
-
-  /**
-   * GET /api/metrica/cotizaciones/tasa-expiracion
-   * 17. Cotizaciones expiradas (%)
-   */
-  public async getTasaCotizacionesExpiradas(req: Request, res: Response): Promise<void> {
-    try {
-      const periodType = this.parsePeriodParams(req);
-      const dateRanges = DateRangeService.getPeriodRanges(periodType);
-      const filters = this.parseSegmentationParams(req);
-
-      const expiradas = await this.countCotizacionesByEstado('expirada', dateRanges.startDate, dateRanges.endDate, filters);
-      const todasEmitidas = await this.countCotizaciones(dateRanges.startDate, dateRanges.endDate, filters);
-      const currentRate = todasEmitidas > 0 ? (expiradas / todasEmitidas) * 100 : 0;
-
-      const prevExpiradas = await this.countCotizacionesByEstado('expirada', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
-      const prevTodasEmitidas = await this.countCotizaciones(dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
-      const previousRate = prevTodasEmitidas > 0 ? (prevExpiradas / prevTodasEmitidas) * 100 : 0;
-
-      const metric = await this.calculateMetricWithChart(
-        periodType,
-        dateRanges,
-        this.roundPercentage(currentRate),
-        this.roundPercentage(previousRate),
-        async (start: Date, end: Date) => {
-          const expiradas = await this.countCotizacionesByEstado('expirada', start, end, filters);
-          const todasEmitidas = await this.countCotizaciones(start, end, filters);
-          const rate = todasEmitidas > 0 ? (expiradas / todasEmitidas) * 100 : 0;
-          return this.roundPercentage(rate);
-        },
-        'absoluto'
-      );
-      
-      res.status(200).json({ success: true, data: metric });
-    } catch (error) {
-      await this.handleError(res, error, 'getTasaCotizacionesExpiradas');
+      await this.handleError(res, error, 'getSolicitudesPendientes');
     }
   }
 
@@ -285,33 +306,6 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
    */
   public async getMatchingConversion(req: Request, res: Response): Promise<void> {
     await this.getConversionCotizacionAceptada(req, res);
-  }
-
-  /**
-   * GET /api/metrica/matching/lead-time (legacy)
-   */
-  public async getMatchingLeadTime(req: Request, res: Response): Promise<void> {
-    try {
-      const periodType = this.parsePeriodParams(req);
-      const dateRanges = DateRangeService.getPeriodRanges(periodType);
-      const filters = this.parseSegmentationParams(req);
-
-      const currentAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.startDate, dateRanges.endDate, filters);
-      const previousAvg = await this.calculateAverageTimeToFirstQuote(dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
-
-      const metric = await this.calculateMetricWithChart(
-        periodType,
-        dateRanges,
-        currentAvg,
-        previousAvg,
-        async (start: Date, end: Date) => this.calculateAverageTimeToFirstQuote(start, end, filters),
-        'absoluto'
-      );
-      
-      res.status(200).json({ success: true, data: metric });
-    } catch (error) {
-      await this.handleError(res, error, 'getMatchingLeadTime');
-    }
   }
 }
 
