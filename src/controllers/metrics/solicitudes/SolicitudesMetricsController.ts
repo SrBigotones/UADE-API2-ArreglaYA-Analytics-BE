@@ -5,6 +5,7 @@ import { BaseMetricsCalculator } from '../../../services/BaseMetricsCalculator';
 import { PeriodType, HeatmapResponse, HeatmapPoint, SegmentationFilters } from '../../../types';
 import { AppDataSource } from '../../../config/database';
 import { Solicitud } from '../../../models/Solicitud';
+import { formatDateLocal } from '../../../utils/dateUtils';
 
 export class SolicitudesMetricsController extends BaseMetricsCalculator {
   
@@ -232,8 +233,8 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
         data: points,
         totalPoints: points.length,
         period: {
-          startDate: dateRanges.startDate.toISOString().split('T')[0],
-          endDate: dateRanges.endDate.toISOString().split('T')[0]
+          startDate: formatDateLocal(dateRanges.startDate),
+          endDate: formatDateLocal(dateRanges.endDate)
         }
       };
 
@@ -285,8 +286,8 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
         data: heatmapPoints,
         totalPoints: heatmapPoints.length,
         period: {
-          startDate: dateRanges.startDate.toISOString(),
-          endDate: dateRanges.endDate.toISOString()
+          startDate: formatDateLocal(dateRanges.startDate),
+          endDate: formatDateLocal(dateRanges.endDate)
         }
       };
 

@@ -10,6 +10,7 @@ import { Rubro } from '../models/Rubro';
 import { CardMetricResponse, PieMetricResponse, DateRangeFilter, PeriodType, SegmentationFilters } from '../types';
 import { logger } from '../config/logger';
 import { DateRangeService } from './DateRangeService';
+import { formatDateLocal } from '../utils/dateUtils';
 
 /**
  * Clase base para cálculos de métricas usando tablas normalizadas
@@ -224,7 +225,7 @@ export class BaseMetricsCalculator {
         start: new Date(current),
         end: intervalEnd,
         label: formatLabel(current),
-        date: current.toISOString().split('T')[0]
+        date: formatDateLocal(current)
       });
 
       current = nextDate(current);
