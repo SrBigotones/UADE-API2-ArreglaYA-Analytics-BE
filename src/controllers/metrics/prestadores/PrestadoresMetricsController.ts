@@ -183,6 +183,8 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
    * GET /api/metrica/prestadores/win-rate-rubro
    * 5. Win Rate por rubro (%)
    * Calcula el Win Rate: de las cotizaciones emitidas en el período, cuántas fueron aceptadas
+   * IMPORTANTE: Usa timestamp_creacion para filtrar por período (cuándo se creó la cotización)
+   * y el campo estado para determinar si fue aceptada o no
    * Nota: Actualmente calcula el Win Rate global. Para calcular por rubro se necesitaría join con prestadores->habilidades->rubros
    */
   public async getWinRatePorRubro(req: Request, res: Response): Promise<void> {
@@ -192,12 +194,13 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
 
       const cotizacionesRepo = AppDataSource.getRepository(Cotizacion);
       
-      // Obtener todas las cotizaciones creadas (emitidas) en el período actual
-      // Todas las cotizaciones se crean como 'emitida', luego pueden cambiar a 'aceptada', 'rechazada' o 'expirada'
+      // Obtener todas las cotizaciones CREADAS en el período actual
+      // Usamos timestamp_creacion para determinar cuándo se emitió originalmente
+      // El campo timestamp guarda la última actualización de estado
       const cotizacionesEmitidas = await cotizacionesRepo
         .createQueryBuilder('cotizacion')
-        .where('cotizacion.timestamp >= :startDate', { startDate: dateRanges.startDate })
-        .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .where('cotizacion.timestamp_creacion >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('cotizacion.timestamp_creacion <= :endDate', { endDate: dateRanges.endDate })
         .getMany();
 
       // De las emitidas en el período, contar cuántas fueron aceptadas (estado actual = 'aceptada')
@@ -208,8 +211,8 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
       // Calcular para período anterior
       const prevCotizacionesEmitidas = await cotizacionesRepo
         .createQueryBuilder('cotizacion')
-        .where('cotizacion.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
-        .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
+        .where('cotizacion.timestamp_creacion >= :startDate', { startDate: dateRanges.previousStartDate })
+        .andWhere('cotizacion.timestamp_creacion <= :endDate', { endDate: dateRanges.previousEndDate })
         .getMany();
 
       const prevAceptadas = prevCotizacionesEmitidas.filter(c => c.estado === 'aceptada').length;
@@ -225,8 +228,8 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
           // Para cada intervalo histórico, calcular win rate de la misma forma
           const emitidasInt = await cotizacionesRepo
             .createQueryBuilder('cotizacion')
-            .where('cotizacion.timestamp >= :startDate', { startDate: start })
-            .andWhere('cotizacion.timestamp <= :endDate', { endDate: end })
+            .where('cotizacion.timestamp_creacion >= :startDate', { startDate: start })
+            .andWhere('cotizacion.timestamp_creacion <= :endDate', { endDate: end })
             .getMany();
           
           const aceptadasInt = emitidasInt.filter(c => c.estado === 'aceptada').length;
@@ -376,8 +379,8 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
       const prestadores = await usuariosRepo
         .createQueryBuilder('usuario')
         .where('usuario.rol = :rol', { rol: 'prestador' })
-        .andWhere('usuario.timestamp >= :startDate', { startDate: dateRanges.startDate })
-        .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .andWhere('usuario.created_at >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('usuario.created_at <= :endDate', { endDate: dateRanges.endDate })
         .getMany();
 
       const zoneData: ProviderZoneData[] = [];

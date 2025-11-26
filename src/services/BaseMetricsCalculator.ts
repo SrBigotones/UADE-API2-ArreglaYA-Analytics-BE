@@ -276,8 +276,8 @@ export class BaseMetricsCalculator {
     const repo = AppDataSource.getRepository(Usuario);
     return await repo
       .createQueryBuilder('usuario')
-      .where('usuario.timestamp >= :startDate', { startDate })
-      .andWhere('usuario.timestamp <= :endDate', { endDate })
+      .where('usuario.created_at >= :startDate', { startDate })
+      .andWhere('usuario.created_at <= :endDate', { endDate })
       .getCount();
   }
 
@@ -287,8 +287,8 @@ export class BaseMetricsCalculator {
       .createQueryBuilder('usuario')
       .where('usuario.rol = :rol', { rol })
       .andWhere('usuario.estado = :estado', { estado: 'activo' })
-      .andWhere('usuario.timestamp >= :startDate', { startDate })
-      .andWhere('usuario.timestamp <= :endDate', { endDate })
+      .andWhere('usuario.created_at >= :startDate', { startDate })
+      .andWhere('usuario.created_at <= :endDate', { endDate })
       .getCount();
     return result;
   }
@@ -357,7 +357,7 @@ export class BaseMetricsCalculator {
     
     // Usar COUNT(DISTINCT) cuando hay filtros de rubro (para evitar duplicados por múltiples habilidades)
     if (filters?.rubro) {
-      const result = await qb.select('COUNT(DISTINCT cotizacion.id)', 'count').getRawOne();
+      const result = await qb.select('COUNT(DISTINCT cotizacion.id_cotizacion)', 'count').getRawOne();
       return parseInt(result?.count || '0');
     }
     

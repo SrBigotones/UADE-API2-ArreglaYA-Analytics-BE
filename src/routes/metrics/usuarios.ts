@@ -133,6 +133,46 @@ router.get('/nuevos-administradores', controller.getNuevosAdministradores.bind(c
 
 /**
  * @swagger
+ * /api/metrica/usuarios/nuevas-bajas:
+ *   get:
+ *     summary: Nuevas bajas de usuarios
+ *     description: Retorna el número de usuarios que se dieron de baja en el período especificado
+ *     tags: [Métricas - Usuarios]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [hoy, ultimos_7_dias, ultimos_30_dias, ultimo_ano, personalizado]
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       200:
+ *         description: Nuevas bajas de usuarios
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MetricSuccessResponse'
+ *       400:
+ *         description: Parámetros inválidos
+ *       401:
+ *         description: No autorizado
+ */
+router.get('/nuevas-bajas', controller.getNuevasBajas.bind(controller));
+
+/**
+ * @swagger
  * /api/metrica/usuarios/tasa-roles-activos:
  *   get:
  *     summary: Tasa de roles inactivos (%)

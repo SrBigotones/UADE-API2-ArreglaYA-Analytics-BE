@@ -156,15 +156,17 @@ export class EventNormalizationService {
 
     logger.info(`💾 Saving usuario | id: ${idUsuario} | rol: ${rol} | estado: ${estado}`);
 
-    // Usar timestamp actual en lugar del que viene en el evento
-    const currentTimestamp = new Date();
-    
-    if (evento.includes('deactivated')) {
+    // Caso especial: Usuario dado de baja
+    if (evento.includes('deactivated') || evento.includes('baja')) {
+      const currentTimestamp = new Date();
       await usuarioRepo.update(
         { id_usuario: idUsuario },
-        { estado: 'baja', timestamp: currentTimestamp }
+        { 
+          estado: 'baja', 
+          fecha_baja: currentTimestamp  // ✅ Registrar fecha de baja
+        }
       );
-      logger.info(`✅ Usuario ${idUsuario} marcado como BAJA`);
+      logger.info(`✅ Usuario ${idUsuario} marcado como BAJA en fecha ${currentTimestamp.toISOString()}`);
     } else {
       // Para eventos de creación/actualización, hacer upsert completo
       await usuarioRepo.upsert(
@@ -172,7 +174,6 @@ export class EventNormalizationService {
           id_usuario: idUsuario,
           rol: rol,
           estado: estado,
-          timestamp: currentTimestamp,
           ubicacion: ubicacion || null,
         },
         ['id_usuario']
@@ -371,16 +372,16 @@ export class EventNormalizationService {
 
         // Usar timestamp actual en lugar del que viene en el evento
         const currentTimestamp = new Date();
-        
+
         await cotizacionRepo.upsert(
           {
-            id_cotizacion: idCotizacion,
-            id_solicitud: idSolicitud,
-            id_usuario: null, // No viene en el resumen
-            id_prestador: idPrestador,
-            estado: 'emitida',
-            monto: monto || null,
-            timestamp: currentTimestamp,
+          id_cotizacion: idCotizacion,
+          id_solicitud: idSolicitud,
+          id_usuario: null, // No viene en el resumen
+          id_prestador: idPrestador,
+          estado: 'emitida',
+          monto: monto || null,
+          timestamp: currentTimestamp,
           },
           ['id_cotizacion']
         );
@@ -477,12 +478,12 @@ export class EventNormalizationService {
     if (idCotizacion) {
       await cotizacionRepo.upsert(
         {
-          id_cotizacion: idCotizacion,
-          id_solicitud: idSolicitud,
-          id_usuario: idUsuario || null,
-          id_prestador: idPrestador,
-          estado: estado,
-          monto: monto || null,
+      id_cotizacion: idCotizacion,
+      id_solicitud: idSolicitud,
+      id_usuario: idUsuario || null,
+      id_prestador: idPrestador,
+      estado: estado,
+      monto: monto || null,
           timestamp: currentTimestamp,
         },
         ['id_cotizacion'] // Solo actualizar si ya existe esa cotizacion
@@ -495,8 +496,8 @@ export class EventNormalizationService {
         id_prestador: idPrestador,
         estado: estado,
         monto: monto || null,
-        timestamp: currentTimestamp,
-      });
+      timestamp: currentTimestamp,
+    });
     }
 
     logger.info(`✅ Cotizacion ${idCotizacion || 'sin id'} saved`);
