@@ -93,46 +93,6 @@ router.get('/total-activos', controller.getTotalPrestadoresActivos.bind(controll
 
 /**
  * @swagger
- * /api/metrica/prestadores/win-rate-rubro:
- *   get:
- *     summary: Win Rate por rubro (%)
- *     description: Retorna el porcentaje de cotizaciones ganadas (aceptadas) sobre el total de cotizaciones emitidas
- *     tags: [Métricas - Prestadores]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: period
- *         required: true
- *         schema:
- *           type: string
- *           enum: [hoy, ultimos_7_dias, ultimos_30_dias, ultimo_ano, personalizado]
- *       - in: query
- *         name: startDate
- *         schema:
- *           type: string
- *           format: date
- *       - in: query
- *         name: endDate
- *         schema:
- *           type: string
- *           format: date
- *     responses:
- *       200:
- *         description: Win Rate por rubro
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/MetricSuccessResponse'
- *       400:
- *         description: Parámetros inválidos
- *       401:
- *         description: No autorizado
- */
-router.get('/win-rate-rubro', controller.getWinRatePorRubro.bind(controller));
-
-/**
- * @swagger
  * /api/metrica/prestadores/servicios/distribucion:
  *   get:
  *     summary: Distribución de servicios

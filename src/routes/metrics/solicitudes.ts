@@ -100,46 +100,6 @@ router.get('/tasa-cancelacion', controller.getTasaCancelacionSolicitudes.bind(co
 
 /**
  * @swagger
- * /api/metrica/solicitudes/tiempo-primera-cotizacion:
- *   get:
- *     summary: Tiempo promedio a primera cotización (horas)
- *     description: Retorna el tiempo promedio en horas desde que se crea una solicitud hasta que recibe la primera cotización
- *     tags: [Métricas - Solicitudes]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: period
- *         required: true
- *         schema:
- *           type: string
- *           enum: [hoy, ultimos_7_dias, ultimos_30_dias, ultimo_ano, personalizado]
- *       - in: query
- *         name: startDate
- *         schema:
- *           type: string
- *           format: date
- *       - in: query
- *         name: endDate
- *         schema:
- *           type: string
- *           format: date
- *     responses:
- *       200:
- *         description: Tiempo promedio a primera cotización
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/MetricSuccessResponse'
- *       400:
- *         description: Parámetros inválidos
- *       401:
- *         description: No autorizado
- */
-router.get('/tiempo-primera-cotizacion', controller.getTiempoPrimeraCotizacion.bind(controller));
-
-/**
- * @swagger
  * /api/metrica/solicitudes/mapa-calor:
  *   get:
  *     summary: Mapa de calor de solicitudes

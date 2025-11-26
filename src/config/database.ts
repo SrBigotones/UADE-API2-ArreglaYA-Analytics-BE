@@ -8,7 +8,6 @@ import { Event } from '../models/Event';
 import { Usuario } from '../models/Usuario';
 import { Servicio } from '../models/Servicio';
 import { Solicitud } from '../models/Solicitud';
-import { Cotizacion } from '../models/Cotizacion';
 import { Habilidad } from '../models/Habilidad';
 import { Zona } from '../models/Zona';
 import { Pago } from '../models/Pago';
@@ -46,7 +45,7 @@ export const createDataSource = async () => {
   AppDataSource = new DataSource({
     ...dbConfig,
     // Importar entidades explícitamente para evitar problemas de carga
-    entities: [Event, Usuario, Servicio, Solicitud, Cotizacion, Habilidad, Zona, Pago, Prestador, Rubro, FeatureFlag],
+    entities: [Event, Usuario, Servicio, Solicitud, Habilidad, Zona, Pago, Prestador, Rubro, FeatureFlag],
     migrations: [__dirname + '/../migrations/*.{ts,js}'],
     subscribers: [__dirname + '/../subscribers/*.{ts,js}'],
     // Configuración de pool de conexiones para manejar concurrencia
@@ -104,7 +103,12 @@ export const connectDatabase = async (): Promise<void> => {
     logger.info(`Synchronize: ${options.synchronize}`);
     
     await AppDataSource.initialize();
+    
+    // Configurar timezone a Argentina para que las fechas se interpreten correctamente
+    await AppDataSource.query("SET timezone = 'America/Argentina/Buenos_Aires'");
+    
     logger.info('✅ Successfully connected to PostgreSQL database');
+    logger.info('🌎 Timezone configured to America/Argentina/Buenos_Aires (UTC-3)');
 
     // Ejecutar migraciones automáticamente después de conectar
     await runMigrationsOnConnect();

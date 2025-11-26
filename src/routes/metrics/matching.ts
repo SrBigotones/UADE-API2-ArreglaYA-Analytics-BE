@@ -93,10 +93,10 @@ router.get('/cotizaciones/conversion-aceptada', controller.getConversionCotizaci
 
 /**
  * @swagger
- * /api/metrica/matching/cotizaciones/pendientes:
+ * /api/metrica/matching/solicitudes/pendientes:
  *   get:
- *     summary: Cotizaciones pendientes
- *     description: Retorna el número de cotizaciones que están en estado pendiente (emitidas pero no respondidas)
+ *     summary: Solicitudes pendientes (sin aceptar ni rechazar)
+ *     description: Retorna el número de solicitudes que no han sido aceptadas ni rechazadas
  *     tags: [Métricas - Matching]
  *     security:
  *       - bearerAuth: []
@@ -119,7 +119,7 @@ router.get('/cotizaciones/conversion-aceptada', controller.getConversionCotizaci
  *           format: date
  *     responses:
  *       200:
- *         description: Cotizaciones pendientes
+ *         description: Solicitudes pendientes
  *         content:
  *           application/json:
  *             schema:
@@ -129,87 +129,7 @@ router.get('/cotizaciones/conversion-aceptada', controller.getConversionCotizaci
  *       401:
  *         description: No autorizado
  */
-router.get('/cotizaciones/pendientes', controller.getCotizacionesPendientes.bind(controller));
-
-/**
- * @swagger
- * /api/metrica/matching/cotizaciones/tasa-expiracion:
- *   get:
- *     summary: Tasa de expiración de cotizaciones (%)
- *     description: Retorna el porcentaje de cotizaciones que expiraron sin ser aceptadas o rechazadas
- *     tags: [Métricas - Matching]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: period
- *         required: true
- *         schema:
- *           type: string
- *           enum: [hoy, ultimos_7_dias, ultimos_30_dias, ultimo_ano, personalizado]
- *       - in: query
- *         name: startDate
- *         schema:
- *           type: string
- *           format: date
- *       - in: query
- *         name: endDate
- *         schema:
- *           type: string
- *           format: date
- *     responses:
- *       200:
- *         description: Tasa de expiración de cotizaciones
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/MetricSuccessResponse'
- *       400:
- *         description: Parámetros inválidos
- *       401:
- *         description: No autorizado
- */
-router.get('/cotizaciones/tasa-expiracion', controller.getTasaCotizacionesExpiradas.bind(controller));
-
-/**
- * @swagger
- * /api/metrica/matching/prestadores/tiempo-respuesta:
- *   get:
- *     summary: Tiempo promedio de respuesta del prestador (minutos)
- *     description: Retorna el tiempo promedio que tarda un prestador en responder a una solicitud con una cotización
- *     tags: [Métricas - Matching]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: period
- *         required: true
- *         schema:
- *           type: string
- *           enum: [hoy, ultimos_7_dias, ultimos_30_dias, ultimo_ano, personalizado]
- *       - in: query
- *         name: startDate
- *         schema:
- *           type: string
- *           format: date
- *       - in: query
- *         name: endDate
- *         schema:
- *           type: string
- *           format: date
- *     responses:
- *       200:
- *         description: Tiempo promedio de respuesta del prestador
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/MetricSuccessResponse'
- *       400:
- *         description: Parámetros inválidos
- *       401:
- *         description: No autorizado
- */
-router.get('/prestadores/tiempo-respuesta', controller.getTiempoRespuestaPrestador.bind(controller));
+router.get('/solicitudes/pendientes', controller.getSolicitudesPendientes.bind(controller));
 
 // Rutas legacy
 /**
@@ -234,28 +154,5 @@ router.get('/prestadores/tiempo-respuesta', controller.getTiempoRespuestaPrestad
  *         description: Conversión a cotización aceptada
  */
 router.get('/conversion', controller.getMatchingConversion.bind(controller));
-
-/**
- * @swagger
- * /api/metrica/matching/lead-time:
- *   get:
- *     summary: Lead time de matching (legacy)
- *     description: Endpoint legacy - usar /api/metrica/solicitudes/tiempo-primera-cotizacion en su lugar
- *     tags: [Métricas - Matching]
- *     security:
- *       - bearerAuth: []
- *     deprecated: true
- *     parameters:
- *       - in: query
- *         name: period
- *         required: true
- *         schema:
- *           type: string
- *           enum: [hoy, ultimos_7_dias, ultimos_30_dias, ultimo_ano, personalizado]
- *     responses:
- *       200:
- *         description: Tiempo a primera cotización
- */
-router.get('/lead-time', controller.getMatchingLeadTime.bind(controller));
 
 export default router;

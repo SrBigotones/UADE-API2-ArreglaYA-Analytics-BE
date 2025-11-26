@@ -5,7 +5,6 @@ import { BaseMetricsCalculator } from '../../../services/BaseMetricsCalculator';
 import { PeriodType, PieMetricResponse, ProviderZonesResponse, ProviderZoneData, SegmentationFilters } from '../../../types';
 import { AppDataSource } from '../../../config/database';
 import { Prestador } from '../../../models/Prestador';
-import { Cotizacion } from '../../../models/Cotizacion';
 import { Solicitud } from '../../../models/Solicitud';
 import { Habilidad } from '../../../models/Habilidad';
 import { Usuario } from '../../../models/Usuario';
@@ -180,70 +179,6 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
   }
 
   /**
-   * GET /api/metrica/prestadores/win-rate-rubro
-   * 5. Win Rate por rubro (%)
-   * Calcula el Win Rate: de las cotizaciones emitidas en el período, cuántas fueron aceptadas
-   * Nota: Actualmente calcula el Win Rate global. Para calcular por rubro se necesitaría join con prestadores->habilidades->rubros
-   */
-  public async getWinRatePorRubro(req: Request, res: Response): Promise<void> {
-    try {
-      const periodType = this.parsePeriodParams(req);
-      const dateRanges = DateRangeService.getPeriodRanges(periodType);
-
-      const cotizacionesRepo = AppDataSource.getRepository(Cotizacion);
-      
-      // Obtener todas las cotizaciones creadas (emitidas) en el período actual
-      // Todas las cotizaciones se crean como 'emitida', luego pueden cambiar a 'aceptada', 'rechazada' o 'expirada'
-      const cotizacionesEmitidas = await cotizacionesRepo
-        .createQueryBuilder('cotizacion')
-        .where('cotizacion.timestamp >= :startDate', { startDate: dateRanges.startDate })
-        .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.endDate })
-        .getMany();
-
-      // De las emitidas en el período, contar cuántas fueron aceptadas (estado actual = 'aceptada')
-      const aceptadas = cotizacionesEmitidas.filter(c => c.estado === 'aceptada').length;
-      const emitidas = cotizacionesEmitidas.length;
-      const currentRate = emitidas > 0 ? (aceptadas / emitidas) * 100 : 0;
-
-      // Calcular para período anterior
-      const prevCotizacionesEmitidas = await cotizacionesRepo
-        .createQueryBuilder('cotizacion')
-        .where('cotizacion.timestamp >= :startDate', { startDate: dateRanges.previousStartDate })
-        .andWhere('cotizacion.timestamp <= :endDate', { endDate: dateRanges.previousEndDate })
-        .getMany();
-
-      const prevAceptadas = prevCotizacionesEmitidas.filter(c => c.estado === 'aceptada').length;
-      const prevEmitidas = prevCotizacionesEmitidas.length;
-      const previousRate = prevEmitidas > 0 ? (prevAceptadas / prevEmitidas) * 100 : 0;
-
-      const metric = await this.calculateMetricWithChart(
-        periodType,
-        dateRanges,
-        this.roundPercentage(currentRate),
-        this.roundPercentage(previousRate),
-        async (start: Date, end: Date) => {
-          // Para cada intervalo histórico, calcular win rate de la misma forma
-          const emitidasInt = await cotizacionesRepo
-            .createQueryBuilder('cotizacion')
-            .where('cotizacion.timestamp >= :startDate', { startDate: start })
-            .andWhere('cotizacion.timestamp <= :endDate', { endDate: end })
-            .getMany();
-          
-          const aceptadasInt = emitidasInt.filter(c => c.estado === 'aceptada').length;
-          const rate = emitidasInt.length > 0 ? (aceptadasInt / emitidasInt.length) * 100 : 0;
-          
-          return this.roundPercentage(rate);
-        },
-        'porcentaje'
-      );
-      
-      res.status(200).json({ success: true, data: metric });
-    } catch (error) {
-      await this.handleError(res, error, 'getWinRatePorRubro');
-    }
-  }
-
-  /**
    * GET /api/metrica/servicios/distribucion
    * 7. Distribución de servicios por cantidad de prestadores
    * Muestra cuántos prestadores ofrecen cada tipo de servicio/habilidad
@@ -265,7 +200,7 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
       
       // Filtrar prestadores activos en el período seleccionado
       qb.innerJoin('usuarios', 'u', 'u.id_usuario = hab.id_usuario')
-        .andWhere('u.timestamp <= :endDate', { endDate: dateRanges.endDate });
+        .andWhere('u.created_at <= :endDate', { endDate: dateRanges.endDate });
 
       // Aplicar filtros de zona y rubro si existen
       if (filters && filters.zona) {
@@ -327,7 +262,7 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
       
       // Filtrar prestadores activos en el período seleccionado
       qb.innerJoin('usuarios', 'u', 'u.id_usuario = hab.id_usuario')
-        .andWhere('u.timestamp <= :endDate', { endDate: dateRanges.endDate });
+        .andWhere('u.created_at <= :endDate', { endDate: dateRanges.endDate });
 
       // Aplicar filtro de zona si existe
       if (filters && filters.zona) {
@@ -376,8 +311,8 @@ export class PrestadoresMetricsController extends BaseMetricsCalculator {
       const prestadores = await usuariosRepo
         .createQueryBuilder('usuario')
         .where('usuario.rol = :rol', { rol: 'prestador' })
-        .andWhere('usuario.timestamp >= :startDate', { startDate: dateRanges.startDate })
-        .andWhere('usuario.timestamp <= :endDate', { endDate: dateRanges.endDate })
+        .andWhere('usuario.created_at >= :startDate', { startDate: dateRanges.startDate })
+        .andWhere('usuario.created_at <= :endDate', { endDate: dateRanges.endDate })
         .getMany();
 
       const zoneData: ProviderZoneData[] = [];

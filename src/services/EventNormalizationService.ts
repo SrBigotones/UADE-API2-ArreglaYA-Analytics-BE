@@ -3,7 +3,6 @@ import { Event } from '../models/Event';
 import { Usuario } from '../models/Usuario';
 import { Servicio } from '../models/Servicio';
 import { Solicitud } from '../models/Solicitud';
-import { Cotizacion } from '../models/Cotizacion';
 import { Habilidad } from '../models/Habilidad';
 import { Zona } from '../models/Zona';
 import { Pago } from '../models/Pago';
@@ -39,10 +38,10 @@ export class EventNormalizationService {
         logger.info(`👤 Processing USER event`);
         await this.processUserEvent(event);
       }
-      // 3. Cotizaciones: topico = 'cotizacion' o eventos especiales con cotizaciones
-      else if (topico === 'cotizacion' || evento.includes('cotizacion') || evento.includes('quote') || evento.includes('cotización') || evento === 'resumen') {
-        logger.info(`� Processing COTIZACION event`);
-        await this.processQuoteEvent(event);
+      // 3. Cotización aceptada: evento específico search.cotizacion.aceptada
+      else if (topico === 'cotizacion' && evento.includes('aceptada')) {
+        logger.info(`✅ Processing COTIZACION ACEPTADA event`);
+        await this.processCotizacionAceptadaEvent(event);
       }
       // 4. Solicitudes: topico = 'solicitud' o evento contiene 'solicitud'/'request'
       else if (topico === 'solicitud' || evento.includes('solicitud') || evento.includes('request') || evento.includes('pedido') || evento.includes('order')) {
@@ -54,22 +53,17 @@ export class EventNormalizationService {
         logger.info(`💰 Processing PAGO event from matching`);
         await this.processPaymentEvent(event);
       }
-      // 6. Pedido con cotización enviada (catalogue.pedido.cotizacion_enviada)
-      else if (topico === 'pedido' && evento.includes('cotizacion')) {
-        logger.info(`📋 Processing PEDIDO-COTIZACION event`);
-        await this.processQuoteEvent(event);
-      }
-      // 7. Prestadores: topico = 'prestador' o eventos de prestador
+      // 6. Prestadores: topico = 'prestador' o eventos de prestador
       else if (topico === 'prestador' || (evento.includes('prestador') && (evento.includes('alta') || evento.includes('baja') || evento.includes('modificacion')))) {
         logger.info(`👨‍🔧 Processing PRESTADOR event`);
         await this.processPrestadorEvent(event);
       }
-      // 8. Rubros: topico = 'rubro' o eventos de rubro
+      // 7. Rubros: topico = 'rubro' o eventos de rubro
       else if (topico === 'rubro' || (evento.includes('rubro') && (evento.includes('alta') || evento.includes('baja') || evento.includes('modificacion')))) {
         logger.info(`📋 Processing RUBRO event`);
         await this.processRubroEvent(event);
       }
-      // 9. Zonas (NO procesamos habilidades como eventos independientes)
+      // 8. Zonas (NO procesamos habilidades como eventos independientes)
       else if (topico === 'zona' || evento.includes('zona') || evento.includes('zone')) {
         logger.info(`🗺️ Processing ZONE event`);
         await this.processZoneEvent(event);
@@ -156,15 +150,17 @@ export class EventNormalizationService {
 
     logger.info(`💾 Saving usuario | id: ${idUsuario} | rol: ${rol} | estado: ${estado}`);
 
-    // Usar timestamp actual en lugar del que viene en el evento
-    const currentTimestamp = new Date();
-    
-    if (evento.includes('deactivated')) {
+    // Caso especial: Usuario dado de baja
+    if (evento.includes('deactivated') || evento.includes('baja')) {
+      const currentTimestamp = new Date();
       await usuarioRepo.update(
         { id_usuario: idUsuario },
-        { estado: 'baja', timestamp: currentTimestamp }
+        { 
+          estado: 'baja', 
+          fecha_baja: currentTimestamp  // ✅ Registrar fecha de baja
+        }
       );
-      logger.info(`✅ Usuario ${idUsuario} marcado como BAJA`);
+      logger.info(`✅ Usuario ${idUsuario} marcado como BAJA en fecha ${currentTimestamp.toISOString()}`);
     } else {
       // Para eventos de creación/actualización, hacer upsert completo
       await usuarioRepo.upsert(
@@ -172,7 +168,6 @@ export class EventNormalizationService {
           id_usuario: idUsuario,
           rol: rol,
           estado: estado,
-          timestamp: currentTimestamp,
           ubicacion: ubicacion || null,
         },
         ['id_usuario']
@@ -210,7 +205,7 @@ export class EventNormalizationService {
 
   /**
    * Procesa eventos de solicitudes
-   * Eventos: solicitud.creada, solicitud.cancelada, cotizacion.aceptada, pedido_finalizado, pedido_cancelado
+   * Eventos: solicitud.creada, solicitud.cancelada, pedido_finalizado, pedido_cancelado
    */
   private async processRequestEvent(event: Event): Promise<void> {
     const cuerpo = event.cuerpo;
@@ -254,6 +249,9 @@ export class EventNormalizationService {
     } else if (evento.includes('solicitado')) {
       estado = 'creada'; // 'solicitado' es equivalente a 'creada'
     }
+
+    // Detectar si es evento de prestador asignado
+    const esPrestadorAsignado = evento.includes('prestadorasignado') || evento.includes('asignado');
 
     // Extraer zona de diferentes estructuras posibles
     let zona = null;
@@ -307,11 +305,8 @@ export class EventNormalizationService {
       }
     }
 
-    logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado} | zona: ${zona || 'NULL'} | habilidad: ${idHabilidad || 'NULL'}`);
+    logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado} | zona: ${zona || 'NULL'} | habilidad: ${idHabilidad || 'NULL'} | prestador_asignado: ${esPrestadorAsignado}`);
 
-    // Usar timestamp actual en lugar del que viene en el evento
-    const currentTimestamp = new Date();
-    
     await solicitudRepo.upsert(
       {
         id_solicitud: idSolicitud,
@@ -320,8 +315,8 @@ export class EventNormalizationService {
         id_habilidad: idHabilidad || null,
         estado: estado,
         zona: zona || null,
-        timestamp: currentTimestamp,
         es_critica: esCritica || false,
+        prestador_asignado: esPrestadorAsignado || !!idPrestador, // true si es evento de asignación O si viene id_prestador
       },
       ['id_solicitud'] // Conflict target: unique constraint en id_solicitud
     );
@@ -330,176 +325,58 @@ export class EventNormalizationService {
   }
 
   /**
-   * Procesa eventos de cotizaciones
-   * Eventos: cotizacion.emitida, cotizacion.aceptada, cotizacion.rechazada, cotizacion.expirada
-   * También: matching.cotizacion.emitida (eventos batch del servicio de matching)
+   * Procesa evento de cotización aceptada
+   * Evento: search.cotizacion.aceptada
+   * 
+   * Cuando se acepta una cotización, actualizamos la solicitud asociada:
+   * - estado = 'aceptada'
+   * - fecha_confirmacion = timestamp actual (momento del match confirmado)
    */
-  private async processQuoteEvent(event: Event): Promise<void> {
+  private async processCotizacionAceptadaEvent(event: Event): Promise<void> {
     const cuerpo = event.cuerpo;
     const payload = this.extractPayload(cuerpo);
-    const cotizacionRepo = AppDataSource.getRepository(Cotizacion);
+    const solicitudRepo = AppDataSource.getRepository(Solicitud);
 
     const evento = event.evento.toLowerCase();
+    logger.info(`✅ Processing cotización aceptada event | eventId: ${event.id}`);
 
-    // Caso especial: solicitud.resumen con cotizaciones reales
-    if (evento.includes('resumen') && payload.solicitud && payload.solicitud.cotizaciones) {
-      logger.info(`📊 Processing RESUMEN cotizaciones | solicitudId: ${payload.solicitud.solicitudId}`);
-      
-      const idSolicitud = this.extractBigInt(payload.solicitud.solicitudId);
-      if (!idSolicitud) {
-        logger.warn(`❌ No solicitudId in resumen event ${event.id}`);
-        return;
-      }
-
-      const cotizaciones = payload.solicitud.cotizaciones;
-      if (!Array.isArray(cotizaciones)) {
-        logger.warn(`❌ cotizaciones is not an array in resumen event ${event.id}`);
-        return;
-      }
-
-      for (const cotizacion of cotizaciones) {
-        const idCotizacion = this.extractBigInt(cotizacion.cotizacionId);
-        const idPrestador = this.extractBigInt(cotizacion.prestadorId);
-        const monto = this.extractDecimal(cotizacion.monto);
-
-        if (!idCotizacion || !idPrestador) {
-          logger.warn(`⚠️ Skipping cotizacion without id or prestador in resumen`);
-          continue;
-        }
-
-        logger.info(`💾 Saving cotizacion from resumen | id: ${idCotizacion} | solicitud: ${idSolicitud} | prestador: ${idPrestador} | monto: ${monto}`);
-
-        // Usar timestamp actual en lugar del que viene en el evento
-        const currentTimestamp = new Date();
-        
-        await cotizacionRepo.upsert(
-          {
-            id_cotizacion: idCotizacion,
-            id_solicitud: idSolicitud,
-            id_usuario: null, // No viene en el resumen
-            id_prestador: idPrestador,
-            estado: 'emitida',
-            monto: monto || null,
-            timestamp: currentTimestamp,
-          },
-          ['id_cotizacion']
-        );
-      }
-
-      logger.info(`✅ Resumen cotizaciones processed | total: ${cotizaciones.length}`);
-      return;
-    }
-
-    // Caso especial: matching.emitida viene con array de solicitudes con top3 de cotizaciones
-    if (evento.includes('emitida') && payload.solicitudes && Array.isArray(payload.solicitudes)) {
-      logger.info(`📊 Processing BATCH cotizaciones | count: ${payload.solicitudes.length}`);
-      
-      for (const solicitud of payload.solicitudes) {
-        if (!solicitud.top3 || !Array.isArray(solicitud.top3)) continue;
-        
-        for (const cotizacion of solicitud.top3) {
-          const idCotizacion = this.extractBigInt(cotizacion.cotizacionId);
-          const idSolicitud = this.extractBigInt(cotizacion.solicitudId);
-          const idPrestador = this.extractBigInt(cotizacion.prestadorId);
-          const idUsuario = this.extractBigInt(solicitud.usuarioId); // Del padre
-
-          // Validación mínima: necesitamos solicitud y prestador
-          // cotizacionId puede ser null (invitaciones a cotizar)
-          if (!idSolicitud || !idPrestador) {
-            continue;
-          }
-
-          // Usar timestamp actual en lugar del que viene en el evento
-          const currentTimestamp = new Date();
-          
-          // Insertar cotizaciones/invitaciones (id_cotizacion puede ser null)
-          await cotizacionRepo.insert({
-            id_cotizacion: idCotizacion,
-            id_solicitud: idSolicitud,
-            id_usuario: idUsuario || null,
-            id_prestador: idPrestador,
-            estado: 'emitida',
-            monto: null,
-            timestamp: currentTimestamp,
-          });
-
-          logger.debug(`Saved cotizacion ${idCotizacion} from batch`);
-        }
-      }
-      logger.info(`✅ Batch cotizaciones processed`);
-      return;
-    }
-
-    // Caso normal: cotizacion individual
-    const idCotizacion = this.extractBigInt(
-      payload.quoteId || payload.cotizacionId || payload.cotizacion_id || payload.id_cotizacion || payload.id
-    );
+    // Extraer ID de solicitud de la cotización aceptada
     const idSolicitud = this.extractBigInt(
-      payload.requestId || payload.solicitudId || payload.solicitud_id || payload.id_solicitud || payload.orderId
-    );
-    const idUsuario = this.extractBigInt(
-      payload.userId || payload.id_usuario || payload.usuario_id || payload.clienteId
-    );
-    const idPrestador = this.extractBigInt(
-      payload.providerId || payload.prestadorId || payload.prestador_id || payload.id_prestador
+      payload.requestId || 
+      payload.solicitudId || 
+      payload.id_solicitud || 
+      payload.solicitud_id ||
+      payload.orderId || 
+      payload.pedidoId
     );
 
-    if (!idCotizacion || !idSolicitud || !idPrestador) {
-      logger.warn(`❌ No se pudo extraer datos de cotizacion del evento ${event.id}`);
+    if (!idSolicitud) {
+      logger.warn(`❌ No se pudo extraer id_solicitud del evento de cotización aceptada ${event.id}`);
       logger.warn(`   squad: ${event.squad} | topico: ${event.topico} | evento: ${event.evento}`);
-      logger.warn(`   idCotizacion: ${idCotizacion} | idSolicitud: ${idSolicitud} | idPrestador: ${idPrestador}`);
       logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
       return;
     }
 
-    // Determinar estado basado en el evento
-    let estado = 'emitida';
-    if (evento.includes('aceptada') || evento.includes('accept')) {
-      estado = 'aceptada';
-    } else if (evento.includes('rechazada') || evento.includes('reject')) {
-      estado = 'rechazada';
-    } else if (evento.includes('expirada') || evento.includes('expired')) {
-      estado = 'expirada';
-    } else if (evento.includes('emitida') || evento.includes('emitted') || evento.includes('created')) {
-      estado = 'emitida';
+    // Verificar que la solicitud exista
+    const solicitudExistente = await solicitudRepo.findOne({ where: { id_solicitud: idSolicitud } });
+    
+    if (!solicitudExistente) {
+      logger.warn(`⚠️ Solicitud ${idSolicitud} no encontrada para actualizar con cotización aceptada`);
+      return;
     }
 
-    const monto = this.extractDecimal(
-      payload.amount || payload.monto || payload.tarifa || payload.price || payload.precio
-    );
-
-    logger.info(`💾 Saving cotizacion | id: ${idCotizacion} | solicitud: ${idSolicitud} | estado: ${estado}`);
-
-    // Usar timestamp actual en lugar del que viene en el evento
+    // Actualizar solicitud con estado 'aceptada' y fecha_confirmacion
     const currentTimestamp = new Date();
     
-    // Las cotizaciones individuales tienen id_cotizacion, usamos upsert solo si existe
-    if (idCotizacion) {
-      await cotizacionRepo.upsert(
-        {
-          id_cotizacion: idCotizacion,
-          id_solicitud: idSolicitud,
-          id_usuario: idUsuario || null,
-          id_prestador: idPrestador,
-          estado: estado,
-          monto: monto || null,
-          timestamp: currentTimestamp,
-        },
-        ['id_cotizacion'] // Solo actualizar si ya existe esa cotizacion
-      );
-    } else {
-      // Sin id_cotizacion, solo insert
-      await cotizacionRepo.insert({
-        id_solicitud: idSolicitud,
-        id_usuario: idUsuario || null,
-        id_prestador: idPrestador,
-        estado: estado,
-        monto: monto || null,
-        timestamp: currentTimestamp,
-      });
-    }
+    await solicitudRepo.update(
+      { id_solicitud: idSolicitud },
+      { 
+        estado: 'aceptada',
+        fecha_confirmacion: currentTimestamp
+      }
+    );
 
-    logger.info(`✅ Cotizacion ${idCotizacion || 'sin id'} saved`);
+    logger.info(`✅ Solicitud ${idSolicitud} actualizada | estado: aceptada | fecha_confirmacion: ${currentTimestamp.toISOString()}`);
   }
 
   /**
@@ -515,48 +392,83 @@ export class EventNormalizationService {
     const evento = event.evento.toLowerCase();
 
     // CASO ESPECIAL: matching.pago.emitida tiene estructura diferente con subobjeto "pago"
+    // IMPORTANTE: Matching NO envía un ID de pago único, solo idCorrelacion (tracking del Core Hub)
+    // Usamos id_solicitud como clave porque múltiples intentos de pago se hacen para la misma solicitud
+    // Cuando payments cree el pago real con paymentId, se vinculará por id_solicitud
     if (evento === 'emitida' && payload.pago) {
-      logger.info(`💰 Processing matching.pago.emitida with pago subobjeto`);
+      logger.info(`💰 Processing matching.pago.emitida - orden de pago pendiente`);
       const pagoData = payload.pago;
       
-      const idPago = this.extractBigInt(pagoData.idCorrelacion); // Usar idCorrelacion como ID único
+      const idSolicitud = this.extractBigInt(pagoData.idSolicitud);
       const idUsuario = this.extractBigInt(pagoData.idUsuario);
       const idPrestador = this.extractBigInt(pagoData.idPrestador);
-      const idSolicitud = this.extractBigInt(pagoData.idSolicitud);
       const montoTotal = this.extractDecimal(pagoData.montoSubtotal);
       const moneda = pagoData.moneda || 'ARS';
       const metodo = pagoData.metodoPreferido || null;
 
-      if (!idPago || !idUsuario) {
-        logger.warn(`❌ No se pudo extraer datos de pago.emitida ${event.id}`);
+      if (!idSolicitud || !idUsuario) {
+        logger.warn(`❌ No se pudo extraer datos de matching.pago.emitida ${event.id}`);
         logger.debug(`   Payload: ${JSON.stringify(payload, null, 2).substring(0, 500)}`);
         return;
       }
 
+      // Buscar si ya existe un pago para esta solicitud
+      const existingPago = await pagoRepo.findOne({ where: { id_solicitud: idSolicitud } });
+
+      logger.debug(`🔍 matching.pago.emitida - solicitud ${idSolicitud} - existing payment: ${existingPago ? `${existingPago.id_pago} (${existingPago.estado}, captured: ${!!existingPago.captured_at})` : 'none'}`);
+
       // Usar timestamp actual en lugar del que viene en el evento
       const currentTimestamp = new Date();
       
-      logger.info(`💾 Creating pago from matching | id: ${idPago} | usuario: ${idUsuario} | monto: ${montoTotal}`);
+      if (existingPago) {
+        // Si ya existe un pago real de payments (con paymentId), no sobrescribir
+        // Solo actualizar si el estado es pending y no tiene captured_at (es decir, aún no fue procesado por payments)
+        if (existingPago.estado === 'pending' && !existingPago.captured_at) {
+          logger.info(`🔄 Updating pending payment order for solicitud ${idSolicitud}`);
+          
+          await pagoRepo.update(
+            { id: existingPago.id },
+            {
+              monto_total: montoTotal,
+              moneda: moneda,
+              metodo: metodo || existingPago.metodo,
+              timestamp_actual: currentTimestamp,
+            }
+          );
+          
+          logger.info(`✅ Payment order for solicitud ${idSolicitud} updated`);
+        } else {
+          logger.info(`⏭️ Skipping matching event - solicitud ${idSolicitud} already has a processed payment (estado: ${existingPago.estado})`);
+        }
+      } else {
+        // Crear un registro temporal usando un ID sintético basado en id_solicitud
+        // Este ID será reemplazado cuando payments cree el pago real
+        // Usamos un número muy alto (1000000000 + solicitud) para evitar colisiones con IDs reales
+        const temporaryId = 1000000000 + idSolicitud;
+        
+        logger.info(`💾 Creating temporary payment order | solicitud: ${idSolicitud} | usuario: ${idUsuario} | monto: ${montoTotal}`);
+        
+        await pagoRepo.upsert(
+          {
+            id_pago: temporaryId,
+            id_usuario: idUsuario,
+            id_prestador: idPrestador || null,
+            id_solicitud: idSolicitud,
+            monto_total: montoTotal,
+            moneda: moneda,
+            metodo: metodo,
+            estado: 'pending',
+            timestamp_creado: currentTimestamp,
+            timestamp_actual: currentTimestamp,
+            captured_at: null,
+            refund_id: null,
+          },
+          ['id_pago']
+        );
+        
+        logger.info(`✅ Temporary payment order for solicitud ${idSolicitud} created with id ${temporaryId}`);
+      }
       
-      await pagoRepo.upsert(
-        {
-          id_pago: idPago,
-          id_usuario: idUsuario,
-          id_prestador: idPrestador || null,
-          id_solicitud: idSolicitud || null,
-          monto_total: montoTotal,
-          moneda: moneda,
-          metodo: metodo,
-          estado: 'pending', // Estado inicial cuando se emite desde matching
-          timestamp_creado: currentTimestamp,
-          timestamp_actual: currentTimestamp,
-          captured_at: null,
-          refund_id: null,
-        },
-        ['id_pago']
-      );
-      
-      logger.info(`✅ Pago from matching ${idPago} created`);
       return;
     }
 
@@ -595,20 +507,28 @@ export class EventNormalizationService {
 
     // Determinar estado basado en el evento y el campo status del payload
     // Para eventos status_updated, el estado está en newStatus
-    const statusField = payload.newStatus || payload.status || 'PENDING_PAYMENT';
-    let estado = 'pending';
+    // Para eventos method_selected, NO determinamos estado (se preserva el existente)
+    let estado: string | null = null;
     
-    // Mapear estados del payload a nuestros estados
-    if (statusField === 'PENDING_PAYMENT' || statusField === 'pending') {
-      estado = 'pending';
-    } else if (statusField === 'APPROVED' || statusField === 'approved' || evento.includes('approved')) {
-      estado = 'approved';
-    } else if (statusField === 'REJECTED' || statusField === 'rejected' || evento.includes('rejected')) {
-      estado = 'rejected';
-    } else if (statusField === 'EXPIRED' || statusField === 'expired' || evento.includes('expired')) {
-      estado = 'expired';
-    } else if (statusField === 'REFUNDED' || statusField === 'refunded' || evento.includes('refund') || evento.includes('reembolso')) {
-      estado = 'refunded';
+    const isMethodSelected = evento.includes('method_selected');
+    
+    if (!isMethodSelected) {
+      const statusField = payload.newStatus || payload.status || 'PENDING_PAYMENT';
+      
+      // Mapear estados del payload a nuestros estados
+      if (statusField === 'PENDING_PAYMENT' || statusField === 'pending') {
+        estado = 'pending';
+      } else if (statusField === 'APPROVED' || statusField === 'approved' || evento.includes('approved')) {
+        estado = 'approved';
+      } else if (statusField === 'REJECTED' || statusField === 'rejected' || evento.includes('rejected')) {
+        estado = 'rejected';
+      } else if (statusField === 'EXPIRED' || statusField === 'expired' || evento.includes('expired')) {
+        estado = 'expired';
+      } else if (statusField === 'REFUNDED' || statusField === 'refunded' || evento.includes('refund') || evento.includes('reembolso')) {
+        estado = 'refunded';
+      } else {
+        estado = 'pending'; // Default fallback
+      }
     }
 
     const montoTotal = this.extractDecimal(
@@ -629,6 +549,7 @@ export class EventNormalizationService {
     const timestampCreado = currentTimestamp;
 
     // Para captured_at, usar updatedAt si existe (eventos status_updated), sino usar timestamp actual
+    // Solo establecer captured_at para pagos aprobados y si el estado es 'approved'
     let capturedAt = null;
     if (estado === 'approved') {
       if (payload.updatedAt && Array.isArray(payload.updatedAt)) {
@@ -646,18 +567,75 @@ export class EventNormalizationService {
       ? this.extractBigInt(payload.refundId || payload.id_reembolso)
       : null;
 
-    // Buscar pago existente
-    const existingPago = await pagoRepo.findOne({ where: { id_pago: idPago } });
+    // Buscar pago existente por id_pago O por id_solicitud (para vincular con eventos de matching)
+    let existingPago = await pagoRepo.findOne({ where: { id_pago: idPago } });
+    
+    // SIEMPRE buscar y eliminar pagos temporales cuando tenemos id_solicitud (de matching)
+    // Esto debe hacerse sin importar si el pago real ya existe o no, porque:
+    // - status_updated o method_selected pueden crear el pago antes que created
+    // - Necesitamos limpiar temporales en cualquier caso
+    if (idSolicitud) {
+      logger.debug(`🔍 payment event ${evento} for ${idPago} - Searching for temporary payments for solicitud ${idSolicitud}`);
+      
+      const allPayments = await pagoRepo.find({ 
+        where: { 
+          id_solicitud: idSolicitud,
+        }
+      });
+      
+      logger.debug(`🔍 Found ${allPayments.length} payments for solicitud ${idSolicitud}: ${allPayments.map(p => `${p.id_pago} (${p.estado})`).join(', ')}`);
+      
+      // Buscar específicamente pagos temporales (id_pago >= 1000000000)
+      const temporaryPayments = allPayments.filter(p => p.id_pago >= 1000000000);
+      
+      if (temporaryPayments.length > 0) {
+        logger.info(`🔗 Found ${temporaryPayments.length} temporary payment(s) for solicitud ${idSolicitud}: ${temporaryPayments.map(p => p.id_pago).join(', ')}. Converting to real payment ${idPago}`);
+        
+        // Eliminar todos los registros temporales
+        for (const tempPago of temporaryPayments) {
+          const deleteResult = await pagoRepo.delete({ id: tempPago.id });
+          logger.info(`🗑️ Deleted temporary payment ${tempPago.id_pago} (DB id: ${tempPago.id}) - affected rows: ${deleteResult.affected}`);
+        }
+      } else {
+        logger.debug(`ℹ️ No temporary payments found for solicitud ${idSolicitud}`);
+      }
+    }
 
     if (existingPago) {
       // Actualizar pago existente usando upsert
-      logger.info(`🔄 Updating pago | id: ${idPago} | old_estado: ${existingPago.estado} | new_estado: ${estado}`);
+      // REGLAS DE ACTUALIZACIÓN DE ESTADO:
+      // 1. method_selected NUNCA cambia el estado
+      // 2. Estados finales (approved/rejected/expired/refunded) NO se sobrescriben con pending
+      // 3. Solo status_updated puede cambiar de pending a approved/rejected/expired
+      let finalEstado: string;
+      
+      const estadosFinales = ['approved', 'rejected', 'expired', 'refunded'];
+      const esEstadoFinal = estadosFinales.includes(existingPago.estado);
+      
+      if (isMethodSelected) {
+        // method_selected NUNCA cambia el estado, solo el método
+        finalEstado = existingPago.estado;
+        logger.info(`🔄 Updating pago (method_selected) | id: ${idPago} | estado: ${existingPago.estado} (preserved) | metodo: ${metodo}`);
+      } else if (esEstadoFinal && estado === 'pending') {
+        // NO permitir que created o cualquier evento sobrescriba un estado final con pending
+        finalEstado = existingPago.estado;
+        logger.warn(`⚠️ Evento '${evento}' intenta cambiar pago ${idPago} de '${existingPago.estado}' a 'pending'. Preservando estado final.`);
+      } else {
+        // Para otros eventos (principalmente status_updated), actualizar el estado
+        finalEstado = estado !== null ? estado : existingPago.estado;
+        logger.info(`🔄 Updating pago | id: ${idPago} | old_estado: ${existingPago.estado} | new_estado: ${finalEstado} | evento: ${evento}`);
+      }
       
       // Si el pago existente no tiene userId pero el evento sí, actualizarlo
       const finalUserId = existingPago.id_usuario || idUsuario || null;
       
       // Usar timestamp actual en lugar del que viene en el evento
       const currentTimestamp = new Date();
+      
+      // Para captured_at: si el nuevo estado es approved, establecerlo; sino preservar el existente
+      const finalCapturedAt = estado === 'approved' 
+        ? (capturedAt || existingPago.captured_at)
+        : existingPago.captured_at;
       
       await pagoRepo.upsert(
         {
@@ -668,15 +646,15 @@ export class EventNormalizationService {
           monto_total: montoTotal || existingPago.monto_total,
           moneda: moneda,
           metodo: metodo || existingPago.metodo,
-          estado: estado,
+          estado: finalEstado,
           timestamp_creado: existingPago.timestamp_creado,
           timestamp_actual: currentTimestamp,
-          captured_at: capturedAt || existingPago.captured_at,
+          captured_at: finalCapturedAt,
           refund_id: refundId || existingPago.refund_id,
         },
         ['id_pago']
       );
-      logger.info(`✅ Pago ${idPago} updated to estado: ${estado}`);
+      logger.info(`✅ Pago ${idPago} updated to estado: ${finalEstado}`);
     } else {
       // Crear nuevo pago
       // Nota: puede no tener userId si es un evento status_updated que llegó antes que created
@@ -685,10 +663,13 @@ export class EventNormalizationService {
         logger.warn(`   El userId se completará cuando llegue el evento 'created'`);
       }
       
+      // Si es method_selected y no existe el pago, usar estado pending por defecto
+      const finalEstado = estado !== null ? estado : 'pending';
+      
       // Usar timestamp actual en lugar del que viene en el evento
       const currentTimestamp = new Date();
       
-      logger.info(`💾 Creating pago | id: ${idPago} | usuario: ${idUsuario || 'NULL'} | estado: ${estado}`);
+      logger.info(`💾 Creating pago | id: ${idPago} | usuario: ${idUsuario || 'NULL'} | estado: ${finalEstado} | evento: ${evento}`);
       await pagoRepo.upsert(
         {
           id_pago: idPago,
@@ -698,7 +679,7 @@ export class EventNormalizationService {
           monto_total: montoTotal,
           moneda: moneda,
           metodo: metodo || null,
-          estado: estado,
+          estado: finalEstado,
           timestamp_creado: currentTimestamp,
           timestamp_actual: currentTimestamp,
           captured_at: capturedAt,
@@ -706,7 +687,7 @@ export class EventNormalizationService {
         },
         ['id_pago']
       );
-      logger.info(`✅ Pago ${idPago} created`);
+      logger.info(`✅ Pago ${idPago} created with estado: ${finalEstado}`);
     }
   }
 

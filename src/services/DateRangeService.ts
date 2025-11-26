@@ -13,38 +13,41 @@ export class DateRangeService {
 
     switch (periodType.type) {
       case 'hoy':
-        // Obtener fecha actual en UTC
-        const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-        startDate = todayUTC;
-        endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+        // Obtener fecha actual en timezone local (interpretado por PostgreSQL según su configuración)
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        startDate = today;
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
         break;
 
       case 'ultimos_7_dias':
-        // Calcular en UTC
-        endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
-        startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 6, 0, 0, 0, 0));
+        // Calcular en timezone local
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0);
         break;
 
       case 'ultimos_30_dias':
-        // Calcular en UTC
-        endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
-        startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 29, 0, 0, 0, 0));
+        // Calcular en timezone local
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29, 0, 0, 0, 0);
         break;
 
       case 'ultimo_ano':
-        // Calcular en UTC
-        endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
-        startDate = new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+        // Calcular en timezone local
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate(), 0, 0, 0, 0);
         break;
 
       case 'personalizado':
         if (!periodType.startDate || !periodType.endDate) {
           throw new Error('Fechas de inicio y fin son requeridas para período personalizado');
         }
-        // Crear fechas en UTC: la fecha que viene es "YYYY-MM-DD"
-        // Queremos desde las 00:00:00.000 UTC hasta las 23:59:59.999 UTC de esas fechas
-        startDate = new Date(periodType.startDate + 'T00:00:00.000Z');
-        endDate = new Date(periodType.endDate + 'T23:59:59.999Z');
+        // Crear fechas desde strings "YYYY-MM-DD" en timezone local
+        // El frontend envía fechas sin timezone, las interpretamos como locales
+        const [startYear, startMonth, startDay] = periodType.startDate.split('-').map(Number);
+        const [endYear, endMonth, endDay] = periodType.endDate.split('-').map(Number);
+        
+        startDate = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
+        endDate = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
         break;
 
       default:
