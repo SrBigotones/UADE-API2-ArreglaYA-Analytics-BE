@@ -167,11 +167,14 @@ export class BaseMetricsCalculator {
         break;
 
       case 'ultimo_ano':
-        // Por mes (12 puntos)
+        // Por mes (12 o 13 puntos si cruza años)
         current = new Date(dateRanges.startDate.getFullYear(), dateRanges.startDate.getMonth(), 1);
+        
         formatLabel = (d) => {
           const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-          return months[d.getMonth()];
+          const monthLabel = months[d.getMonth()];
+          const year = d.getFullYear().toString().slice(-2); // Últimos 2 dígitos del año
+          return `${monthLabel}|${year}`; // Usar | como separador para parsear en el frontend
         };
         nextDate = (d) => {
           const next = new Date(d);
