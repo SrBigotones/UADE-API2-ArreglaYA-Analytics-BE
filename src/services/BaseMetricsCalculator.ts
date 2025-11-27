@@ -304,6 +304,24 @@ export class BaseMetricsCalculator {
       .getCount();
   }
 
+  protected async countAllSolicitudes(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+    const repo = AppDataSource.getRepository(Solicitud);
+    const qb = repo
+      .createQueryBuilder('solicitud')
+      .where('solicitud.created_at >= :startDate', { startDate })
+      .andWhere('solicitud.created_at <= :endDate', { endDate });
+    
+    this.applySolicitudFilters(qb, filters);
+    
+    // Usar COUNT(DISTINCT) cuando hay filtros de rubro (para evitar duplicados por múltiples habilidades)
+    if (filters?.rubro) {
+      const result = await qb.select('COUNT(DISTINCT solicitud.id)', 'count').getRawOne();
+      return parseInt(result?.count || '0');
+    }
+    
+    return await qb.getCount();
+  }
+
   protected async countSolicitudesByEstado(estado: string, startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
     const repo = AppDataSource.getRepository(Solicitud);
     const qb = repo
@@ -583,17 +601,13 @@ export class BaseMetricsCalculator {
 
   /**
    * Aplica filtros de segmentación a un query builder de solicitudes
+   * NOTA: Zona removida - no es confiable en solicitudes
    */
   protected applySolicitudFilters(
     qb: any,
     filters?: SegmentationFilters
   ): void {
     if (!filters) return;
-
-    // Filtro por zona
-    if (filters.zona) {
-      qb.andWhere('solicitud.zona = :zona', { zona: filters.zona });
-    }
 
     // Filtro por tipo de solicitud
     if (filters.tipoSolicitud) {

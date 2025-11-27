@@ -151,8 +151,6 @@ export class RubrosMetricsController extends BaseMetricsCalculator {
       .andWhere('pago.timestamp_creado >= :startDate', { startDate })
       .andWhere('pago.timestamp_creado <= :endDate', { endDate })
       .andWhere('rubro.id_rubro IS NOT NULL')
-      // Filtros de segmentación
-      .andWhere(filters?.zona ? 'solicitud.zona = :zona' : '1=1', { zona: filters?.zona })
       .andWhere(filters?.metodo ? 'pago.metodo = :metodo' : '1=1', { metodo: filters?.metodo })
       .andWhere(filters?.minMonto !== undefined ? 'pago.monto_total >= :minMonto' : '1=1', { minMonto: filters?.minMonto })
       .andWhere(filters?.maxMonto !== undefined ? 'pago.monto_total <= :maxMonto' : '1=1', { maxMonto: filters?.maxMonto })

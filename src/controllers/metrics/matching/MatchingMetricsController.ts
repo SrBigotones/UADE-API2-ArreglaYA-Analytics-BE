@@ -45,18 +45,15 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
 
   /**
    * Parsea y valida los parámetros de segmentación
+   * NOTA: Zona removida - no es confiable en solicitudes
    */
   protected parseSegmentationParams(req: Request): SegmentationFilters | undefined {
-    const { rubro, zona, tipoSolicitud } = req.query;
+    const { rubro, tipoSolicitud } = req.query;
     const filters: SegmentationFilters = {};
 
     if (rubro) {
       const rubroValue = typeof rubro === 'string' && !isNaN(Number(rubro)) ? Number(rubro) : rubro;
       filters.rubro = rubroValue as string | number;
-    }
-
-    if (zona) {
-      filters.zona = zona as string;
     }
 
     if (tipoSolicitud) {
