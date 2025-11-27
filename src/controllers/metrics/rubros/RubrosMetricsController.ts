@@ -136,42 +136,44 @@ export class RubrosMetricsController extends BaseMetricsCalculator {
     endDate: Date,
     filters?: SegmentationFilters
   ): Promise<Array<{ id_rubro: number; nombre_rubro: string; ingresos: number }>> {
-    // Subquery para obtener pagos únicos por rubro
-    const result = await AppDataSource
+    // Traer todos los pagos aprobados con su rubro, agrupando por pago y rubro
+    const pagos = await AppDataSource
       .createQueryBuilder()
-      .select('rubro.id_rubro', 'id_rubro')
+      .select('DISTINCT pago.id_pago', 'id_pago')
+      .addSelect('pago.monto_total', 'monto_total')
+      .addSelect('rubro.id_rubro', 'id_rubro')
       .addSelect('rubro.nombre_rubro', 'nombre_rubro')
-      .addSelect('COALESCE(SUM(sub.monto_total), 0)', 'ingresos')
-      .from(subQb => {
-        return subQb
-          .select('DISTINCT p.id_pago', 'id_pago')
-          .addSelect('p.monto_total', 'monto_total')
-          .addSelect('r.id_rubro', 'id_rubro')
-          .addSelect('r.nombre_rubro', 'nombre_rubro')
-          .from('pagos', 'p')
-          .innerJoin('solicitudes', 's', 's.id_solicitud = p.id_solicitud')
-          .innerJoin('habilidades', 'h', 'h.id_habilidad = s.id_habilidad')
-          .innerJoin('rubros', 'r', 'r.id_rubro = h.id_rubro')
-          .where('p.estado = :estado', { estado: 'approved' })
-          .andWhere('p.timestamp_creado >= :startDate', { startDate })
-          .andWhere('p.timestamp_creado <= :endDate', { endDate })
-          .andWhere('r.id_rubro IS NOT NULL')
-          // Filtros de segmentación
-          .andWhere(filters?.zona ? 's.zona = :zona' : '1=1', { zona: filters?.zona })
-          .andWhere(filters?.metodo ? 'p.metodo = :metodo' : '1=1', { metodo: filters?.metodo })
-          .andWhere(filters?.minMonto !== undefined ? 'p.monto_total >= :minMonto' : '1=1', { minMonto: filters?.minMonto })
-          .andWhere(filters?.maxMonto !== undefined ? 'p.monto_total <= :maxMonto' : '1=1', { maxMonto: filters?.maxMonto });
-      }, 'sub')
-      .innerJoin('rubros', 'rubro', 'rubro.id_rubro = sub.id_rubro')
-      .groupBy('rubro.id_rubro')
-      .addGroupBy('rubro.nombre_rubro')
-      .orderBy('ingresos', 'DESC')
+      .from(Pago, 'pago')
+      .leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud')
+      .leftJoin('habilidades', 'habilidad', 'habilidad.id_habilidad = solicitud.id_habilidad')
+      .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro')
+      .where('pago.estado = :estado', { estado: 'approved' })
+      .andWhere('pago.timestamp_creado >= :startDate', { startDate })
+      .andWhere('pago.timestamp_creado <= :endDate', { endDate })
+      .andWhere('rubro.id_rubro IS NOT NULL')
+      // Filtros de segmentación
+      .andWhere(filters?.zona ? 'solicitud.zona = :zona' : '1=1', { zona: filters?.zona })
+      .andWhere(filters?.metodo ? 'pago.metodo = :metodo' : '1=1', { metodo: filters?.metodo })
+      .andWhere(filters?.minMonto !== undefined ? 'pago.monto_total >= :minMonto' : '1=1', { minMonto: filters?.minMonto })
+      .andWhere(filters?.maxMonto !== undefined ? 'pago.monto_total <= :maxMonto' : '1=1', { maxMonto: filters?.maxMonto })
       .getRawMany();
 
-    return result.map(row => ({
-      id_rubro: parseInt(row.id_rubro),
-      nombre_rubro: row.nombre_rubro,
-      ingresos: Math.round(parseFloat(row.ingresos) * 100) / 100
+    // Agrupar en JS para sumar solo una vez cada pago por rubro
+    const rubroMap = new Map<number, { id_rubro: number; nombre_rubro: string; ingresos: number }>();
+    for (const row of pagos) {
+      const id_rubro = parseInt(row.id_rubro);
+      const nombre_rubro = row.nombre_rubro;
+      const monto = parseFloat(row.monto_total);
+      if (!rubroMap.has(id_rubro)) {
+        rubroMap.set(id_rubro, { id_rubro, nombre_rubro, ingresos: 0 });
+      }
+      rubroMap.get(id_rubro)!.ingresos += monto;
+    }
+
+    return Array.from(rubroMap.values()).map(r => ({
+      id_rubro: r.id_rubro,
+      nombre_rubro: r.nombre_rubro,
+      ingresos: Math.round(r.ingresos * 100) / 100
     }));
   }
 
