@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import { logger } from '../../../config/logger';
 import { DateRangeService } from '../../../services/DateRangeService';
 import { BaseMetricsCalculator } from '../../../services/BaseMetricsCalculator';
-import { GeocodingService } from '../../../services/GeocodingService';
 import { PeriodType, HeatmapResponse, HeatmapPoint, SegmentationFilters } from '../../../types';
 import { AppDataSource } from '../../../config/database';
 import { Solicitud } from '../../../models/Solicitud';
@@ -185,7 +184,7 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/solicitudes/mapa-calor
    * 6. Mapa de calor de pedidos
-   * Usa geocodificación de direcciones para ubicar solicitudes en el mapa
+   * Usa coordenadas geocodificadas guardadas en la BD
    */
   public async getMapaCalorPedidos(req: Request, res: Response): Promise<void> {
     try {
@@ -196,38 +195,25 @@ export class SolicitudesMetricsController extends BaseMetricsCalculator {
       const repo = AppDataSource.getRepository(Solicitud);
       const qb = repo
         .createQueryBuilder('solicitud')
-        .select('solicitud.direccion', 'direccion')
+        .select('solicitud.latitud', 'latitud')
+        .addSelect('solicitud.longitud', 'longitud')
         .addSelect('COUNT(*)', 'count')
         .where('solicitud.created_at >= :startDate', { startDate: dateRanges.startDate })
         .andWhere('solicitud.created_at <= :endDate', { endDate: dateRanges.endDate })
-        .andWhere('solicitud.direccion IS NOT NULL')
-        .groupBy('solicitud.direccion');
+        .andWhere('solicitud.latitud IS NOT NULL')
+        .andWhere('solicitud.longitud IS NOT NULL')
+        .groupBy('solicitud.latitud, solicitud.longitud');
       
       this.applySolicitudFilters(qb, filters);
       const result = await qb.getRawMany();
 
-      logger.info(`📍 Geocoding ${result.length} unique addresses for heatmap`);
+      logger.info(`📍 Heatmap: Found ${result.length} unique locations with geocoded coordinates`);
 
-      const points: HeatmapPoint[] = [];
-      
-      // Geocodificar cada dirección única
-      // NOTA: Esto puede ser lento si hay muchas direcciones únicas
-      // En producción considerar geocodificar en background o usar cache persistente
-      for (const row of result) {
-        const direccion = row.direccion;
-        const count = parseInt(row.count);
-        
-        if (direccion) {
-          const coords = await GeocodingService.geocode(direccion);
-          points.push({
-            lat: coords.lat,
-            lon: coords.lon,
-            intensity: count
-          });
-        }
-      }
-
-      logger.info(`✅ Heatmap generated with ${points.length} points`);
+      const points: HeatmapPoint[] = result.map(row => ({
+        lat: parseFloat(row.latitud),
+        lon: parseFloat(row.longitud),
+        intensity: parseInt(row.count)
+      }));
 
       const response: HeatmapResponse = {
         data: points,
