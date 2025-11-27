@@ -20,28 +20,44 @@ export class DateRangeService {
 
     switch (periodType.type) {
       case 'hoy':
-        // Usar componentes de fecha Argentina (no UTC del servidor)
-        const today = new Date(nowArgentina.getFullYear(), nowArgentina.getMonth(), nowArgentina.getDate());
-        startDate = today;
-        endDate = new Date(nowArgentina.getFullYear(), nowArgentina.getMonth(), nowArgentina.getDate(), 23, 59, 59, 999);
+        // Obtener componentes del día en Argentina y construir fechas en UTC ajustadas
+        // "Hoy" en Argentina = de 00:00 a 23:59 Argentina = de 03:00 UTC a 02:59 UTC (día siguiente)
+        const year = nowArgentina.getFullYear();
+        const month = nowArgentina.getMonth();
+        const day = nowArgentina.getDate();
+        
+        startDate = new Date(Date.UTC(year, month, day, 3, 0, 0, 0)); // 00:00 Argentina = 03:00 UTC
+        endDate = new Date(Date.UTC(year, month, day + 1, 2, 59, 59, 999)); // 23:59 Argentina = 02:59 UTC (día siguiente)
         break;
 
       case 'ultimos_7_dias':
-        // Calcular en timezone Argentina
-        endDate = new Date(nowArgentina.getFullYear(), nowArgentina.getMonth(), nowArgentina.getDate(), 23, 59, 59, 999);
-        startDate = new Date(nowArgentina.getFullYear(), nowArgentina.getMonth(), nowArgentina.getDate() - 6, 0, 0, 0, 0);
+        // Calcular en timezone Argentina y ajustar a UTC
+        const endYear7 = nowArgentina.getFullYear();
+        const endMonth7 = nowArgentina.getMonth();
+        const endDay7 = nowArgentina.getDate();
+        
+        endDate = new Date(Date.UTC(endYear7, endMonth7, endDay7 + 1, 2, 59, 59, 999)); // Fin del día hoy en Argentina
+        startDate = new Date(Date.UTC(endYear7, endMonth7, endDay7 - 6, 3, 0, 0, 0)); // Inicio hace 6 días
         break;
 
       case 'ultimos_30_dias':
-        // Calcular en timezone Argentina
-        endDate = new Date(nowArgentina.getFullYear(), nowArgentina.getMonth(), nowArgentina.getDate(), 23, 59, 59, 999);
-        startDate = new Date(nowArgentina.getFullYear(), nowArgentina.getMonth(), nowArgentina.getDate() - 29, 0, 0, 0, 0);
+        // Calcular en timezone Argentina y ajustar a UTC
+        const endYear30 = nowArgentina.getFullYear();
+        const endMonth30 = nowArgentina.getMonth();
+        const endDay30 = nowArgentina.getDate();
+        
+        endDate = new Date(Date.UTC(endYear30, endMonth30, endDay30 + 1, 2, 59, 59, 999)); // Fin del día hoy en Argentina
+        startDate = new Date(Date.UTC(endYear30, endMonth30, endDay30 - 29, 3, 0, 0, 0)); // Inicio hace 29 días
         break;
 
       case 'ultimo_ano':
-        // Calcular en timezone Argentina
-        endDate = new Date(nowArgentina.getFullYear(), nowArgentina.getMonth(), nowArgentina.getDate(), 23, 59, 59, 999);
-        startDate = new Date(nowArgentina.getFullYear() - 1, nowArgentina.getMonth(), nowArgentina.getDate(), 0, 0, 0, 0);
+        // Calcular en timezone Argentina y ajustar a UTC
+        const endYearAno = nowArgentina.getFullYear();
+        const endMonthAno = nowArgentina.getMonth();
+        const endDayAno = nowArgentina.getDate();
+        
+        endDate = new Date(Date.UTC(endYearAno, endMonthAno, endDayAno + 1, 2, 59, 59, 999)); // Fin del día hoy en Argentina
+        startDate = new Date(Date.UTC(endYearAno - 1, endMonthAno, endDayAno, 3, 0, 0, 0)); // Inicio hace 1 año
         break;
 
       case 'personalizado':
