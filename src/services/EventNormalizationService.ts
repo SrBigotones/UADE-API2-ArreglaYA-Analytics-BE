@@ -253,59 +253,30 @@ export class EventNormalizationService {
     // Detectar si es evento de prestador asignado
     const esPrestadorAsignado = evento.includes('prestadorasignado') || evento.includes('asignado');
 
-    // Extraer zona de diferentes estructuras posibles
-    let zona = null;
-    if (payload.direccion) {
-      // direccion puede ser objeto (con ciudad/provincia) o string
-      if (typeof payload.direccion === 'object') {
-        zona = payload.direccion.ciudad || payload.direccion.provincia;
-      } else if (typeof payload.direccion === 'string') {
-        zona = payload.direccion; // Usar el string directamente
-      }
-    } else {
-      zona = payload.zona || payload.location || payload.ciudad || payload.provincia;
+    // DIRECCIÓN: Extraer objeto completo de dirección para geocodificación posterior
+    let direccion = null;
+    if (payload.direccion && typeof payload.direccion === 'object') {
+      direccion = {
+        calle: payload.direccion.calle || null,
+        numero: payload.direccion.numero || null,
+        piso: payload.direccion.piso || null,
+        depto: payload.direccion.depto || null,
+        ciudad: payload.direccion.ciudad || null,
+        provincia: payload.direccion.provincia || null,
+        codigo_postal: payload.direccion.codigo_postal || null,
+        referencia: payload.direccion.referencia || null,
+      };
     }
+
+    // ZONA REMOVIDA: No extraemos ni normalizamos zona
+    const zona = null;
 
     const esCritica = payload.urgency === 'high' || 
                       payload.es_critica === true || 
                       payload.critica === true ||
                       payload.es_urgente === true;
 
-    // NORMALIZACIÓN DE ZONA: intentar matchear con catálogo
-    if (zona) {
-      const zonaRepo = AppDataSource.getRepository(Zona);
-      
-      // Buscar zona por nombre (case-insensitive, trim espacios)
-      const zonaNormalizada = zona.trim();
-      const zonaMatch = await zonaRepo
-        .createQueryBuilder('z')
-        .where('LOWER(z.nombre_zona) = LOWER(:zona)', { zona: zonaNormalizada })
-        .getOne();
-      
-      if (zonaMatch) {
-        zona = zonaMatch.nombre_zona;
-        logger.debug(`✅ Zona normalizada: "${zonaNormalizada}" -> "${zonaMatch.nombre_zona}"`);
-      } else {
-        logger.warn(`⚠️ Zona "${zonaNormalizada}" no encontrada en catálogo. Usando valor original.`);
-      }
-    }
-
-    // Si no viene zona pero hay prestador asignado, intentar inferir del prestador
-    if (!zona && idPrestador) {
-      const zonaRepo = AppDataSource.getRepository(Zona);
-      const prestadorZona = await zonaRepo
-        .createQueryBuilder('z')
-        .where('z.id_usuario = :idPrestador', { idPrestador })
-        .andWhere('z.activa = true')
-        .getOne();
-      
-      if (prestadorZona) {
-        zona = prestadorZona.nombre_zona;
-        logger.debug(`📍 Zona inferida del prestador ${idPrestador}: ${zona}`);
-      }
-    }
-
-    logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado} | zona: ${zona || 'NULL'} | habilidad: ${idHabilidad || 'NULL'} | prestador_asignado: ${esPrestadorAsignado}`);
+    logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado} | direccion: ${direccion ? 'YES' : 'NULL'} | habilidad: ${idHabilidad || 'NULL'} | prestador_asignado: ${esPrestadorAsignado}`);
 
     await solicitudRepo.upsert(
       {
@@ -315,6 +286,7 @@ export class EventNormalizationService {
         id_habilidad: idHabilidad || null,
         estado: estado,
         zona: zona || null,
+        direccion: direccion || null,
         es_critica: esCritica || false,
         prestador_asignado: esPrestadorAsignado || !!idPrestador, // true si es evento de asignación O si viene id_prestador
       },

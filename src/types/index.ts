@@ -115,6 +115,7 @@ export interface HeatmapResponse {
     startDate: string;
     endDate: string;
   };
+  message?: string;
 }
 
 export interface ProviderZoneData {
@@ -138,7 +139,7 @@ export interface ProviderZonesResponse {
 // Filtros de segmentación para métricas
 export interface SegmentationFilters {
   rubro?: string | number;
-  zona?: string;
+  zona?: string; // NOTA: Solo válido para prestadores y pagos. NO usar en solicitudes.
   metodo?: string;
   tipoSolicitud?: 'abierta' | 'dirigida';
   minMonto?: number;

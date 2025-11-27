@@ -30,6 +30,18 @@ export class Solicitud {
   @Column({ type: 'varchar', length: 100, nullable: true })
   zona: string | null;
 
+  @Column({ type: 'jsonb', nullable: true })
+  direccion: {
+    calle?: string;
+    numero?: string;
+    piso?: string;
+    depto?: string;
+    ciudad?: string;
+    provincia?: string;
+    codigo_postal?: string;
+    referencia?: string;
+  } | null;
+
   @Column({ type: 'timestamptz', nullable: true, name: 'fecha_confirmacion' })
   fecha_confirmacion: Date | null;
 
