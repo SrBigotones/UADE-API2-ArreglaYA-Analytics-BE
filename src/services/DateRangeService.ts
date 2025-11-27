@@ -64,13 +64,14 @@ export class DateRangeService {
         if (!periodType.startDate || !periodType.endDate) {
           throw new Error('Fechas de inicio y fin son requeridas para período personalizado');
         }
-        // Crear fechas desde strings "YYYY-MM-DD" en timezone local
-        // El frontend envía fechas sin timezone, las interpretamos como locales
+        // Crear fechas desde strings "YYYY-MM-DD" en timezone Argentina
+        // El frontend envía fechas sin timezone (ej: "2025-11-26"), las interpretamos como Argentina
+        // "26 Nov 00:00 Argentina" = "26 Nov 03:00 UTC"
         const [startYear, startMonth, startDay] = periodType.startDate.split('-').map(Number);
         const [endYear, endMonth, endDay] = periodType.endDate.split('-').map(Number);
         
-        startDate = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
-        endDate = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
+        startDate = new Date(Date.UTC(startYear, startMonth - 1, startDay, 3, 0, 0, 0)); // 00:00 Argentina = 03:00 UTC
+        endDate = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 2, 59, 59, 999)); // 23:59 Argentina = 02:59 UTC (día siguiente)
         break;
 
       default:
