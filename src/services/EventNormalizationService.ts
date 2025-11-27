@@ -277,7 +277,7 @@ export class EventNormalizationService {
                       payload.critica === true ||
                       payload.es_urgente === true;
 
-    // GEOCODIFICACIÓN: Si hay dirección, geocodificarla
+    // GEOCODIFICACIÓN: Si hay dirección, geocodificarla (opcional, no bloquea si falla)
     let latitud: number | null = null;
     let longitud: number | null = null;
     
@@ -291,13 +291,16 @@ export class EventNormalizationService {
           longitud = coords.lon;
           logger.info(`✅ Geocoded solicitud ${idSolicitud}: [${latitud}, ${longitud}]`);
         } else {
-          logger.warn(`⚠️ Failed to geocode solicitud ${idSolicitud}, using default coords`);
-          latitud = coords.lat; // Coordenadas por defecto de Buenos Aires
-          longitud = coords.lon;
+          // No usar coordenadas por defecto, dejar NULL
+          logger.warn(`⚠️ Failed to geocode solicitud ${idSolicitud}, saving without coordinates`);
+          latitud = null;
+          longitud = null;
         }
       } catch (error) {
         logger.error(`❌ Error geocoding solicitud ${idSolicitud}:`, error);
         // Continuar sin coordenadas en caso de error
+        latitud = null;
+        longitud = null;
       }
     }
 

@@ -25,20 +25,20 @@ interface GeocodingResult {
  * Implementa un semáforo simple con variable global para controlar el rate limiting
  */
 export class GeocodingService {
-  private static readonly NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+  // PHOTON: Servicio público de geocodificación basado en OpenStreetMap
+  // Más permisivo que Nominatim, no requiere API key
+  private static readonly PHOTON_URL = 'https://photon.komoot.io/api/';
   private static readonly DEFAULT_COORDS = { lat: -34.6037, lon: -58.3816 }; // Buenos Aires centro
-  private static readonly TIMEOUT_MS = 3000; // 3 segundos timeout
-  private static readonly MIN_DELAY_MS = 1100; // 1.1 segundos entre requests (margin de seguridad)
+  private static readonly TIMEOUT_MS = 5000; // 5 segundos timeout
+  private static readonly MIN_DELAY_MS = 500; // 500ms entre requests (Photon es más permisivo)
   
   /**
    * SEMÁFORO GLOBAL: Timestamp de la última geocodificación exitosa
-   * Usado para asegurar que respetamos el rate limit de Nominatim (1 req/seg)
    */
   private static lastGeocodingTimestamp: number = 0;
   
   /**
-   * Cache simple en memoria para evitar geocodificar la misma dirección múltiples veces
-   * En producción esto debería estar en Redis o similar
+   * Cache simple en memoria
    */
   private static cache: Map<string, GeocodingResult> = new Map();
 
@@ -137,16 +137,12 @@ export class GeocodingService {
       // SEMÁFORO: Esperar el tiempo necesario antes de hacer el request
       await this.waitForRateLimit();
       
-      const response = await axios.get(this.NOMINATIM_URL, {
+      // PHOTON API: Diferente formato de parámetros que Nominatim
+      const response = await axios.get(this.PHOTON_URL, {
         params: {
           q: addressString,
-          format: 'json',
-          limit: 1,
-          countrycodes: 'ar', // Limitar a Argentina
-          addressdetails: 1,   // Obtener detalles de la dirección
-        },
-        headers: {
-          'User-Agent': 'ArreglaYA-Analytics/1.0'
+          limit: 1
+          // Photon no soporta 'es', solo: default, en, de, fr
         },
         timeout: this.TIMEOUT_MS
       });
@@ -154,18 +150,20 @@ export class GeocodingService {
       // SEMÁFORO: Actualizar timestamp después del request exitoso
       this.updateRateLimitSemaphore();
 
-      if (response.data && response.data.length > 0) {
-        const result = response.data[0];
+      // Photon devuelve GeoJSON
+      if (response.data && response.data.features && response.data.features.length > 0) {
+        const result = response.data.features[0];
         const coords: GeocodingResult = {
-          lat: parseFloat(result.lat),
-          lon: parseFloat(result.lon),
+          lat: result.geometry.coordinates[1], // GeoJSON: [lon, lat]
+          lon: result.geometry.coordinates[0],
           success: true
         };
         
         // Guardar en cache
         this.cache.set(addressString, coords);
         
-        logger.info(`✅ Geocoded: "${addressString}" → [${coords.lat}, ${coords.lon}] (${result.display_name})`);
+        const displayName = result.properties.name || result.properties.street || 'Unknown';
+        logger.info(`✅ Geocoded: "${addressString}" → [${coords.lat}, ${coords.lon}] (${displayName})`);
         return coords;
       } else {
         logger.warn(`⚠️ No geocoding results for: "${addressString}", using default Buenos Aires coords`);
@@ -175,7 +173,18 @@ export class GeocodingService {
         return defaultResult;
       }
     } catch (error) {
-      logger.error(`❌ Geocoding error for "${addressString}":`, error instanceof Error ? error.message : error);
+      // Log detallado del error para debugging
+      if (axios.isAxiosError(error)) {
+        logger.error(`❌ Geocoding HTTP error for "${addressString}":`, {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          message: error.message,
+          code: error.code
+        });
+      } else {
+        logger.error(`❌ Geocoding error for "${addressString}":`, error instanceof Error ? error.message : error);
+      }
+      
       const defaultResult = { ...this.DEFAULT_COORDS, success: false };
       return defaultResult;
     }
