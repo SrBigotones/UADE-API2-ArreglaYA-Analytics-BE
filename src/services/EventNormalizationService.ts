@@ -153,15 +153,16 @@ export class EventNormalizationService {
 
     // Caso especial: Usuario dado de baja
     if (evento.includes('deactivated') || evento.includes('baja')) {
-      const currentTimestamp = new Date();
+      // Usar el timestamp del evento, no el momento del procesamiento
+      const eventTimestamp = new Date(event.timestamp);
       await usuarioRepo.update(
         { id_usuario: idUsuario },
         { 
           estado: 'baja', 
-          fecha_baja: currentTimestamp  // ✅ Registrar fecha de baja
+          fecha_baja: eventTimestamp  // ✅ Registrar fecha de baja desde el evento
         }
       );
-      logger.info(`✅ Usuario ${idUsuario} marcado como BAJA en fecha ${currentTimestamp.toISOString()}`);
+      logger.info(`✅ Usuario ${idUsuario} marcado como BAJA en fecha ${eventTimestamp.toISOString()}`);
     } else {
       // Para eventos de creación/actualización, hacer upsert completo
       await usuarioRepo.upsert(
@@ -367,18 +368,18 @@ export class EventNormalizationService {
       return;
     }
 
-    // Actualizar solicitud con estado 'aceptada' y fecha_confirmacion
-    const currentTimestamp = new Date();
+    // Usar el timestamp del evento, no el momento del procesamiento
+    const eventTimestamp = new Date(event.timestamp);
     
     await solicitudRepo.update(
       { id_solicitud: idSolicitud },
       { 
         estado: 'aceptada',
-        fecha_confirmacion: currentTimestamp
+        fecha_confirmacion: eventTimestamp
       }
     );
 
-    logger.info(`✅ Solicitud ${idSolicitud} actualizada | estado: aceptada | fecha_confirmacion: ${currentTimestamp.toISOString()}`);
+    logger.info(`✅ Solicitud ${idSolicitud} actualizada | estado: aceptada | fecha_confirmacion: ${eventTimestamp.toISOString()}`);
   }
 
   /**
@@ -419,8 +420,8 @@ export class EventNormalizationService {
 
       logger.debug(`🔍 matching.pago.emitida - solicitud ${idSolicitud} - existing payment: ${existingPago ? `${existingPago.id_pago} (${existingPago.estado}, captured: ${!!existingPago.captured_at})` : 'none'}`);
 
-      // Usar timestamp actual en lugar del que viene en el evento
-      const currentTimestamp = new Date();
+      // Usar el timestamp del evento, no el momento del procesamiento
+      const eventTimestamp = new Date(event.timestamp);
       
       if (existingPago) {
         // Si ya existe un pago real de payments (con paymentId), no sobrescribir
@@ -434,7 +435,7 @@ export class EventNormalizationService {
               monto_total: montoTotal,
               moneda: moneda,
               metodo: metodo || existingPago.metodo,
-              timestamp_actual: currentTimestamp,
+              timestamp_actual: eventTimestamp,
             }
           );
           
@@ -546,11 +547,11 @@ export class EventNormalizationService {
       metodo = payload.method || payload.metodo || payload.paymentMethod || payload.metodoPago;
     }
 
-    // Usar timestamp actual en lugar del que viene en el evento
-    const currentTimestamp = new Date();
-    const timestampCreado = currentTimestamp;
+    // Usar el timestamp del evento, no el momento del procesamiento
+    const eventTimestamp = new Date(event.timestamp);
+    const timestampCreado = eventTimestamp;
 
-    // Para captured_at, usar updatedAt si existe (eventos status_updated), sino usar timestamp actual
+    // Para captured_at, usar updatedAt si existe (eventos status_updated), sino usar timestamp del evento
     // Solo establecer captured_at para pagos aprobados y si el estado es 'approved'
     let capturedAt = null;
     if (estado === 'approved') {
@@ -561,7 +562,7 @@ export class EventNormalizationService {
         // Crear fecha en UTC directamente (no usar new Date() que usa zona horaria local)
         capturedAt = new Date(Date.UTC(year, month - 1, day, hour, minute, second || 0));
       } else {
-        capturedAt = currentTimestamp;
+        capturedAt = eventTimestamp;
       }
     }
 
@@ -631,8 +632,8 @@ export class EventNormalizationService {
       // Si el pago existente no tiene userId pero el evento sí, actualizarlo
       const finalUserId = existingPago.id_usuario || idUsuario || null;
       
-      // Usar timestamp actual en lugar del que viene en el evento
-      const currentTimestamp = new Date();
+      // Usar el timestamp del evento, no el momento del procesamiento
+      const eventTimestamp = new Date(event.timestamp);
       
       // Para captured_at: si el nuevo estado es approved, establecerlo; sino preservar el existente
       const finalCapturedAt = estado === 'approved' 
@@ -650,7 +651,7 @@ export class EventNormalizationService {
           metodo: metodo || existingPago.metodo,
           estado: finalEstado,
           timestamp_creado: existingPago.timestamp_creado,
-          timestamp_actual: currentTimestamp,
+          timestamp_actual: eventTimestamp,
           captured_at: finalCapturedAt,
           refund_id: refundId || existingPago.refund_id,
         },
@@ -668,8 +669,8 @@ export class EventNormalizationService {
       // Si es method_selected y no existe el pago, usar estado pending por defecto
       const finalEstado = estado !== null ? estado : 'pending';
       
-      // Usar timestamp actual en lugar del que viene en el evento
-      const currentTimestamp = new Date();
+      // Usar el timestamp del evento, no el momento del procesamiento
+      const eventTimestamp = new Date(event.timestamp);
       
       logger.info(`💾 Creating pago | id: ${idPago} | usuario: ${idUsuario || 'NULL'} | estado: ${finalEstado} | evento: ${evento}`);
       await pagoRepo.upsert(
@@ -682,8 +683,8 @@ export class EventNormalizationService {
           moneda: moneda,
           metodo: metodo || null,
           estado: finalEstado,
-          timestamp_creado: currentTimestamp,
-          timestamp_actual: currentTimestamp,
+          timestamp_creado: eventTimestamp,
+          timestamp_actual: eventTimestamp,
           captured_at: capturedAt,
           refund_id: refundId,
         },
@@ -733,8 +734,8 @@ export class EventNormalizationService {
 
     logger.info(`💾 Saving prestador | id: ${idPrestador} | estado: ${estado}`);
 
-    // Usar timestamp actual en lugar del que viene en el evento
-    const currentTimestamp = new Date();
+    // Usar el timestamp del evento, no el momento del procesamiento
+    const eventTimestamp = new Date(event.timestamp);
     
     await prestadorRepo.upsert(
       {
@@ -742,7 +743,7 @@ export class EventNormalizationService {
         nombre: nombre,
         apellido: apellido,
         estado: estado,
-        timestamp: currentTimestamp,
+        timestamp: eventTimestamp,
         perfil_completo: perfilCompleto,
       },
       ['id_prestador'] // Conflict target: unique constraint en id_prestador
