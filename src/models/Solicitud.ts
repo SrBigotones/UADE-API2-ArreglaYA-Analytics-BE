@@ -42,6 +42,12 @@ export class Solicitud {
     referencia?: string;
   } | null;
 
+  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+  latitud: number | null;
+
+  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+  longitud: number | null;
+
   @Column({ type: 'timestamptz', nullable: true, name: 'fecha_confirmacion' })
   fecha_confirmacion: Date | null;
 

@@ -8,6 +8,7 @@ import { Zona } from '../models/Zona';
 import { Pago } from '../models/Pago';
 import { Prestador } from '../models/Prestador';
 import { Rubro } from '../models/Rubro';
+import { GeocodingService } from './GeocodingService';
 import { logger } from '../config/logger';
 
 /**
@@ -276,7 +277,31 @@ export class EventNormalizationService {
                       payload.critica === true ||
                       payload.es_urgente === true;
 
-    logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado} | direccion: ${direccion ? 'YES' : 'NULL'} | habilidad: ${idHabilidad || 'NULL'} | prestador_asignado: ${esPrestadorAsignado}`);
+    // GEOCODIFICACIÓN: Si hay dirección, geocodificarla
+    let latitud: number | null = null;
+    let longitud: number | null = null;
+    
+    if (direccion) {
+      try {
+        logger.debug(`🗺️ Geocoding address for solicitud ${idSolicitud}`);
+        const coords = await GeocodingService.geocode(direccion);
+        
+        if (coords.success) {
+          latitud = coords.lat;
+          longitud = coords.lon;
+          logger.info(`✅ Geocoded solicitud ${idSolicitud}: [${latitud}, ${longitud}]`);
+        } else {
+          logger.warn(`⚠️ Failed to geocode solicitud ${idSolicitud}, using default coords`);
+          latitud = coords.lat; // Coordenadas por defecto de Buenos Aires
+          longitud = coords.lon;
+        }
+      } catch (error) {
+        logger.error(`❌ Error geocoding solicitud ${idSolicitud}:`, error);
+        // Continuar sin coordenadas en caso de error
+      }
+    }
+
+    logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado} | direccion: ${direccion ? 'YES' : 'NULL'} | coords: ${latitud && longitud ? `[${latitud}, ${longitud}]` : 'NULL'} | habilidad: ${idHabilidad || 'NULL'} | prestador_asignado: ${esPrestadorAsignado}`);
 
     await solicitudRepo.upsert(
       {
@@ -287,6 +312,8 @@ export class EventNormalizationService {
         estado: estado,
         zona: zona || null,
         direccion: direccion || null,
+        latitud: latitud,
+        longitud: longitud,
         es_critica: esCritica || false,
         prestador_asignado: esPrestadorAsignado || !!idPrestador, // true si es evento de asignación O si viene id_prestador
       },
