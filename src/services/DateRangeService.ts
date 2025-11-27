@@ -5,36 +5,43 @@ export class DateRangeService {
    * Convierte un tipo de período en filtros de fecha con comparación
    * @param periodType - Tipo de período seleccionado
    * @returns Objeto con rangos de fecha actuales y anteriores
+   * 
+   * IMPORTANTE: El servidor Lambda está en UTC, pero queremos calcular
+   * las fechas según el timezone de Argentina (UTC-3). Por eso restamos
+   * 3 horas al timestamp actual antes de extraer año/mes/día.
    */
   public static getPeriodRanges(periodType: PeriodType): DateRangeFilter {
-    const now = new Date();
+    // Obtener fecha actual en timezone Argentina (UTC-3)
+    const nowUTC = new Date();
+    const nowArgentina = new Date(nowUTC.getTime() - (3 * 60 * 60 * 1000)); // Restar 3 horas
+    
     let startDate: Date;
     let endDate: Date;
 
     switch (periodType.type) {
       case 'hoy':
-        // Obtener fecha actual en timezone local (interpretado por PostgreSQL según su configuración)
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        // Usar componentes de fecha Argentina (no UTC del servidor)
+        const today = new Date(nowArgentina.getFullYear(), nowArgentina.getMonth(), nowArgentina.getDate());
         startDate = today;
-        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        endDate = new Date(nowArgentina.getFullYear(), nowArgentina.getMonth(), nowArgentina.getDate(), 23, 59, 59, 999);
         break;
 
       case 'ultimos_7_dias':
-        // Calcular en timezone local
-        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0);
+        // Calcular en timezone Argentina
+        endDate = new Date(nowArgentina.getFullYear(), nowArgentina.getMonth(), nowArgentina.getDate(), 23, 59, 59, 999);
+        startDate = new Date(nowArgentina.getFullYear(), nowArgentina.getMonth(), nowArgentina.getDate() - 6, 0, 0, 0, 0);
         break;
 
       case 'ultimos_30_dias':
-        // Calcular en timezone local
-        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29, 0, 0, 0, 0);
+        // Calcular en timezone Argentina
+        endDate = new Date(nowArgentina.getFullYear(), nowArgentina.getMonth(), nowArgentina.getDate(), 23, 59, 59, 999);
+        startDate = new Date(nowArgentina.getFullYear(), nowArgentina.getMonth(), nowArgentina.getDate() - 29, 0, 0, 0, 0);
         break;
 
       case 'ultimo_ano':
-        // Calcular en timezone local
-        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-        startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        // Calcular en timezone Argentina
+        endDate = new Date(nowArgentina.getFullYear(), nowArgentina.getMonth(), nowArgentina.getDate(), 23, 59, 59, 999);
+        startDate = new Date(nowArgentina.getFullYear() - 1, nowArgentina.getMonth(), nowArgentina.getDate(), 0, 0, 0, 0);
         break;
 
       case 'personalizado':
