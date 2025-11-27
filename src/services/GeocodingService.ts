@@ -66,21 +66,43 @@ export class GeocodingService {
 
   /**
    * Construye una dirección legible desde el objeto de dirección
+   * Optimizado para Nominatim Argentina
    */
   private static buildAddressString(direccion: DireccionData): string {
     const parts: string[] = [];
     
-    if (direccion.calle) {
+    // Calle + Número (lo más importante)
+    if (direccion.calle && direccion.numero) {
+      parts.push(`${direccion.calle} ${direccion.numero}`);
+    } else if (direccion.calle) {
       parts.push(direccion.calle);
     }
-    if (direccion.numero) {
-      parts.push(direccion.numero);
-    }
+    
+    // Ciudad/Localidad
     if (direccion.ciudad) {
-      parts.push(direccion.ciudad);
+      // Normalizar "Caba" a "Buenos Aires" o "Ciudad Autónoma de Buenos Aires"
+      const ciudad = direccion.ciudad.toLowerCase();
+      if (ciudad === 'caba' || ciudad === 'capital federal') {
+        parts.push('Buenos Aires');
+      } else {
+        parts.push(direccion.ciudad);
+      }
     }
+    
+    // Provincia (solo si no es CABA)
     if (direccion.provincia) {
-      parts.push(direccion.provincia);
+      const provincia = direccion.provincia.toLowerCase();
+      // Normalizar abreviaturas comunes
+      if (provincia === 'pch' || provincia === 'bsas' || provincia === 'ba') {
+        parts.push('Buenos Aires');
+      } else if (provincia !== 'caba' && provincia !== 'capital federal') {
+        parts.push(direccion.provincia);
+      }
+    }
+    
+    // Código postal (puede ayudar a afinar)
+    if (direccion.codigo_postal) {
+      parts.push(direccion.codigo_postal);
     }
     
     // Siempre agregar "Argentina" para mejorar precisión
@@ -121,6 +143,7 @@ export class GeocodingService {
           format: 'json',
           limit: 1,
           countrycodes: 'ar', // Limitar a Argentina
+          addressdetails: 1,   // Obtener detalles de la dirección
         },
         headers: {
           'User-Agent': 'ArreglaYA-Analytics/1.0'
@@ -142,15 +165,19 @@ export class GeocodingService {
         // Guardar en cache
         this.cache.set(addressString, coords);
         
-        logger.info(`✅ Geocoded: "${addressString}" -> [${coords.lat}, ${coords.lon}]`);
+        logger.info(`✅ Geocoded: "${addressString}" → [${coords.lat}, ${coords.lon}] (${result.display_name})`);
         return coords;
       } else {
-        logger.warn(`⚠️ No geocoding results for: ${addressString}, using default`);
-        return { ...this.DEFAULT_COORDS, success: false };
+        logger.warn(`⚠️ No geocoding results for: "${addressString}", using default Buenos Aires coords`);
+        const defaultResult = { ...this.DEFAULT_COORDS, success: false };
+        // También cachear los fallos para no reintentar
+        this.cache.set(addressString, defaultResult);
+        return defaultResult;
       }
     } catch (error) {
-      logger.error(`❌ Geocoding error for "${addressString}":`, error);
-      return { ...this.DEFAULT_COORDS, success: false };
+      logger.error(`❌ Geocoding error for "${addressString}":`, error instanceof Error ? error.message : error);
+      const defaultResult = { ...this.DEFAULT_COORDS, success: false };
+      return defaultResult;
     }
   }
 
