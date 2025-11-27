@@ -153,8 +153,8 @@ export class EventNormalizationService {
 
     // Caso especial: Usuario dado de baja
     if (evento.includes('deactivated') || evento.includes('baja')) {
-      // Usar el timestamp del evento, no el momento del procesamiento
-      const eventTimestamp = new Date(event.timestamp);
+      // Usar el timestamp del evento directamente (ya es un Date object de TypeORM)
+      const eventTimestamp = event.timestamp;
       await usuarioRepo.update(
         { id_usuario: idUsuario },
         { 
@@ -368,8 +368,8 @@ export class EventNormalizationService {
       return;
     }
 
-    // Usar el timestamp del evento, no el momento del procesamiento
-    const eventTimestamp = new Date(event.timestamp);
+    // Usar el timestamp del evento directamente (ya es un Date object de TypeORM)
+    const eventTimestamp = event.timestamp;
     
     await solicitudRepo.update(
       { id_solicitud: idSolicitud },
@@ -420,8 +420,8 @@ export class EventNormalizationService {
 
       logger.debug(`🔍 matching.pago.emitida - solicitud ${idSolicitud} - existing payment: ${existingPago ? `${existingPago.id_pago} (${existingPago.estado}, captured: ${!!existingPago.captured_at})` : 'none'}`);
 
-      // Usar el timestamp del evento, no el momento del procesamiento
-      const eventTimestamp = new Date(event.timestamp);
+      // Usar el timestamp del evento directamente (ya es un Date object de TypeORM)
+      const eventTimestamp = event.timestamp;
       
       if (existingPago) {
         // Si ya existe un pago real de payments (con paymentId), no sobrescribir
@@ -461,8 +461,8 @@ export class EventNormalizationService {
             moneda: moneda,
             metodo: metodo,
             estado: 'pending',
-            timestamp_creado: currentTimestamp,
-            timestamp_actual: currentTimestamp,
+            timestamp_creado: eventTimestamp,
+            timestamp_actual: eventTimestamp,
             captured_at: null,
             refund_id: null,
           },
@@ -547,8 +547,8 @@ export class EventNormalizationService {
       metodo = payload.method || payload.metodo || payload.paymentMethod || payload.metodoPago;
     }
 
-    // Usar el timestamp del evento, no el momento del procesamiento
-    const eventTimestamp = new Date(event.timestamp);
+    // Usar el timestamp del evento directamente (ya es un Date object de TypeORM)
+    const eventTimestamp = event.timestamp;
     const timestampCreado = eventTimestamp;
 
     // Para captured_at, usar updatedAt si existe (eventos status_updated), sino usar timestamp del evento
@@ -632,8 +632,8 @@ export class EventNormalizationService {
       // Si el pago existente no tiene userId pero el evento sí, actualizarlo
       const finalUserId = existingPago.id_usuario || idUsuario || null;
       
-      // Usar el timestamp del evento, no el momento del procesamiento
-      const eventTimestamp = new Date(event.timestamp);
+      // Usar el timestamp del evento directamente (ya es un Date object de TypeORM)
+      const eventTimestamp = event.timestamp;
       
       // Para captured_at: si el nuevo estado es approved, establecerlo; sino preservar el existente
       const finalCapturedAt = estado === 'approved' 
@@ -669,8 +669,8 @@ export class EventNormalizationService {
       // Si es method_selected y no existe el pago, usar estado pending por defecto
       const finalEstado = estado !== null ? estado : 'pending';
       
-      // Usar el timestamp del evento, no el momento del procesamiento
-      const eventTimestamp = new Date(event.timestamp);
+      // Usar el timestamp del evento directamente (ya es un Date object de TypeORM)
+      const eventTimestamp = event.timestamp;
       
       logger.info(`💾 Creating pago | id: ${idPago} | usuario: ${idUsuario || 'NULL'} | estado: ${finalEstado} | evento: ${evento}`);
       await pagoRepo.upsert(
@@ -734,8 +734,8 @@ export class EventNormalizationService {
 
     logger.info(`💾 Saving prestador | id: ${idPrestador} | estado: ${estado}`);
 
-    // Usar el timestamp del evento, no el momento del procesamiento
-    const eventTimestamp = new Date(event.timestamp);
+    // Usar el timestamp del evento directamente (ya es un Date object de TypeORM)
+    const eventTimestamp = event.timestamp;
     
     await prestadorRepo.upsert(
       {
