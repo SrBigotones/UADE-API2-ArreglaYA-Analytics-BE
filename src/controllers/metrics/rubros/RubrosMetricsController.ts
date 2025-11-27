@@ -139,7 +139,7 @@ export class RubrosMetricsController extends BaseMetricsCalculator {
     // Traer todos los pagos aprobados con su rubro, agrupando por pago y rubro
     const pagos = await AppDataSource
       .createQueryBuilder()
-      .select('DISTINCT pago.id_pago', 'id_pago')
+      .select('pago.id_pago', 'id_pago')
       .addSelect('pago.monto_total', 'monto_total')
       .addSelect('rubro.id_rubro', 'id_rubro')
       .addSelect('rubro.nombre_rubro', 'nombre_rubro')
@@ -159,15 +159,27 @@ export class RubrosMetricsController extends BaseMetricsCalculator {
       .getRawMany();
 
     // Agrupar en JS para sumar solo una vez cada pago por rubro
-    const rubroMap = new Map<number, { id_rubro: number; nombre_rubro: string; ingresos: number }>();
+    const pagosUnicos = new Map<string, { id_pago: string, id_rubro: number, nombre_rubro: string, monto_total: number }>();
     for (const row of pagos) {
-      const id_rubro = parseInt(row.id_rubro);
-      const nombre_rubro = row.nombre_rubro;
-      const monto = parseFloat(row.monto_total);
-      if (!rubroMap.has(id_rubro)) {
-        rubroMap.set(id_rubro, { id_rubro, nombre_rubro, ingresos: 0 });
+      if (!row.id_pago || !row.id_rubro || !row.nombre_rubro || !row.monto_total) continue;
+      const key = `${row.id_pago}-${row.id_rubro}`;
+      if (!pagosUnicos.has(key)) {
+        pagosUnicos.set(key, {
+          id_pago: row.id_pago,
+          id_rubro: parseInt(row.id_rubro),
+          nombre_rubro: row.nombre_rubro,
+          monto_total: parseFloat(row.monto_total)
+        });
       }
-      rubroMap.get(id_rubro)!.ingresos += monto;
+    }
+
+    // Sumar ingresos por rubro
+    const rubroMap = new Map<number, { id_rubro: number; nombre_rubro: string; ingresos: number }>();
+    for (const pago of pagosUnicos.values()) {
+      if (!rubroMap.has(pago.id_rubro)) {
+        rubroMap.set(pago.id_rubro, { id_rubro: pago.id_rubro, nombre_rubro: pago.nombre_rubro, ingresos: 0 });
+      }
+      rubroMap.get(pago.id_rubro)!.ingresos += pago.monto_total;
     }
 
     return Array.from(rubroMap.values()).map(r => ({
