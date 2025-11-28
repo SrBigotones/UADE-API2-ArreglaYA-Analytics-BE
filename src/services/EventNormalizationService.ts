@@ -307,24 +307,41 @@ export class EventNormalizationService {
 
     logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado} | direccion: ${direccion ? 'YES' : 'NULL'} | coords: ${latitud && longitud ? `[${latitud}, ${longitud}]` : 'NULL'} | habilidad: ${idHabilidad || 'NULL'} | prestador_asignado: ${esPrestadorAsignado}`);
 
-    await solicitudRepo.upsert(
-      {
+    // Leer la solicitud existente para evitar sobreescribir campos cuando el payload los omite
+    const solicitudExistente = await solicitudRepo.findOne({ where: { id_solicitud: idSolicitud } });
+
+    // Si el evento indica cancelación, SOLO actualizar estado y prestador_asignado
+    // para no borrar id_prestador ni otros campos que no vienen en el payload
+    if (estado === 'cancelada') {
+      await solicitudRepo.update(
+        { id_solicitud: idSolicitud },
+        {
+          estado: 'cancelada',
+          prestador_asignado: false,
+        }
+      );
+
+      logger.info(`✅ Solicitud ${idSolicitud} marcada como cancelada (preservando campos existentes)`);
+    } else {
+      // Construir objeto mergeado: si el payload no provee un campo, conservar el existente
+      const merged = {
         id_solicitud: idSolicitud,
         id_usuario: idUsuario,
-        id_prestador: idPrestador || null,
-        id_habilidad: idHabilidad || null,
+        id_prestador: idPrestador !== undefined && idPrestador !== null ? idPrestador : (solicitudExistente ? solicitudExistente.id_prestador : null),
+        id_habilidad: idHabilidad !== undefined && idHabilidad !== null ? idHabilidad : (solicitudExistente ? solicitudExistente.id_habilidad : null),
         estado: estado,
-        zona: zona || null,
-        direccion: direccion || null,
-        latitud: latitud,
-        longitud: longitud,
-        es_critica: esCritica || false,
-        prestador_asignado: esPrestadorAsignado || !!idPrestador, // true si es evento de asignación O si viene id_prestador
-      },
-      ['id_solicitud'] // Conflict target: unique constraint en id_solicitud
-    );
+        zona: zona || (solicitudExistente ? solicitudExistente.zona : null),
+        direccion: direccion !== null && direccion !== undefined ? direccion : (solicitudExistente ? solicitudExistente.direccion : null),
+        latitud: latitud !== undefined && latitud !== null ? latitud : (solicitudExistente ? solicitudExistente.latitud : null),
+        longitud: longitud !== undefined && longitud !== null ? longitud : (solicitudExistente ? solicitudExistente.longitud : null),
+        es_critica: esCritica || (solicitudExistente ? !!solicitudExistente.es_critica : false),
+        prestador_asignado: esPrestadorAsignado || !!(idPrestador || (solicitudExistente ? solicitudExistente.id_prestador : null)),
+        fecha_confirmacion: solicitudExistente ? solicitudExistente.fecha_confirmacion : null,
+      } as any;
 
-    logger.info(`✅ Solicitud ${idSolicitud} saved`);
+      await solicitudRepo.upsert(merged, ['id_solicitud']);
+      logger.info(`✅ Solicitud ${idSolicitud} saved/merged`);
+    }
   }
 
   /**
