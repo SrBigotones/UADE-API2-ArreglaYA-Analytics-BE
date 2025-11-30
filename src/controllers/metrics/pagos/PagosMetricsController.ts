@@ -137,12 +137,14 @@ export class PagosMetricsController extends BaseMetricsCalculator {
 
       const aprobados = await this.countPagosByEstado('approved', dateRanges.startDate, dateRanges.endDate, filters);
       const rechazados = await this.countPagosByEstado('rejected', dateRanges.startDate, dateRanges.endDate, filters);
-      const total = aprobados + rechazados;
+      const expirados = await this.countPagosByEstado('expired', dateRanges.startDate, dateRanges.endDate, filters);
+      const total = aprobados + rechazados + expirados;
       const currentRate = total > 0 ? (aprobados / total) * 100 : 0;
 
       const prevAprobados = await this.countPagosByEstado('approved', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
       const prevRechazados = await this.countPagosByEstado('rejected', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
-      const prevTotal = prevAprobados + prevRechazados;
+      const prevExpirados = await this.countPagosByEstado('expired', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
+      const prevTotal = prevAprobados + prevRechazados + prevExpirados;
       const previousRate = prevTotal > 0 ? (prevAprobados / prevTotal) * 100 : 0;
 
       const metric = await this.calculateMetricWithChart(
@@ -153,7 +155,8 @@ export class PagosMetricsController extends BaseMetricsCalculator {
         async (start: Date, end: Date) => {
           const aprobadosInt = await this.countPagosByEstado('approved', start, end, filters);
           const rechazadosInt = await this.countPagosByEstado('rejected', start, end, filters);
-          const totalInt = aprobadosInt + rechazadosInt;
+          const expiradosInt = await this.countPagosByEstado('expired', start, end, filters);
+          const totalInt = aprobadosInt + rechazadosInt + expiradosInt;
           const rate = totalInt > 0 ? (aprobadosInt / totalInt) * 100 : 0;
           return this.roundPercentage(rate);
         },
