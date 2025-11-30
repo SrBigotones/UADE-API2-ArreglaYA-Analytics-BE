@@ -124,9 +124,14 @@ export class BaseMetricsCalculator {
     switch (periodType.type) {
       case 'hoy':
         // Por hora (24 puntos)
+        // IMPORTANTE: Las fechas están en UTC, pero queremos mostrar hora de Argentina (UTC-3)
         current = new Date(dateRanges.startDate);
         intervalDuration = 60 * 60 * 1000; // 1 hora en milisegundos
-        formatLabel = (d) => `${d.getHours().toString().padStart(2, '0')}:00`;
+        formatLabel = (d) => {
+          // Convertir UTC a hora de Argentina (restar 3 horas)
+          const horaArgentina = new Date(d.getTime() - (3 * 60 * 60 * 1000));
+          return `${horaArgentina.getUTCHours().toString().padStart(2, '0')}:00`;
+        };
         nextDate = (d) => {
           const next = new Date(d);
           next.setHours(next.getHours() + 1);
