@@ -115,8 +115,8 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
    * GET /api/metrica/matching/cotizaciones/conversion-aceptada
    * 4. Conversión a cotización aceptada (%)
    * 
-   * REIMPLEMENTADO: Ahora usa solicitudes con fecha_confirmacion
-   * Tasa = (solicitudes con fecha_confirmacion) / (solicitudes con fecha_confirmacion + rechazadas)
+   * REIMPLEMENTADO: Ahora usa estado directamente
+   * Tasa = (solicitudes con estado = 'aceptada') / (solicitudes con estado = 'aceptada' + estado = 'cancelada')
    */
   public async getConversionCotizacionAceptada(req: Request, res: Response): Promise<void> {
     try {
@@ -126,25 +126,25 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
 
       const repo = AppDataSource.getRepository(Solicitud);
       
-      // Solicitudes aceptadas = tienen fecha_confirmacion
+      // Solicitudes aceptadas = estado = 'aceptada'
       const qbAceptadas = repo
         .createQueryBuilder('solicitud')
         .where('solicitud.created_at >= :startDate', { startDate: dateRanges.startDate })
         .andWhere('solicitud.created_at <= :endDate', { endDate: dateRanges.endDate })
-        .andWhere('solicitud.fecha_confirmacion IS NOT NULL');
+        .andWhere('solicitud.estado = :estado', { estado: 'aceptada' });
       this.applySolicitudFilters(qbAceptadas, filters);
       const aceptadas = await qbAceptadas.getCount();
       
-      // Solicitudes rechazadas
-      const qbRechazadas = repo
+      // Solicitudes canceladas
+      const qbCanceladas = repo
         .createQueryBuilder('solicitud')
         .where('solicitud.created_at >= :startDate', { startDate: dateRanges.startDate })
         .andWhere('solicitud.created_at <= :endDate', { endDate: dateRanges.endDate })
-        .andWhere('solicitud.estado = :estado', { estado: 'rechazada' });
-      this.applySolicitudFilters(qbRechazadas, filters);
-      const rechazadas = await qbRechazadas.getCount();
+        .andWhere('solicitud.estado = :estado', { estado: 'cancelada' });
+      this.applySolicitudFilters(qbCanceladas, filters);
+      const canceladas = await qbCanceladas.getCount();
       
-      const total = aceptadas + rechazadas;
+      const total = aceptadas + canceladas;
       const currentRate = total > 0 ? (aceptadas / total) * 100 : 0;
 
       // Período anterior
@@ -152,19 +152,19 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
         .createQueryBuilder('solicitud')
         .where('solicitud.created_at >= :startDate', { startDate: dateRanges.previousStartDate })
         .andWhere('solicitud.created_at <= :endDate', { endDate: dateRanges.previousEndDate })
-        .andWhere('solicitud.fecha_confirmacion IS NOT NULL');
+        .andWhere('solicitud.estado = :estado', { estado: 'aceptada' });
       this.applySolicitudFilters(prevQbAceptadas, filters);
       const prevAceptadas = await prevQbAceptadas.getCount();
       
-      const prevQbRechazadas = repo
+      const prevQbCanceladas = repo
         .createQueryBuilder('solicitud')
         .where('solicitud.created_at >= :startDate', { startDate: dateRanges.previousStartDate })
         .andWhere('solicitud.created_at <= :endDate', { endDate: dateRanges.previousEndDate })
-        .andWhere('solicitud.estado = :estado', { estado: 'rechazada' });
-      this.applySolicitudFilters(prevQbRechazadas, filters);
-      const prevRechazadas = await prevQbRechazadas.getCount();
+        .andWhere('solicitud.estado = :estado', { estado: 'cancelada' });
+      this.applySolicitudFilters(prevQbCanceladas, filters);
+      const prevCanceladas = await prevQbCanceladas.getCount();
       
-      const prevTotal = prevAceptadas + prevRechazadas;
+      const prevTotal = prevAceptadas + prevCanceladas;
       const previousRate = prevTotal > 0 ? (prevAceptadas / prevTotal) * 100 : 0;
 
       const metric = await this.calculateMetricWithChart(
@@ -177,19 +177,19 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
             .createQueryBuilder('solicitud')
             .where('solicitud.created_at >= :startDate', { startDate: start })
             .andWhere('solicitud.created_at <= :endDate', { endDate: end })
-            .andWhere('solicitud.fecha_confirmacion IS NOT NULL');
+            .andWhere('solicitud.estado = :estado', { estado: 'aceptada' });
           this.applySolicitudFilters(intQbAceptadas, filters);
           const aceptadasInt = await intQbAceptadas.getCount();
           
-          const intQbRechazadas = repo
+          const intQbCanceladas = repo
             .createQueryBuilder('solicitud')
             .where('solicitud.created_at >= :startDate', { startDate: start })
             .andWhere('solicitud.created_at <= :endDate', { endDate: end })
-            .andWhere('solicitud.estado = :estado', { estado: 'rechazada' });
-          this.applySolicitudFilters(intQbRechazadas, filters);
-          const rechazadasInt = await intQbRechazadas.getCount();
+            .andWhere('solicitud.estado = :estado', { estado: 'cancelada' });
+          this.applySolicitudFilters(intQbCanceladas, filters);
+          const canceladasInt = await intQbCanceladas.getCount();
           
-          const totalInt = aceptadasInt + rechazadasInt;
+          const totalInt = aceptadasInt + canceladasInt;
           const rate = totalInt > 0 ? (aceptadasInt / totalInt) * 100 : 0;
           return this.roundPercentage(rate);
         },
