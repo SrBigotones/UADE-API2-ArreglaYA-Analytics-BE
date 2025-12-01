@@ -323,7 +323,7 @@ export class BaseMetricsCalculator {
     
     // Usar COUNT(DISTINCT) cuando hay filtros de rubro (para evitar duplicados por múltiples habilidades)
     if (filters?.rubro) {
-      const result = await qb.select('COUNT(DISTINCT solicitud.id)', 'count').getRawOne();
+      const result = await qb.select('COUNT(DISTINCT solicitud.id_solicitud)', 'count').getRawOne();
       return parseInt(result?.count || '0');
     }
     
@@ -342,7 +342,7 @@ export class BaseMetricsCalculator {
     
     // Usar COUNT(DISTINCT) cuando hay filtros de rubro (para evitar duplicados por múltiples habilidades)
     if (filters?.rubro) {
-      const result = await qb.select('COUNT(DISTINCT solicitud.id)', 'count').getRawOne();
+      const result = await qb.select('COUNT(DISTINCT solicitud.id_solicitud)', 'count').getRawOne();
       return parseInt(result?.count || '0');
     }
     
