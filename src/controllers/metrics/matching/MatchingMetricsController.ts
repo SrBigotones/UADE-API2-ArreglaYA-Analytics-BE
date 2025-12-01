@@ -145,7 +145,9 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
       const canceladas = await qbCanceladas.getCount();
       
       const total = aceptadas + canceladas;
-      const currentRate = total > 0 ? (aceptadas / total) * 100 : 0;
+      // Si no hay solicitudes resueltas (aceptadas + canceladas = 0), según definición
+      // de frontend la tasa se considera 100% (porcentaje de aceptadas sobre resueltas)
+      const currentRate = total > 0 ? (aceptadas / total) * 100 : 100;
 
       // Período anterior
       const prevQbAceptadas = repo
@@ -165,7 +167,7 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
       const prevCanceladas = await prevQbCanceladas.getCount();
       
       const prevTotal = prevAceptadas + prevCanceladas;
-      const previousRate = prevTotal > 0 ? (prevAceptadas / prevTotal) * 100 : 0;
+      const previousRate = prevTotal > 0 ? (prevAceptadas / prevTotal) * 100 : 100;
 
       const metric = await this.calculateMetricWithChart(
         periodType,
@@ -190,7 +192,7 @@ export class MatchingMetricsController extends BaseMetricsCalculator {
           const canceladasInt = await intQbCanceladas.getCount();
           
           const totalInt = aceptadasInt + canceladasInt;
-          const rate = totalInt > 0 ? (aceptadasInt / totalInt) * 100 : 0;
+          const rate = totalInt > 0 ? (aceptadasInt / totalInt) * 100 : 100;
           return this.roundPercentage(rate);
         },
         'absoluto'
