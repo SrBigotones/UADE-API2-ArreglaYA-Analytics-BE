@@ -135,12 +135,12 @@ export class PagosMetricsController extends BaseMetricsCalculator {
       const aprobados = await this.countPagosByEstado('approved', dateRanges.startDate, dateRanges.endDate, filters);
       const rechazados = await this.countPagosByEstado('rejected', dateRanges.startDate, dateRanges.endDate, filters);
       const total = aprobados + rechazados;
-      const currentRate = total > 0 ? (aprobados / total) * 100 : 0;
+      const currentRate = total > 0 ? (aprobados / total) * 100 : 100;
 
       const prevAprobados = await this.countPagosByEstado('approved', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
       const prevRechazados = await this.countPagosByEstado('rejected', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
       const prevTotal = prevAprobados + prevRechazados;
-      const previousRate = prevTotal > 0 ? (prevAprobados / prevTotal) * 100 : 0;
+      const previousRate = prevTotal > 0 ? (prevAprobados / prevTotal) * 100 : 100;
 
       const metric = await this.calculateMetricWithChart(
         periodType,
@@ -151,7 +151,7 @@ export class PagosMetricsController extends BaseMetricsCalculator {
           const aprobadosInt = await this.countPagosByEstado('approved', start, end, filters);
           const rechazadosInt = await this.countPagosByEstado('rejected', start, end, filters);
           const totalInt = aprobadosInt + rechazadosInt;
-          const rate = totalInt > 0 ? (aprobadosInt / totalInt) * 100 : 0;
+          const rate = totalInt > 0 ? (aprobadosInt / totalInt) * 100 : 100;
           return this.roundPercentage(rate);
         },
         'absoluto'
