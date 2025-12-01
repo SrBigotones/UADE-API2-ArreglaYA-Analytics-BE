@@ -658,8 +658,9 @@ export class BaseMetricsCalculator {
     if (filters.rubro) {
       qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud');
       
-      // Usar el join directo con id_habilidad
-      qb.leftJoin('habilidades', 'habilidad', 'habilidad.id_habilidad = solicitud.id_habilidad')
+      // Usar el join directo con id_habilidad Y filtrar por el prestador de la solicitud
+      // para evitar duplicados cuando múltiples prestadores tienen la misma habilidad
+      qb.leftJoin('habilidades', 'habilidad', 'habilidad.id_habilidad = solicitud.id_habilidad AND habilidad.id_usuario = solicitud.id_prestador')
         .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
       
       if (typeof filters.rubro === 'number') {
