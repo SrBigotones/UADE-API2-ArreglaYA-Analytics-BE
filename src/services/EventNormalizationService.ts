@@ -8,6 +8,7 @@ import { Zona } from '../models/Zona';
 import { Pago } from '../models/Pago';
 import { Prestador } from '../models/Prestador';
 import { Rubro } from '../models/Rubro';
+import { GeocodingService } from './GeocodingService';
 import { logger } from '../config/logger';
 
 /**
@@ -152,15 +153,16 @@ export class EventNormalizationService {
 
     // Caso especial: Usuario dado de baja
     if (evento.includes('deactivated') || evento.includes('baja')) {
-      const currentTimestamp = new Date();
+      // Usar el timestamp del evento directamente (ya es un Date object de TypeORM)
+      const eventTimestamp = event.timestamp;
       await usuarioRepo.update(
         { id_usuario: idUsuario },
         { 
           estado: 'baja', 
-          fecha_baja: currentTimestamp  // ✅ Registrar fecha de baja
+          fecha_baja: eventTimestamp  // ✅ Registrar fecha de baja desde el evento
         }
       );
-      logger.info(`✅ Usuario ${idUsuario} marcado como BAJA en fecha ${currentTimestamp.toISOString()}`);
+      logger.info(`✅ Usuario ${idUsuario} marcado como BAJA en fecha ${eventTimestamp.toISOString()}`);
     } else {
       // Para eventos de creación/actualización, hacer upsert completo
       await usuarioRepo.upsert(
@@ -253,75 +255,93 @@ export class EventNormalizationService {
     // Detectar si es evento de prestador asignado
     const esPrestadorAsignado = evento.includes('prestadorasignado') || evento.includes('asignado');
 
-    // Extraer zona de diferentes estructuras posibles
-    let zona = null;
-    if (payload.direccion) {
-      // direccion puede ser objeto (con ciudad/provincia) o string
-      if (typeof payload.direccion === 'object') {
-        zona = payload.direccion.ciudad || payload.direccion.provincia;
-      } else if (typeof payload.direccion === 'string') {
-        zona = payload.direccion; // Usar el string directamente
-      }
-    } else {
-      zona = payload.zona || payload.location || payload.ciudad || payload.provincia;
+    // DIRECCIÓN: Extraer objeto completo de dirección para geocodificación posterior
+    let direccion = null;
+    if (payload.direccion && typeof payload.direccion === 'object') {
+      direccion = {
+        calle: payload.direccion.calle || null,
+        numero: payload.direccion.numero || null,
+        piso: payload.direccion.piso || null,
+        depto: payload.direccion.depto || null,
+        ciudad: payload.direccion.ciudad || null,
+        provincia: payload.direccion.provincia || null,
+        codigo_postal: payload.direccion.codigo_postal || null,
+        referencia: payload.direccion.referencia || null,
+      };
     }
+
+    // ZONA REMOVIDA: No extraemos ni normalizamos zona
+    const zona = null;
 
     const esCritica = payload.urgency === 'high' || 
                       payload.es_critica === true || 
                       payload.critica === true ||
                       payload.es_urgente === true;
 
-    // NORMALIZACIÓN DE ZONA: intentar matchear con catálogo
-    if (zona) {
-      const zonaRepo = AppDataSource.getRepository(Zona);
-      
-      // Buscar zona por nombre (case-insensitive, trim espacios)
-      const zonaNormalizada = zona.trim();
-      const zonaMatch = await zonaRepo
-        .createQueryBuilder('z')
-        .where('LOWER(z.nombre_zona) = LOWER(:zona)', { zona: zonaNormalizada })
-        .getOne();
-      
-      if (zonaMatch) {
-        zona = zonaMatch.nombre_zona;
-        logger.debug(`✅ Zona normalizada: "${zonaNormalizada}" -> "${zonaMatch.nombre_zona}"`);
-      } else {
-        logger.warn(`⚠️ Zona "${zonaNormalizada}" no encontrada en catálogo. Usando valor original.`);
+    // GEOCODIFICACIÓN: Si hay dirección, geocodificarla (opcional, no bloquea si falla)
+    let latitud: number | null = null;
+    let longitud: number | null = null;
+    
+    if (direccion) {
+      try {
+        logger.debug(`🗺️ Geocoding address for solicitud ${idSolicitud}`);
+        const coords = await GeocodingService.geocode(direccion);
+        
+        if (coords.success) {
+          latitud = coords.lat;
+          longitud = coords.lon;
+          logger.info(`✅ Geocoded solicitud ${idSolicitud}: [${latitud}, ${longitud}]`);
+        } else {
+          // No usar coordenadas por defecto, dejar NULL
+          logger.warn(`⚠️ Failed to geocode solicitud ${idSolicitud}, saving without coordinates`);
+          latitud = null;
+          longitud = null;
+        }
+      } catch (error) {
+        logger.error(`❌ Error geocoding solicitud ${idSolicitud}:`, error);
+        // Continuar sin coordenadas en caso de error
+        latitud = null;
+        longitud = null;
       }
     }
 
-    // Si no viene zona pero hay prestador asignado, intentar inferir del prestador
-    if (!zona && idPrestador) {
-      const zonaRepo = AppDataSource.getRepository(Zona);
-      const prestadorZona = await zonaRepo
-        .createQueryBuilder('z')
-        .where('z.id_usuario = :idPrestador', { idPrestador })
-        .andWhere('z.activa = true')
-        .getOne();
-      
-      if (prestadorZona) {
-        zona = prestadorZona.nombre_zona;
-        logger.debug(`📍 Zona inferida del prestador ${idPrestador}: ${zona}`);
-      }
-    }
+    logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado} | direccion: ${direccion ? 'YES' : 'NULL'} | coords: ${latitud && longitud ? `[${latitud}, ${longitud}]` : 'NULL'} | habilidad: ${idHabilidad || 'NULL'} | prestador_asignado: ${esPrestadorAsignado}`);
 
-    logger.info(`💾 Saving solicitud | id: ${idSolicitud} | usuario: ${idUsuario} | estado: ${estado} | zona: ${zona || 'NULL'} | habilidad: ${idHabilidad || 'NULL'} | prestador_asignado: ${esPrestadorAsignado}`);
+    // Leer la solicitud existente para evitar sobreescribir campos cuando el payload los omite
+    const solicitudExistente = await solicitudRepo.findOne({ where: { id_solicitud: idSolicitud } });
 
-    await solicitudRepo.upsert(
-      {
+    // Si el evento indica cancelación, SOLO actualizar estado y prestador_asignado
+    // para no borrar id_prestador ni otros campos que no vienen en el payload
+    if (estado === 'cancelada') {
+      await solicitudRepo.update(
+        { id_solicitud: idSolicitud },
+        {
+          estado: 'cancelada',
+          prestador_asignado: false,
+        }
+      );
+
+      logger.info(`✅ Solicitud ${idSolicitud} marcada como cancelada (preservando campos existentes)`);
+    } else {
+      // Construir objeto mergeado: si el payload no provee un campo, conservar el existente
+      const merged = {
         id_solicitud: idSolicitud,
         id_usuario: idUsuario,
-        id_prestador: idPrestador || null,
-        id_habilidad: idHabilidad || null,
+        id_prestador: idPrestador !== undefined && idPrestador !== null ? idPrestador : (solicitudExistente ? solicitudExistente.id_prestador : null),
+        id_habilidad: idHabilidad !== undefined && idHabilidad !== null ? idHabilidad : (solicitudExistente ? solicitudExistente.id_habilidad : null),
         estado: estado,
-        zona: zona || null,
-        es_critica: esCritica || false,
-        prestador_asignado: esPrestadorAsignado || !!idPrestador, // true si es evento de asignación O si viene id_prestador
-      },
-      ['id_solicitud'] // Conflict target: unique constraint en id_solicitud
-    );
+        zona: zona || (solicitudExistente ? solicitudExistente.zona : null),
+        direccion: direccion !== null && direccion !== undefined ? direccion : (solicitudExistente ? solicitudExistente.direccion : null),
+        latitud: latitud !== undefined && latitud !== null ? latitud : (solicitudExistente ? solicitudExistente.latitud : null),
+        longitud: longitud !== undefined && longitud !== null ? longitud : (solicitudExistente ? solicitudExistente.longitud : null),
+        es_critica: esCritica || (solicitudExistente ? !!solicitudExistente.es_critica : false),
+        prestador_asignado: esPrestadorAsignado || !!(idPrestador || (solicitudExistente ? solicitudExistente.id_prestador : null)),
+        fecha_confirmacion: solicitudExistente ? solicitudExistente.fecha_confirmacion : null,
+      } as any;
 
-    logger.info(`✅ Solicitud ${idSolicitud} saved`);
+      await solicitudRepo.upsert(merged, ['id_solicitud']);
+      logger.info(`✅ Solicitud ${idSolicitud} saved/merged`);
+    }
   }
 
   /**
@@ -365,18 +385,18 @@ export class EventNormalizationService {
       return;
     }
 
-    // Actualizar solicitud con estado 'aceptada' y fecha_confirmacion
-    const currentTimestamp = new Date();
+    // Usar el timestamp del evento directamente (ya es un Date object de TypeORM)
+    const eventTimestamp = event.timestamp;
     
     await solicitudRepo.update(
       { id_solicitud: idSolicitud },
       { 
         estado: 'aceptada',
-        fecha_confirmacion: currentTimestamp
+        fecha_confirmacion: eventTimestamp
       }
     );
 
-    logger.info(`✅ Solicitud ${idSolicitud} actualizada | estado: aceptada | fecha_confirmacion: ${currentTimestamp.toISOString()}`);
+    logger.info(`✅ Solicitud ${idSolicitud} actualizada | estado: aceptada | fecha_confirmacion: ${eventTimestamp.toISOString()}`);
   }
 
   /**
@@ -417,8 +437,8 @@ export class EventNormalizationService {
 
       logger.debug(`🔍 matching.pago.emitida - solicitud ${idSolicitud} - existing payment: ${existingPago ? `${existingPago.id_pago} (${existingPago.estado}, captured: ${!!existingPago.captured_at})` : 'none'}`);
 
-      // Usar timestamp actual en lugar del que viene en el evento
-      const currentTimestamp = new Date();
+      // Usar el timestamp del evento directamente (ya es un Date object de TypeORM)
+      const eventTimestamp = event.timestamp;
       
       if (existingPago) {
         // Si ya existe un pago real de payments (con paymentId), no sobrescribir
@@ -432,7 +452,7 @@ export class EventNormalizationService {
               monto_total: montoTotal,
               moneda: moneda,
               metodo: metodo || existingPago.metodo,
-              timestamp_actual: currentTimestamp,
+              timestamp_actual: eventTimestamp,
             }
           );
           
@@ -458,8 +478,8 @@ export class EventNormalizationService {
             moneda: moneda,
             metodo: metodo,
             estado: 'pending',
-            timestamp_creado: currentTimestamp,
-            timestamp_actual: currentTimestamp,
+            timestamp_creado: eventTimestamp,
+            timestamp_actual: eventTimestamp,
             captured_at: null,
             refund_id: null,
           },
@@ -544,11 +564,11 @@ export class EventNormalizationService {
       metodo = payload.method || payload.metodo || payload.paymentMethod || payload.metodoPago;
     }
 
-    // Usar timestamp actual en lugar del que viene en el evento
-    const currentTimestamp = new Date();
-    const timestampCreado = currentTimestamp;
+    // Usar el timestamp del evento directamente (ya es un Date object de TypeORM)
+    const eventTimestamp = event.timestamp;
+    const timestampCreado = eventTimestamp;
 
-    // Para captured_at, usar updatedAt si existe (eventos status_updated), sino usar timestamp actual
+    // Para captured_at, usar updatedAt si existe (eventos status_updated), sino usar timestamp del evento
     // Solo establecer captured_at para pagos aprobados y si el estado es 'approved'
     let capturedAt = null;
     if (estado === 'approved') {
@@ -559,7 +579,7 @@ export class EventNormalizationService {
         // Crear fecha en UTC directamente (no usar new Date() que usa zona horaria local)
         capturedAt = new Date(Date.UTC(year, month - 1, day, hour, minute, second || 0));
       } else {
-        capturedAt = currentTimestamp;
+        capturedAt = eventTimestamp;
       }
     }
 
@@ -629,8 +649,8 @@ export class EventNormalizationService {
       // Si el pago existente no tiene userId pero el evento sí, actualizarlo
       const finalUserId = existingPago.id_usuario || idUsuario || null;
       
-      // Usar timestamp actual en lugar del que viene en el evento
-      const currentTimestamp = new Date();
+      // Usar el timestamp del evento directamente (ya es un Date object de TypeORM)
+      const eventTimestamp = event.timestamp;
       
       // Para captured_at: si el nuevo estado es approved, establecerlo; sino preservar el existente
       const finalCapturedAt = estado === 'approved' 
@@ -648,7 +668,7 @@ export class EventNormalizationService {
           metodo: metodo || existingPago.metodo,
           estado: finalEstado,
           timestamp_creado: existingPago.timestamp_creado,
-          timestamp_actual: currentTimestamp,
+          timestamp_actual: eventTimestamp,
           captured_at: finalCapturedAt,
           refund_id: refundId || existingPago.refund_id,
         },
@@ -666,8 +686,8 @@ export class EventNormalizationService {
       // Si es method_selected y no existe el pago, usar estado pending por defecto
       const finalEstado = estado !== null ? estado : 'pending';
       
-      // Usar timestamp actual en lugar del que viene en el evento
-      const currentTimestamp = new Date();
+      // Usar el timestamp del evento directamente (ya es un Date object de TypeORM)
+      const eventTimestamp = event.timestamp;
       
       logger.info(`💾 Creating pago | id: ${idPago} | usuario: ${idUsuario || 'NULL'} | estado: ${finalEstado} | evento: ${evento}`);
       await pagoRepo.upsert(
@@ -680,8 +700,8 @@ export class EventNormalizationService {
           moneda: moneda,
           metodo: metodo || null,
           estado: finalEstado,
-          timestamp_creado: currentTimestamp,
-          timestamp_actual: currentTimestamp,
+          timestamp_creado: eventTimestamp,
+          timestamp_actual: eventTimestamp,
           captured_at: capturedAt,
           refund_id: refundId,
         },
@@ -731,8 +751,8 @@ export class EventNormalizationService {
 
     logger.info(`💾 Saving prestador | id: ${idPrestador} | estado: ${estado}`);
 
-    // Usar timestamp actual en lugar del que viene en el evento
-    const currentTimestamp = new Date();
+    // Usar el timestamp del evento directamente (ya es un Date object de TypeORM)
+    const eventTimestamp = event.timestamp;
     
     await prestadorRepo.upsert(
       {
@@ -740,7 +760,7 @@ export class EventNormalizationService {
         nombre: nombre,
         apellido: apellido,
         estado: estado,
-        timestamp: currentTimestamp,
+        timestamp: eventTimestamp,
         perfil_completo: perfilCompleto,
       },
       ['id_prestador'] // Conflict target: unique constraint en id_prestador

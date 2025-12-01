@@ -45,18 +45,15 @@ export class PagosMetricsController extends BaseMetricsCalculator {
 
   /**
    * Parsea y valida los parámetros de segmentación
+   * NOTA: Zona removida - solicitud.zona siempre es null
    */
   protected parseSegmentationParams(req: Request): SegmentationFilters | undefined {
-    const { rubro, zona, metodo, minMonto, maxMonto } = req.query;
+    const { rubro, metodo, minMonto, maxMonto } = req.query;
     const filters: SegmentationFilters = {};
 
     if (rubro) {
       const rubroValue = typeof rubro === 'string' && !isNaN(Number(rubro)) ? Number(rubro) : rubro;
       filters.rubro = rubroValue as string | number;
-    }
-
-    if (zona) {
-      filters.zona = zona as string;
     }
 
     if (metodo) {
@@ -136,13 +133,13 @@ export class PagosMetricsController extends BaseMetricsCalculator {
       const filters = this.parseSegmentationParams(req);
 
       const aprobados = await this.countPagosByEstado('approved', dateRanges.startDate, dateRanges.endDate, filters);
-      const rechazados = await this.countPagosByEstado('rejected', dateRanges.startDate, dateRanges.endDate, filters);
-      const total = aprobados + rechazados;
+      const pendientes = await this.countPagosByEstado('pending', dateRanges.startDate, dateRanges.endDate, filters);
+      const total = aprobados + pendientes;
       const currentRate = total > 0 ? (aprobados / total) * 100 : 0;
 
       const prevAprobados = await this.countPagosByEstado('approved', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
-      const prevRechazados = await this.countPagosByEstado('rejected', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
-      const prevTotal = prevAprobados + prevRechazados;
+      const prevPendientes = await this.countPagosByEstado('pending', dateRanges.previousStartDate, dateRanges.previousEndDate, filters);
+      const prevTotal = prevAprobados + prevPendientes;
       const previousRate = prevTotal > 0 ? (prevAprobados / prevTotal) * 100 : 0;
 
       const metric = await this.calculateMetricWithChart(
@@ -152,8 +149,8 @@ export class PagosMetricsController extends BaseMetricsCalculator {
         this.roundPercentage(previousRate),
         async (start: Date, end: Date) => {
           const aprobadosInt = await this.countPagosByEstado('approved', start, end, filters);
-          const rechazadosInt = await this.countPagosByEstado('rejected', start, end, filters);
-          const totalInt = aprobadosInt + rechazadosInt;
+          const pendientesInt = await this.countPagosByEstado('pending', start, end, filters);
+          const totalInt = aprobadosInt + pendientesInt;
           const rate = totalInt > 0 ? (aprobadosInt / totalInt) * 100 : 0;
           return this.roundPercentage(rate);
         },
@@ -183,6 +180,7 @@ export class PagosMetricsController extends BaseMetricsCalculator {
         .addSelect('COUNT(*)', 'count')
         .where('pago.timestamp_creado >= :startDate', { startDate: dateRanges.startDate })
         .andWhere('pago.timestamp_creado <= :endDate', { endDate: dateRanges.endDate })
+        .andWhere('pago.estado = :estado', { estado: 'approved' }) // Solo pagos aprobados
         .andWhere('pago.metodo IS NOT NULL');
       
       this.applyPagoFilters(qb, filters);

@@ -176,7 +176,7 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
   /**
    * GET /api/metrica/usuarios/nuevas-bajas
    * Nuevos usuarios dados de baja en el período
-   * Usa el campo fecha_baja para contar usuarios que se dieron de baja en el período seleccionado
+   * Cuenta usuarios con estado = 'baja' y fecha_baja en el período seleccionado
    */
   public async getNuevasBajas(req: Request, res: Response): Promise<void> {
     try {
@@ -188,14 +188,16 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
       // Contar usuarios que se dieron de baja en el período actual
       const currentValue = await repo
         .createQueryBuilder('usuario')
-        .where('usuario.fecha_baja >= :startDate', { startDate: dateRanges.startDate })
+        .where('usuario.estado = :estado', { estado: 'baja' })
+        .andWhere('usuario.fecha_baja >= :startDate', { startDate: dateRanges.startDate })
         .andWhere('usuario.fecha_baja <= :endDate', { endDate: dateRanges.endDate })
         .getCount();
 
       // Contar usuarios que se dieron de baja en el período anterior
       const previousValue = await repo
         .createQueryBuilder('usuario')
-        .where('usuario.fecha_baja >= :startDate', { startDate: dateRanges.previousStartDate })
+        .where('usuario.estado = :estado', { estado: 'baja' })
+        .andWhere('usuario.fecha_baja >= :startDate', { startDate: dateRanges.previousStartDate })
         .andWhere('usuario.fecha_baja <= :endDate', { endDate: dateRanges.previousEndDate })
         .getCount();
 
@@ -207,7 +209,8 @@ export class UsuariosMetricsController extends BaseMetricsCalculator {
         async (start: Date, end: Date) => {
           return await repo
             .createQueryBuilder('usuario')
-            .where('usuario.fecha_baja >= :startDate', { startDate: start })
+            .where('usuario.estado = :estado', { estado: 'baja' })
+            .andWhere('usuario.fecha_baja >= :startDate', { startDate: start })
             .andWhere('usuario.fecha_baja <= :endDate', { endDate: end })
             .getCount();
         },

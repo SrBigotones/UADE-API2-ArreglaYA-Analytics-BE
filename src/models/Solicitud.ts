@@ -30,16 +30,34 @@ export class Solicitud {
   @Column({ type: 'varchar', length: 100, nullable: true })
   zona: string | null;
 
-  @Column({ type: 'timestamp', nullable: true, name: 'fecha_confirmacion' })
+  @Column({ type: 'jsonb', nullable: true })
+  direccion: {
+    calle?: string;
+    numero?: string;
+    piso?: string;
+    depto?: string;
+    ciudad?: string;
+    provincia?: string;
+    codigo_postal?: string;
+    referencia?: string;
+  } | null;
+
+  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+  latitud: number | null;
+
+  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+  longitud: number | null;
+
+  @Column({ type: 'timestamptz', nullable: true, name: 'fecha_confirmacion' })
   fecha_confirmacion: Date | null;
 
   @Column({ type: 'boolean', nullable: false, default: false, name: 'es_critica' })
   es_critica: boolean;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   created_at: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updated_at: Date;
 }
 

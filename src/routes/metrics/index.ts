@@ -5,6 +5,7 @@ import pagosRoutes from './pagos';
 import usuariosRoutes from './usuarios';
 import matchingRoutes from './matching';
 import prestadoresRoutes from './prestadores';
+import rubrosRoutes from './rubros';
 
 const router = Router();
 
@@ -24,6 +25,8 @@ router.use(authenticateToken);
  *     description: Métricas relacionadas con matching y cotizaciones
  *   - name: Métricas - Prestadores
  *     description: Métricas relacionadas con prestadores y servicios
+ *   - name: Métricas - Rubros
+ *     description: Métricas relacionadas con categorías/rubros de servicios
  * 
  * components:
  *   schemas:
@@ -78,6 +81,7 @@ router.use('/pagos', pagosRoutes);
 router.use('/usuarios', usuariosRoutes);
 router.use('/matching', matchingRoutes);
 router.use('/prestadores', prestadoresRoutes);
+router.use('/rubros', rubrosRoutes);
 
 // Ruta legacy de prestadores en usuarios (para mantener compatibilidad)
 import { UsuariosMetricsController } from '../../controllers/metrics/usuarios/UsuariosMetricsController';

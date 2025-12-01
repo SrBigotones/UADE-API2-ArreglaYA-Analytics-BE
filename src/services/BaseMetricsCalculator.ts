@@ -10,6 +10,7 @@ import { Rubro } from '../models/Rubro';
 import { CardMetricResponse, PieMetricResponse, DateRangeFilter, PeriodType, SegmentationFilters } from '../types';
 import { logger } from '../config/logger';
 import { DateRangeService } from './DateRangeService';
+import { formatDateLocal } from '../utils/dateUtils';
 
 /**
  * Clase base para cálculos de métricas usando tablas normalizadas
@@ -123,9 +124,14 @@ export class BaseMetricsCalculator {
     switch (periodType.type) {
       case 'hoy':
         // Por hora (24 puntos)
+        // IMPORTANTE: Las fechas están en UTC, pero queremos mostrar hora de Argentina (UTC-3)
         current = new Date(dateRanges.startDate);
         intervalDuration = 60 * 60 * 1000; // 1 hora en milisegundos
-        formatLabel = (d) => `${d.getHours().toString().padStart(2, '0')}:00`;
+        formatLabel = (d) => {
+          // Convertir UTC a hora de Argentina (restar 3 horas)
+          const horaArgentina = new Date(d.getTime() - (3 * 60 * 60 * 1000));
+          return `${horaArgentina.getUTCHours().toString().padStart(2, '0')}:00`;
+        };
         nextDate = (d) => {
           const next = new Date(d);
           next.setHours(next.getHours() + 1);
@@ -166,11 +172,14 @@ export class BaseMetricsCalculator {
         break;
 
       case 'ultimo_ano':
-        // Por mes (12 puntos)
+        // Por mes (12 o 13 puntos si cruza años)
         current = new Date(dateRanges.startDate.getFullYear(), dateRanges.startDate.getMonth(), 1);
+        
         formatLabel = (d) => {
           const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-          return months[d.getMonth()];
+          const monthLabel = months[d.getMonth()];
+          const year = d.getFullYear().toString().slice(-2); // Últimos 2 dígitos del año
+          return `${monthLabel}|${year}`; // Usar | como separador para parsear en el frontend
         };
         nextDate = (d) => {
           const next = new Date(d);
@@ -224,7 +233,7 @@ export class BaseMetricsCalculator {
         start: new Date(current),
         end: intervalEnd,
         label: formatLabel(current),
-        date: current.toISOString().split('T')[0]
+        date: formatDateLocal(current)
       });
 
       current = nextDate(current);
@@ -303,6 +312,24 @@ export class BaseMetricsCalculator {
       .getCount();
   }
 
+  protected async countAllSolicitudes(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
+    const repo = AppDataSource.getRepository(Solicitud);
+    const qb = repo
+      .createQueryBuilder('solicitud')
+      .where('solicitud.created_at >= :startDate', { startDate })
+      .andWhere('solicitud.created_at <= :endDate', { endDate });
+    
+    this.applySolicitudFilters(qb, filters);
+    
+    // Usar COUNT(DISTINCT) cuando hay filtros de rubro (para evitar duplicados por múltiples habilidades)
+    if (filters?.rubro) {
+      const result = await qb.select('COUNT(DISTINCT solicitud.id_solicitud)', 'count').getRawOne();
+      return parseInt(result?.count || '0');
+    }
+    
+    return await qb.getCount();
+  }
+
   protected async countSolicitudesByEstado(estado: string, startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
     const repo = AppDataSource.getRepository(Solicitud);
     const qb = repo
@@ -315,7 +342,7 @@ export class BaseMetricsCalculator {
     
     // Usar COUNT(DISTINCT) cuando hay filtros de rubro (para evitar duplicados por múltiples habilidades)
     if (filters?.rubro) {
-      const result = await qb.select('COUNT(DISTINCT solicitud.id)', 'count').getRawOne();
+      const result = await qb.select('COUNT(DISTINCT solicitud.id_solicitud)', 'count').getRawOne();
       return parseInt(result?.count || '0');
     }
     
@@ -351,13 +378,6 @@ export class BaseMetricsCalculator {
       .andWhere('pago.timestamp_creado <= :endDate', { endDate });
     
     this.applyPagoFilters(qb, filters);
-    
-    // Usar COUNT(DISTINCT) cuando hay filtros de rubro (para evitar duplicados por múltiples habilidades)
-    if (filters?.rubro) {
-      const result = await qb.select('COUNT(DISTINCT pago.id)', 'count').getRawOne();
-      return parseInt(result?.count || '0');
-    }
-    
     return await qb.getCount();
   }
 
@@ -382,13 +402,34 @@ export class BaseMetricsCalculator {
 
   protected async sumMontoPagosAprobados(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
     const repo = AppDataSource.getRepository(Pago);
+    // Si se aplicó filtro por rubro, el JOIN con habilidades/rubros puede generar filas duplicadas
+    // para un mismo pago (cuando una solicitud tiene múltiples habilidades). En ese caso
+    // hacemos un SELECT DISTINCT por pago.id y sumamos los montos sin duplicados.
+    if (filters?.rubro) {
+      const qbDistinct = repo
+        .createQueryBuilder('pago')
+        // Evitar usar la cadena literal 'DISTINCT' en select para que TypeORM genere SQL correctamente
+        .select('pago.id', 'id')
+        .addSelect('pago.monto_total', 'monto_total')
+        .where('pago.estado = :estado', { estado: 'approved' })
+        .andWhere('pago.timestamp_creado >= :startDate', { startDate })
+        .andWhere('pago.timestamp_creado <= :endDate', { endDate })
+        .distinct(true);
+
+      this.applyPagoFilters(qbDistinct, filters);
+
+      const rows = await qbDistinct.getRawMany();
+      const total = rows.reduce((sum, r) => sum + parseFloat(r.monto_total || '0'), 0);
+      return Math.round(total * 100) / 100;
+    }
+
     const qb = repo
       .createQueryBuilder('pago')
       .select('COALESCE(SUM(pago.monto_total), 0)', 'total')
       .where('pago.estado = :estado', { estado: 'approved' })
       .andWhere('pago.timestamp_creado >= :startDate', { startDate })
       .andWhere('pago.timestamp_creado <= :endDate', { endDate });
-    
+
     this.applyPagoFilters(qb, filters);
     const result = await qb.getRawOne();
     const total = parseFloat(result?.total || '0');
@@ -402,12 +443,12 @@ export class BaseMetricsCalculator {
       .createQueryBuilder('pago')
       // Calcular el tiempo entre creación y captura, filtrando casos donde captured_at < timestamp_creado
       // (que pueden ocurrir si los eventos llegan fuera de orden)
-      .select('AVG(EXTRACT(EPOCH FROM (pago.captured_at - pago.timestamp_creado)) / 60)', 'avg_minutes')
+      .select('AVG(EXTRACT(EPOCH FROM (pago.updated_at - pago.timestamp_creado)) / 60)', 'avg_minutes')
       .where('pago.estado = :estado', { estado: 'approved' })
       .andWhere('pago.timestamp_creado >= :startDate', { startDate })
       .andWhere('pago.timestamp_creado <= :endDate', { endDate })
-      .andWhere('pago.captured_at IS NOT NULL')
-      .andWhere('pago.captured_at >= pago.timestamp_creado'); // Solo tiempos positivos (eventos en orden correcto)
+      .andWhere('pago.updated_at IS NOT NULL')
+      .andWhere('pago.updated_at >= pago.timestamp_creado'); // Solo tiempos positivos (eventos en orden correcto)
     
     this.applyPagoFilters(qb, filters);
     const result = await qb.getRawOne();
@@ -582,17 +623,13 @@ export class BaseMetricsCalculator {
 
   /**
    * Aplica filtros de segmentación a un query builder de solicitudes
+   * NOTA: Zona removida - no es confiable en solicitudes
    */
   protected applySolicitudFilters(
     qb: any,
     filters?: SegmentationFilters
   ): void {
     if (!filters) return;
-
-    // Filtro por zona
-    if (filters.zona) {
-      qb.andWhere('solicitud.zona = :zona', { zona: filters.zona });
-    }
 
     // Filtro por tipo de solicitud
     if (filters.tipoSolicitud) {
@@ -620,6 +657,10 @@ export class BaseMetricsCalculator {
   /**
    * Aplica filtros de segmentación a un query builder de pagos
    */
+  /**
+   * Aplica filtros de segmentación a un query builder de pagos
+   * NOTA: Zona removida - solicitud.zona siempre es null
+   */
   protected applyPagoFilters(
     qb: any,
     filters?: SegmentationFilters
@@ -639,20 +680,14 @@ export class BaseMetricsCalculator {
       qb.andWhere('pago.monto_total <= :maxMonto', { maxMonto: filters.maxMonto });
     }
 
-    // Filtro por zona (a través de solicitud)
-    if (filters.zona) {
-      qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud')
-        .andWhere('solicitud.zona = :zona', { zona: filters.zona });
-    }
-
     // Filtro por rubro (join directo desde solicitud.id_habilidad -> habilidad -> rubro)
-    // Esto funciona correctamente ahora que guardamos id_habilidad en solicitudes
     if (filters.rubro) {
-      if (!filters.zona) {
-        qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud');
-      }
+      qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud');
       
-      // Ahora usar el join directo con id_habilidad
+      // Usar el join directo con id_habilidad (sin filtrar por id_usuario) para
+      // que el criterio de rubro incluya todas las habilidades asociadas a la
+      // solicitud. La deduplicación por pago se maneja en los métodos que suman
+      // montos cuando corresponde.
       qb.leftJoin('habilidades', 'habilidad', 'habilidad.id_habilidad = solicitud.id_habilidad')
         .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
       

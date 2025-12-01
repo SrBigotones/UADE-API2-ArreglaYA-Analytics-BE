@@ -39,9 +39,9 @@ export class Event {
   @Index()
   source?: string; // 'core-hub', 'direct-webhook', etc.
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt: Date;
 }

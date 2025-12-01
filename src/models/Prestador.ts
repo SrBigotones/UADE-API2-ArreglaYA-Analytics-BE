@@ -22,16 +22,16 @@ export class Prestador {
   @Column({ type: 'varchar', length: 20, nullable: false, default: 'activo' })
   estado: string; // 'activo' / 'baja'
 
-  @Column({ type: 'timestamp', nullable: false })
+  @Column({ type: 'timestamptz', nullable: false })
   timestamp: Date;
 
   @Column({ type: 'boolean', nullable: false, default: false, name: 'perfil_completo' })
   perfil_completo: boolean;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   created_at: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updated_at: Date;
 }
 
