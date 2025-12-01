@@ -180,6 +180,7 @@ export class PagosMetricsController extends BaseMetricsCalculator {
         .addSelect('COUNT(*)', 'count')
         .where('pago.timestamp_creado >= :startDate', { startDate: dateRanges.startDate })
         .andWhere('pago.timestamp_creado <= :endDate', { endDate: dateRanges.endDate })
+        .andWhere('pago.estado = :estado', { estado: 'approved' }) // Solo pagos aprobados
         .andWhere('pago.metodo IS NOT NULL');
       
       this.applyPagoFilters(qb, filters);
