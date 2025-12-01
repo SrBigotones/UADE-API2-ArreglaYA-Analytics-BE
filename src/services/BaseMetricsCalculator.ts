@@ -408,11 +408,13 @@ export class BaseMetricsCalculator {
     if (filters?.rubro) {
       const qbDistinct = repo
         .createQueryBuilder('pago')
-        .select('DISTINCT pago.id', 'id')
+        // Evitar usar la cadena literal 'DISTINCT' en select para que TypeORM genere SQL correctamente
+        .select('pago.id', 'id')
         .addSelect('pago.monto_total', 'monto_total')
         .where('pago.estado = :estado', { estado: 'approved' })
         .andWhere('pago.timestamp_creado >= :startDate', { startDate })
-        .andWhere('pago.timestamp_creado <= :endDate', { endDate });
+        .andWhere('pago.timestamp_creado <= :endDate', { endDate })
+        .distinct(true);
 
       this.applyPagoFilters(qbDistinct, filters);
 
