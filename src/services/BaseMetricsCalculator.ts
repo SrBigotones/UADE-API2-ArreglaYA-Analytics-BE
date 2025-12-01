@@ -409,13 +409,32 @@ export class BaseMetricsCalculator {
 
   protected async sumMontoPagosAprobados(startDate: Date, endDate: Date, filters?: SegmentationFilters): Promise<number> {
     const repo = AppDataSource.getRepository(Pago);
+    // Si se aplicó filtro por rubro, el JOIN con habilidades/rubros puede generar filas duplicadas
+    // para un mismo pago (cuando una solicitud tiene múltiples habilidades). En ese caso
+    // hacemos un SELECT DISTINCT por pago.id y sumamos los montos sin duplicados.
+    if (filters?.rubro) {
+      const qbDistinct = repo
+        .createQueryBuilder('pago')
+        .select('DISTINCT pago.id', 'id')
+        .addSelect('pago.monto_total', 'monto_total')
+        .where('pago.estado = :estado', { estado: 'approved' })
+        .andWhere('pago.timestamp_creado >= :startDate', { startDate })
+        .andWhere('pago.timestamp_creado <= :endDate', { endDate });
+
+      this.applyPagoFilters(qbDistinct, filters);
+
+      const rows = await qbDistinct.getRawMany();
+      const total = rows.reduce((sum, r) => sum + parseFloat(r.monto_total || '0'), 0);
+      return Math.round(total * 100) / 100;
+    }
+
     const qb = repo
       .createQueryBuilder('pago')
       .select('COALESCE(SUM(pago.monto_total), 0)', 'total')
       .where('pago.estado = :estado', { estado: 'approved' })
       .andWhere('pago.timestamp_creado >= :startDate', { startDate })
       .andWhere('pago.timestamp_creado <= :endDate', { endDate });
-    
+
     this.applyPagoFilters(qb, filters);
     const result = await qb.getRawOne();
     const total = parseFloat(result?.total || '0');
