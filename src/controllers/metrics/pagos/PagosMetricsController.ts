@@ -45,18 +45,15 @@ export class PagosMetricsController extends BaseMetricsCalculator {
 
   /**
    * Parsea y valida los parámetros de segmentación
+   * NOTA: Zona removida - solicitud.zona siempre es null
    */
   protected parseSegmentationParams(req: Request): SegmentationFilters | undefined {
-    const { rubro, zona, metodo, minMonto, maxMonto } = req.query;
+    const { rubro, metodo, minMonto, maxMonto } = req.query;
     const filters: SegmentationFilters = {};
 
     if (rubro) {
       const rubroValue = typeof rubro === 'string' && !isNaN(Number(rubro)) ? Number(rubro) : rubro;
       filters.rubro = rubroValue as string | number;
-    }
-
-    if (zona) {
-      filters.zona = zona as string;
     }
 
     if (metodo) {
