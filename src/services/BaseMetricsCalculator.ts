@@ -378,13 +378,6 @@ export class BaseMetricsCalculator {
       .andWhere('pago.timestamp_creado <= :endDate', { endDate });
     
     this.applyPagoFilters(qb, filters);
-    
-    // Usar COUNT(DISTINCT) cuando hay filtros de rubro (para evitar duplicados por múltiples habilidades)
-    if (filters?.rubro) {
-      const result = await qb.select('COUNT(DISTINCT pago.id)', 'count').getRawOne();
-      return parseInt(result?.count || '0');
-    }
-    
     return await qb.getCount();
   }
 
@@ -662,6 +655,10 @@ export class BaseMetricsCalculator {
   /**
    * Aplica filtros de segmentación a un query builder de pagos
    */
+  /**
+   * Aplica filtros de segmentación a un query builder de pagos
+   * NOTA: Zona removida - solicitud.zona siempre es null
+   */
   protected applyPagoFilters(
     qb: any,
     filters?: SegmentationFilters
@@ -681,20 +678,11 @@ export class BaseMetricsCalculator {
       qb.andWhere('pago.monto_total <= :maxMonto', { maxMonto: filters.maxMonto });
     }
 
-    // Filtro por zona (a través de solicitud)
-    if (filters.zona) {
-      qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud')
-        .andWhere('solicitud.zona = :zona', { zona: filters.zona });
-    }
-
     // Filtro por rubro (join directo desde solicitud.id_habilidad -> habilidad -> rubro)
-    // Esto funciona correctamente ahora que guardamos id_habilidad en solicitudes
     if (filters.rubro) {
-      if (!filters.zona) {
-        qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud');
-      }
+      qb.leftJoin('solicitudes', 'solicitud', 'solicitud.id_solicitud = pago.id_solicitud');
       
-      // Ahora usar el join directo con id_habilidad
+      // Usar el join directo con id_habilidad
       qb.leftJoin('habilidades', 'habilidad', 'habilidad.id_habilidad = solicitud.id_habilidad')
         .leftJoin('rubros', 'rubro', 'rubro.id_rubro = habilidad.id_rubro');
       

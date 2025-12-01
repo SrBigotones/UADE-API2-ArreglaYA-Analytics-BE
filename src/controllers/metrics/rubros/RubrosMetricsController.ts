@@ -46,14 +46,11 @@ export class RubrosMetricsController extends BaseMetricsCalculator {
 
   /**
    * Parsea y valida los parámetros de segmentación
+   * NOTA: Zona removida - solicitud.zona siempre es null
    */
   protected parseSegmentationParams(req: Request): SegmentationFilters | undefined {
-    const { zona, metodo, minMonto, maxMonto } = req.query;
+    const { metodo, minMonto, maxMonto } = req.query;
     const filters: SegmentationFilters = {};
-
-    if (zona) {
-      filters.zona = zona as string;
-    }
 
     if (metodo) {
       filters.metodo = metodo as string;
