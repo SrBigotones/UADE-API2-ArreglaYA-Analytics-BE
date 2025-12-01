@@ -429,12 +429,12 @@ export class BaseMetricsCalculator {
       .createQueryBuilder('pago')
       // Calcular el tiempo entre creación y captura, filtrando casos donde captured_at < timestamp_creado
       // (que pueden ocurrir si los eventos llegan fuera de orden)
-      .select('AVG(EXTRACT(EPOCH FROM (pago.captured_at - pago.timestamp_creado)) / 60)', 'avg_minutes')
+      .select('AVG(EXTRACT(EPOCH FROM (pago.updated_at - pago.timestamp_creado)) / 60)', 'avg_minutes')
       .where('pago.estado = :estado', { estado: 'approved' })
       .andWhere('pago.timestamp_creado >= :startDate', { startDate })
       .andWhere('pago.timestamp_creado <= :endDate', { endDate })
-      .andWhere('pago.captured_at IS NOT NULL')
-      .andWhere('pago.captured_at >= pago.timestamp_creado'); // Solo tiempos positivos (eventos en orden correcto)
+      .andWhere('pago.updated_at IS NOT NULL')
+      .andWhere('pago.updated_at >= pago.timestamp_creado'); // Solo tiempos positivos (eventos en orden correcto)
     
     this.applyPagoFilters(qb, filters);
     const result = await qb.getRawOne();
