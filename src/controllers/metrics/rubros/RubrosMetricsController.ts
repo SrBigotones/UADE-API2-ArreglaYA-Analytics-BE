@@ -201,14 +201,36 @@ export class RubrosMetricsController extends BaseMetricsCalculator {
     });
 
     // Construir respuesta con comparación para cada categoría
+    // Asegurarnos de incluir rubros que existen sólo en el período anterior
+    const ingresosMap = new Map<number, { id_rubro: number; nombre_rubro: string; ingresos_actuales: number; ingresos_anteriores: number }>();
+
+    // Agregar ingresos actuales
+    ingresosActuales.forEach(item => {
+      ingresosMap.set(item.id_rubro, {
+        id_rubro: item.id_rubro,
+        nombre_rubro: item.nombre_rubro,
+        ingresos_actuales: item.ingresos,
+        ingresos_anteriores: ingresosAnterioresMap.get(item.id_rubro) || 0
+      });
+    });
+
+    // Agregar rubros que sólo estaban en el período anterior
+    ingresosAnteriores.forEach(item => {
+      if (!ingresosMap.has(item.id_rubro)) {
+        ingresosMap.set(item.id_rubro, {
+          id_rubro: item.id_rubro,
+          nombre_rubro: item.nombre_rubro,
+          ingresos_actuales: 0,
+          ingresos_anteriores: item.ingresos
+        });
+      }
+    });
+
     const categorias = await Promise.all(
-      ingresosActuales.map(async (categoria) => {
-        const ingresoAnterior = ingresosAnterioresMap.get(categoria.id_rubro) || 0;
-        
-        // Calcular métrica de comparación
+      Array.from(ingresosMap.values()).map(async (categoria) => {
         const metric = this.calculateCardMetric(
-          categoria.ingresos,
-          ingresoAnterior,
+          categoria.ingresos_actuales,
+          categoria.ingresos_anteriores,
           'absoluto'
         );
 
@@ -226,8 +248,8 @@ export class RubrosMetricsController extends BaseMetricsCalculator {
         return {
           id_rubro: categoria.id_rubro,
           nombre_rubro: categoria.nombre_rubro,
-          ingresos_actuales: categoria.ingresos,
-          ingresos_anteriores: ingresoAnterior,
+          ingresos_actuales: categoria.ingresos_actuales,
+          ingresos_anteriores: categoria.ingresos_anteriores,
           cambio: metric.change,
           cambio_tipo: metric.changeType,
           cambio_estado: metric.changeStatus,
